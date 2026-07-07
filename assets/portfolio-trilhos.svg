@@ -1,0 +1,11 @@
+<svg width="900" height="620" viewBox="0 0 900 620" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#F5F5F3"/><stop offset="1" stop-color="#CFCFC8"/></linearGradient><pattern id="grid" width="56" height="56" patternUnits="userSpaceOnUse"><path d="M56 0H0V56" stroke="#fff" stroke-opacity=".35"/></pattern></defs>
+  <rect width="900" height="620" fill="url(#g)"/><rect width="900" height="620" fill="url(#grid)"/>
+  <path d="M0 360 C180 300 300 330 450 288 C610 243 735 240 900 260 V620H0V360Z" fill="#72726D"/>
+  <path d="M400 165 L486 165 L760 620 H610 L400 165Z" fill="#111111"/>
+  <path d="M348 165 L390 165 L212 620 H70 L348 165Z" fill="#2F2F34"/>
+  <path d="M426 165 L448 165 L680 620 H622 L426 165Z" fill="#F4C21B"/>
+  <path d="M365 165 L386 165 L150 620 H90 L365 165Z" fill="#F4C21B"/>
+  <g stroke="#F5F5F3" stroke-width="12"><path d="M330 214 H495"/><path d="M305 275 H535"/><path d="M270 360 H590"/><path d="M220 478 H680"/><path d="M155 610 H790"/></g>
+  <rect x="84" y="80" width="150" height="14" fill="#F4C21B"/><rect x="84" y="109" width="86" height="8" fill="#111111" opacity=".4"/>
+</svg>

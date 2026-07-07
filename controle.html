@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Controle Operacional | Ferrovia Engenharia</title>
+  <meta name="description" content="Dashboard de controle de equipes, abastecimentos e gastos mensais para infraestrutura ferroviária." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="control-body">
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="index.html" class="brand" aria-label="Voltar para a home">
+        <img src="assets/logo.svg" alt="Ferrovia Engenharia" />
+      </a>
+
+      <button class="menu-toggle" aria-label="Abrir menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+
+      <nav class="main-nav" aria-label="Menu principal">
+        <a href="index.html#home">Home</a>
+        <a href="index.html#quem-somos">Quem Somos</a>
+        <a href="index.html#servicos">Serviços</a>
+        <a href="index.html#portfolio">Portfólio</a>
+        <a href="index.html#clientes">Clientes</a>
+        <a href="index.html#trabalhe">Trabalhe Conosco</a>
+        <a class="nav-cta active" href="controle.html">Controle</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="control-hero">
+      <div class="container">
+        <span class="eyebrow">Painel operacional</span>
+        <h1>Controle de equipes, abastecimentos e gastos mensais.</h1>
+        <p>
+          Área demonstrativa para gestão de campo: acompanhe frentes de serviço, consumo de combustível, custos por categoria e indicadores operacionais de manutenção ferroviária.
+        </p>
+        <div class="control-toolbar" aria-label="Filtros do painel">
+          <select id="monthFilter" aria-label="Filtrar por mês"></select>
+          <select id="teamFilter" aria-label="Filtrar por equipe"></select>
+          <button class="btn btn-primary" id="exportCsvBtn" type="button">Exportar CSV</button>
+          <button class="btn btn-outline-light" id="resetDataBtn" type="button">Restaurar dados</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="dashboard-main">
+      <div class="container">
+        <div class="kpi-grid" aria-label="Indicadores principais">
+          <article class="kpi-card">
+            <span>Equipes em campo</span>
+            <strong id="kpiTeams">0</strong>
+            <small>Frentes ativas filtradas</small>
+          </article>
+          <article class="kpi-card">
+            <span>Litros abastecidos</span>
+            <strong id="kpiLiters">0 L</strong>
+            <small>Consumo no período</small>
+          </article>
+          <article class="kpi-card">
+            <span>Gasto com combustível</span>
+            <strong id="kpiFuelCost">R$ 0</strong>
+            <small>Abastecimentos lançados</small>
+          </article>
+          <article class="kpi-card">
+            <span>Gasto mensal total</span>
+            <strong id="kpiMonthCost">R$ 0</strong>
+            <small>Custos operacionais</small>
+          </article>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="control-panel">
+            <div class="panel-header">
+              <div>
+                <h2>Gastos mensais por categoria</h2>
+                <p>Comparativo de custos operacionais ligados à execução em campo.</p>
+              </div>
+              <span class="badge">Financeiro</span>
+            </div>
+            <div class="chart-box">
+              <canvas id="costChart" height="130" aria-label="Gráfico de gastos mensais"></canvas>
+            </div>
+          </article>
+
+          <article class="control-panel">
+            <div class="panel-header">
+              <div>
+                <h2>Abastecimentos por equipe</h2>
+                <p>Volume de combustível utilizado por frente operacional.</p>
+              </div>
+              <span class="badge">Frota</span>
+            </div>
+            <div class="chart-box">
+              <canvas id="fuelChart" height="130" aria-label="Gráfico de abastecimentos por equipe"></canvas>
+            </div>
+          </article>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="table-panel">
+            <div class="panel-header">
+              <div>
+                <h2>Controle de equipes</h2>
+                <p>Status das frentes de manutenção, infraestrutura e inspeção técnica.</p>
+              </div>
+              <span class="badge">Campo</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Equipe</th>
+                    <th>Frente</th>
+                    <th>Local</th>
+                    <th>Supervisor</th>
+                    <th>Status</th>
+                    <th>Progresso</th>
+                  </tr>
+                </thead>
+                <tbody id="teamsTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="table-panel">
+            <div class="panel-header">
+              <div>
+                <h2>Resumo de gastos</h2>
+                <p>Categorias filtradas por mês para acompanhamento executivo.</p>
+              </div>
+              <span class="badge">Custos</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mês</th>
+                    <th>Categoria</th>
+                    <th>Valor</th>
+                    <th>Observação</th>
+                  </tr>
+                </thead>
+                <tbody id="expensesTable"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <article class="table-panel">
+          <div class="panel-header">
+            <div>
+              <h2>Controle de abastecimentos</h2>
+              <p>Registros de frota, equipe, litros, valor por litro e total calculado automaticamente.</p>
+            </div>
+            <span class="badge">Operação</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Veículo</th>
+                  <th>Placa</th>
+                  <th>Equipe</th>
+                  <th>Litros</th>
+                  <th>R$/L</th>
+                  <th>Total</th>
+                  <th>Odômetro</th>
+                </tr>
+              </thead>
+              <tbody id="fuelTable"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <div class="dashboard-grid" style="margin-top:22px">
+          <article class="form-panel">
+            <h2>Novo abastecimento</h2>
+            <p>Inclua um lançamento rápido. Os dados ficam salvos no navegador por localStorage.</p>
+            <form id="fuelForm" class="form-grid">
+              <label>Data
+                <input type="date" name="data" required>
+              </label>
+              <label>Veículo
+                <input type="text" name="veiculo" placeholder="Caminhão Munck" required>
+              </label>
+              <label>Placa
+                <input type="text" name="placa" placeholder="ABC-1D23" required>
+              </label>
+              <label>Equipe
+                <select name="equipe" required></select>
+              </label>
+              <label>Litros
+                <input type="number" name="litros" min="1" step="0.01" placeholder="150" required>
+              </label>
+              <label>Valor por litro
+                <input type="number" name="valorLitro" min="0" step="0.01" placeholder="6.20" required>
+              </label>
+              <label>Odômetro
+                <input type="number" name="odometro" min="0" step="1" placeholder="82410" required>
+              </label>
+              <div class="form-actions">
+                <button class="btn btn-primary" type="submit">Adicionar abastecimento</button>
+              </div>
+            </form>
+            <div class="notice hidden" id="fuelNotice">Abastecimento adicionado com sucesso.</div>
+          </article>
+
+          <article class="form-panel">
+            <h2>Novo gasto mensal</h2>
+            <p>Registre despesas operacionais por categoria para alimentar o dashboard.</p>
+            <form id="expenseForm" class="form-grid">
+              <label>Mês
+                <input type="month" name="mes" required>
+              </label>
+              <label>Categoria
+                <select name="categoria" required>
+                  <option>Combustível</option>
+                  <option>Manutenção de frota</option>
+                  <option>Materiais ferroviários</option>
+                  <option>EPIs e segurança</option>
+                  <option>Diárias e hospedagem</option>
+                  <option>Máquinas e equipamentos</option>
+                </select>
+              </label>
+              <label>Valor
+                <input type="number" name="valor" min="0" step="0.01" placeholder="12500" required>
+              </label>
+              <label>Observação
+                <input type="text" name="observacao" placeholder="Trecho sul">
+              </label>
+              <div class="form-actions">
+                <button class="btn btn-primary" type="submit">Adicionar gasto</button>
+              </div>
+            </form>
+            <div class="notice hidden" id="expenseNotice">Gasto adicionado com sucesso.</div>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <img src="assets/logo.svg" alt="Ferrovia Engenharia" class="footer-logo" />
+        <p>Painel demonstrativo de gestão operacional para equipes ferroviárias, abastecimentos e custos.</p>
+      </div>
+      <div>
+        <h3>Contato</h3>
+        <p>Av. Engenharia Ferroviária, 1200<br>Curitiba - PR, Brasil</p>
+        <p>Telefone: (41) 3000-0000<br>E-mail: contato@ferroviaengenharia.com.br</p>
+      </div>
+      <div>
+        <h3>Links</h3>
+        <a href="index.html">Home institucional</a>
+        <a href="index.html#servicos">Serviços</a>
+        <a href="index.html#portfolio">Portfólio</a>
+      </div>
+      <div>
+        <h3>LinkedIn</h3>
+        <p>Substitua pelo link oficial da empresa.</p>
+        <a class="footer-link" href="https://www.linkedin.com" target="_blank" rel="noreferrer">Acessar LinkedIn</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="container">
+        <span>© 2026 Ferrovia Engenharia.</span>
+        <span>Controle operacional demonstrativo.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/controle.js"></script>
+</body>
+</html>

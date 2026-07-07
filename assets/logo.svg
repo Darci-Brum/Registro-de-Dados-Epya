@@ -1,0 +1,12 @@
+<svg width="260" height="64" viewBox="0 0 260 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ferrovia Engenharia">
+  <rect width="260" height="64" rx="10" fill="white"/>
+  <g transform="translate(12 10)">
+    <path d="M0 34 L26 0 H42 L16 34 H0Z" fill="#111111"/>
+    <path d="M29 34 L55 0 H72 L46 34 H29Z" fill="#F4C21B"/>
+    <path d="M59 34 L85 0 H102 L76 34 H59Z" fill="#111111"/>
+    <path d="M5 42 H92" stroke="#2F2F34" stroke-width="5" stroke-linecap="square"/>
+    <path d="M10 49 H86" stroke="#F4C21B" stroke-width="5" stroke-linecap="square"/>
+  </g>
+  <text x="126" y="28" fill="#111111" font-family="Montserrat, Inter, Arial, sans-serif" font-size="20" font-weight="800" letter-spacing="1">FERROVIA</text>
+  <text x="127" y="47" fill="#4A4A50" font-family="Montserrat, Inter, Arial, sans-serif" font-size="10" font-weight="700" letter-spacing="2.6">ENGENHARIA</text>
+</svg>
