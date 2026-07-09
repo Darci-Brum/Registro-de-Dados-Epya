@@ -66,6 +66,7 @@
     sessionUserName: $('#sessionUserName'),
     sessionUserRole: $('#sessionUserRole'),
     themeToggle: $('#themeToggle'),
+    topLogoutButton: $('#topLogoutButton'),
   };
 
   function loadState() {
@@ -219,6 +220,15 @@
     elements.themeToggle.textContent = theme === 'dark' ? 'Tema claro' : 'Tema escuro';
   }
 
+  async function performLogout() {
+    await supabaseClient?.auth.signOut();
+    currentSession = null;
+    currentProfile = null;
+    remoteReady = false;
+    showLogin();
+    setLoginMessage('Você saiu do sistema.');
+  }
+
   function setupAuthForms() {
     document.querySelectorAll('[data-login-mode]').forEach((button) => {
       button.addEventListener('click', () => {
@@ -288,14 +298,8 @@
       }
     });
 
-    $('#logoutButton')?.addEventListener('click', async () => {
-      await supabaseClient?.auth.signOut();
-      currentSession = null;
-      currentProfile = null;
-      remoteReady = false;
-      showLogin();
-      setLoginMessage('Você saiu do sistema.');
-    });
+    $('#logoutButton')?.addEventListener('click', performLogout);
+    $('#topLogoutButton')?.addEventListener('click', performLogout);
   }
 
   async function restoreSession() {
@@ -815,36 +819,10 @@
       return general + vehicle;
     });
 
-    const max = Math.max(...values, 100);
-    const padding = 38;
-    const barGap = 26;
-    const barWidth = (width - padding * 2 - barGap * (months.length - 1)) / months.length;
-
-    ctx.strokeStyle = '#e1e4e8';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(padding, height - padding);
-    ctx.lineTo(width - padding, height - padding);
-    ctx.stroke();
-
-    months.forEach((month, index) => {
-      const x = padding + index * (barWidth + barGap);
-      const barHeight = (values[index] / max) * (height - padding * 2 - 18);
-      const y = height - padding - barHeight;
-      const gradient = ctx.createLinearGradient(0, y, 0, height - padding);
-      gradient.addColorStop(0, '#f3c229');
-      gradient.addColorStop(1, '#c99a0e');
-      ctx.fillStyle = gradient;
-      roundRect(ctx, x, y, barWidth, barHeight, 8);
-      ctx.fill();
-
-      ctx.fillStyle = '#676b73';
-      ctx.font = '13px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(month.split('-').reverse().join('/'), x + barWidth / 2, height - 13);
-      ctx.fillStyle = '#26272b';
-      ctx.font = 'bold 13px system-ui, sans-serif';
-      if (values[index] > 0) ctx.fillText(currency(values[index]), x + barWidth / 2, Math.max(18, y - 8));
+    const labels = months.map((month) => month.split('-').reverse().join('/'));
+    drawHorizontalBarChart(ctx, width, height, labels, values, {
+      valueFormatter: (value) => currency(value),
+      colors: ['#ff6b35', '#ff9f1c', '#f3c229', '#2ec4b6', '#3a86ff', '#8338ec'],
     });
   }
 
@@ -858,7 +836,10 @@
 
     const statuses = ['Concluído', 'Em andamento', 'Pendente', 'Interrompido'];
     const values = statuses.map((status) => state.rdos.filter((item) => normalizeText(item.status) === normalizeText(status)).length);
-    drawSimpleBarChart(ctx, width, height, statuses, values, { currencyLabels: false, colors: ['#3aa76d', '#f3c229', '#c99a0e', '#c0392b'] });
+    drawHorizontalBarChart(ctx, width, height, statuses, values, {
+      colors: ['#21bf73', '#3a86ff', '#ffbe0b', '#ef476f'],
+      valueFormatter: (value) => String(value),
+    });
   }
 
   function drawTeamVisitsChart() {
@@ -874,13 +855,16 @@
       const key = item.group || 'Sem equipe';
       grouped[key] = (grouped[key] || 0) + Number(item.visitCount || 0);
     });
-    const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 6);
     const labels = entries.length ? entries.map(([label]) => label) : ['Sem dados'];
     const values = entries.length ? entries.map(([, value]) => value) : [0];
-    drawSimpleBarChart(ctx, width, height, labels, values, { currencyLabels: false, colors: ['#f08a24', '#f3c229', '#d46a12', '#7a8795', '#3c8dc5'] });
+    drawHorizontalBarChart(ctx, width, height, labels, values, {
+      colors: ['#8338ec', '#ff006e', '#fb5607', '#ffbe0b', '#06d6a0', '#118ab2'],
+      valueFormatter: (value) => String(value),
+    });
   }
 
-  function drawSimpleBarChart(ctx, width, height, labels, values, options = {}) {
+  function drawHorizontalBarChart(ctx, width, height, labels, values, options = {}) {
     const max = Math.max(...values, 1);
     const padding = 34;
     const gap = 14;

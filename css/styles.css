@@ -1251,3 +1251,101 @@ body[data-theme="dark"] .metric-card .metric-icon {
     height: 44px;
   }
 }
+
+
+/* ===== Atualizações v7 ===== */
+.login-screen {
+  background:
+    linear-gradient(100deg, rgba(8, 12, 18, 0.52) 0%, rgba(10, 12, 16, 0.34) 34%, rgba(10, 12, 16, 0.06) 100%),
+    url("../assets/login-bg.png") 74% center / cover no-repeat;
+}
+
+.login-screen-backdrop {
+  background: linear-gradient(90deg, rgba(8, 12, 18, 0.16), rgba(8, 12, 18, 0.00));
+}
+
+.login-watermark {
+  position: absolute;
+  right: clamp(24px, 5vw, 72px);
+  top: clamp(28px, 6vh, 74px);
+  width: min(360px, 34vw);
+  z-index: 1;
+  opacity: 0.92;
+  filter: drop-shadow(0 16px 28px rgba(0,0,0,0.38));
+  pointer-events: none;
+}
+
+.login-card {
+  z-index: 2;
+}
+
+.login-brand img,
+.topbar-company img,
+.brand-logo {
+  object-fit: contain;
+  background: transparent;
+}
+
+.login-brand img {
+  width: 120px;
+  height: 54px;
+}
+
+.topbar-company img {
+  width: 78px;
+  height: 42px;
+}
+
+.brand-logo {
+  width: 94px;
+  height: 58px;
+}
+
+.topbar-actions {
+  align-items: center;
+}
+
+#topLogoutButton {
+  background: linear-gradient(135deg, #ff6b57, #d93d2f);
+  color: #fff;
+  border: 0;
+}
+
+.dashboard-grid-3 {
+  grid-template-columns: 1fr;
+}
+
+.dashboard-grid-3 .card,
+.dashboard-grid-side .card {
+  border-top-width: 5px;
+}
+
+.chart-accent-note {
+  color: var(--epya-gray);
+}
+
+body[data-theme="dark"] #topLogoutButton {
+  background: linear-gradient(135deg, #ff755f, #d94133);
+  color: #fff;
+}
+
+@media (max-width: 900px) {
+  .login-watermark {
+    width: min(260px, 48vw);
+    top: 18px;
+    right: 18px;
+    opacity: 0.84;
+  }
+}
+
+@media (max-width: 780px) {
+  .login-watermark {
+    width: 180px;
+    top: 14px;
+    right: 14px;
+  }
+
+  .topbar-actions {
+    width: 100%;
+  }
+}
