@@ -75,3 +75,12 @@ A versão atualizada inclui, na aba **Backup / Supabase**, três ações novas:
 - **Enviar PDF pelo WhatsApp**: no celular, tenta abrir o compartilhamento nativo já com o PDF anexado. Em computadores, por segurança do navegador, o sistema baixa o PDF e abre o WhatsApp Web com uma mensagem pronta para você anexar o arquivo manualmente.
 
 Essas funções usam bibliotecas públicas via CDN no final do `index.html`: SheetJS para Excel e jsPDF para PDF. Se o navegador estiver sem internet ou bloqueando CDN, os botões avisam que a biblioteca não carregou.
+
+
+## Atualização v6
+
+- Login mais limpo e corporativo, usando a locomotiva cinza/laranja como fundo principal.
+- Topo do painel com destaque maior para EPYA Infraestrutura.
+- Menu lateral com ícones corporativos.
+- Dashboard com cartões de indicadores mais profissionais.
+- Gráficos mantidos para RDO, gastos e visitas às equipes.

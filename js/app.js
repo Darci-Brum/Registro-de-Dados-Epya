@@ -53,6 +53,9 @@
     upcomingReminders: $('#upcomingReminders'),
     recentRdoTable: $('#recentRdoTable'),
     expensesChart: $('#expensesChart'),
+    rdoChart: $('#rdoChart'),
+    teamVisitsChart: $('#teamVisitsChart'),
+    dashboardSummary: $('#dashboardSummary'),
     toast: $('#toast'),
     modal: $('#modal'),
     modalTitle: $('#modalTitle'),
@@ -224,7 +227,7 @@
         $('#loginForm').hidden = mode !== 'signin';
         $('#signupForm').hidden = mode !== 'signup';
         setLoginMessage(mode === 'signin'
-          ? `Administrador principal: ${ADMIN_EMAIL}`
+          ? 'Acesso restrito a usuários cadastrados.'
           : 'O primeiro acesso só libera e-mails previamente cadastrados pelo admin.');
       });
     });
@@ -473,7 +476,7 @@
   function teamMemberFromDb(row) {
     return {
       id: row.id, name: row.name, role: row.member_role, leader: row.leader, group: row.team_group,
-      phone: row.phone, status: row.status, notes: row.notes, createdBy: row.created_by,
+      phone: row.phone, status: row.status, lastVisitDate: row.last_visit_date || '', visitCount: Number(row.visit_count || 0), notes: row.notes, createdBy: row.created_by,
       updatedBy: row.updated_by, createdAt: row.created_at, updatedAt: row.updated_at,
     };
   }
@@ -481,7 +484,7 @@
   function teamMemberToDb(item) {
     return {
       id: item.id, name: item.name, member_role: item.role, leader: item.leader, team_group: item.group,
-      phone: item.phone, status: item.status, notes: item.notes, created_by: item.createdBy,
+      phone: item.phone, status: item.status, last_visit_date: item.lastVisitDate || null, visit_count: Number(item.visitCount || 0), notes: item.notes, created_by: item.createdBy,
       updated_by: item.updatedBy, created_at: item.createdAt || new Date().toISOString(), updated_at: item.updatedAt || new Date().toISOString(),
     };
   }
@@ -718,18 +721,23 @@
     const activeTeam = state.teamMembers.filter((member) => member.status === 'Ativo').length;
     const pendingReminders = state.agendaItems.filter((item) => item.status !== 'Concluído' && new Date(item.dateTime) >= now).length;
     const monthRdos = state.rdos.filter((item) => item.date?.startsWith(currentMonth)).length;
+    const totalVisits = state.teamMembers.reduce((sum, item) => sum + Number(item.visitCount || 0), 0);
 
     const metrics = [
-      { label: 'RDOs no mês', value: monthRdos },
-      { label: 'Despesas no mês', value: currency(expensesThisMonth) },
-      { label: 'Gastos do carro', value: currency(vehicleThisMonth) },
-      { label: 'Colaboradores ativos', value: activeTeam },
-      { label: 'Lembretes pendentes', value: pendingReminders },
+      { label: 'RDOs lançados no mês', value: monthRdos, icon: 'RDO' },
+      { label: 'Despesas do mês', value: currency(expensesThisMonth), icon: 'R$' },
+      { label: 'Gastos do veículo', value: currency(vehicleThisMonth), icon: 'KM' },
+      { label: 'Visitas às equipes', value: totalVisits, icon: 'VS' },
+      { label: 'Equipes ativas', value: activeTeam, icon: 'EQ' },
+      { label: 'Lembretes pendentes', value: pendingReminders, icon: 'AG' },
     ];
 
     elements.metricsGrid.innerHTML = metrics.map((metric) => `
       <div class="metric-card">
-        <small>${escapeHtml(metric.label)}</small>
+        <div class="metric-topline">
+          <small>${escapeHtml(metric.label)}</small>
+          <span class="metric-icon">${escapeHtml(metric.icon)}</span>
+        </div>
         <strong>${escapeHtml(metric.value)}</strong>
       </div>
     `).join('');
@@ -741,6 +749,20 @@
       </div>
     `).join('') || '<p class="empty-state">Nenhum lembrete pendente.</p>';
 
+    const openRdos = state.rdos.filter((item) => normalizeText(item.status) !== 'concluido').length;
+    const totalExpenses = state.expenses.reduce((sum, item) => sum + Number(item.value || 0), 0) + state.vehicleCosts.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const totalTeams = new Set(state.teamMembers.map((item) => item.group || 'Sem equipe')).size;
+    elements.dashboardSummary.innerHTML = [
+      { title: 'RDOs em aberto', value: openRdos, detail: 'Lançamentos ainda não concluídos.' },
+      { title: 'Total acumulado de gastos', value: currency(totalExpenses), detail: 'Despesas gerais somadas ao veículo.' },
+      { title: 'Frentes / equipes', value: totalTeams, detail: 'Equipes ou frentes cadastradas no sistema.' },
+    ].map((item) => `
+      <div class="stack-item">
+        <strong class="summary-number">${escapeHtml(item.value)}</strong>
+        <small><strong>${escapeHtml(item.title)}</strong><br>${escapeHtml(item.detail)}</small>
+      </div>
+    `).join('');
+
     elements.recentRdoTable.innerHTML = sortByDateDesc(state.rdos).slice(0, 6).map((rdo) => `
       <tr>
         <td>${formatDate(rdo.date)}</td>
@@ -751,7 +773,9 @@
       </tr>
     `).join('') || '<tr><td colspan="5" class="empty-state">Nenhum RDO lançado ainda.</td></tr>';
 
+    drawRdoChart();
     drawExpensesChart();
+    drawTeamVisitsChart();
   }
 
   function upcomingAgendaItems(limit = 10) {
@@ -821,6 +845,74 @@
       ctx.fillStyle = '#26272b';
       ctx.font = 'bold 13px system-ui, sans-serif';
       if (values[index] > 0) ctx.fillText(currency(values[index]), x + barWidth / 2, Math.max(18, y - 8));
+    });
+  }
+
+  function drawRdoChart() {
+    const canvas = elements.rdoChart;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+
+    const statuses = ['Concluído', 'Em andamento', 'Pendente', 'Interrompido'];
+    const values = statuses.map((status) => state.rdos.filter((item) => normalizeText(item.status) === normalizeText(status)).length);
+    drawSimpleBarChart(ctx, width, height, statuses, values, { currencyLabels: false, colors: ['#3aa76d', '#f3c229', '#c99a0e', '#c0392b'] });
+  }
+
+  function drawTeamVisitsChart() {
+    const canvas = elements.teamVisitsChart;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+
+    const grouped = {};
+    state.teamMembers.forEach((item) => {
+      const key = item.group || 'Sem equipe';
+      grouped[key] = (grouped[key] || 0) + Number(item.visitCount || 0);
+    });
+    const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const labels = entries.length ? entries.map(([label]) => label) : ['Sem dados'];
+    const values = entries.length ? entries.map(([, value]) => value) : [0];
+    drawSimpleBarChart(ctx, width, height, labels, values, { currencyLabels: false, colors: ['#f08a24', '#f3c229', '#d46a12', '#7a8795', '#3c8dc5'] });
+  }
+
+  function drawSimpleBarChart(ctx, width, height, labels, values, options = {}) {
+    const max = Math.max(...values, 1);
+    const padding = 34;
+    const gap = 14;
+    const count = labels.length || 1;
+    const barWidth = (width - padding * 2 - gap * (count - 1)) / count;
+    const colors = options.colors || ['#f3c229'];
+
+    ctx.strokeStyle = '#e1e4e8';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padding, height - padding);
+    ctx.lineTo(width - padding, height - padding);
+    ctx.stroke();
+
+    labels.forEach((label, index) => {
+      const value = Number(values[index] || 0);
+      const x = padding + index * (barWidth + gap);
+      const barHeight = (value / max) * (height - padding * 2 - 24);
+      const y = height - padding - barHeight;
+      const fill = colors[index % colors.length];
+      ctx.fillStyle = fill;
+      roundRect(ctx, x, y, barWidth, barHeight, 8);
+      ctx.fill();
+
+      ctx.fillStyle = '#676b73';
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      const shortLabel = String(label).length > 11 ? `${String(label).slice(0, 11)}…` : String(label);
+      ctx.fillText(shortLabel, x + barWidth / 2, height - 12);
+      ctx.fillStyle = '#26272b';
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.fillText(String(value), x + barWidth / 2, Math.max(18, y - 8));
     });
   }
 
@@ -1053,6 +1145,8 @@
         group: $('#teamGroup').value.trim(),
         phone: $('#teamPhone').value.trim(),
         status: $('#teamStatus').value,
+        lastVisitDate: $('#teamLastVisitDate').value,
+        visitCount: Number($('#teamVisitCount').value || 0),
         notes: $('#teamNotes').value.trim(),
         createdBy: existing?.createdBy || currentUserStamp(),
         updatedBy: currentUserStamp(),
@@ -1093,6 +1187,8 @@
         <td>${escapeHtml(member.leader || '-')}</td>
         <td>${escapeHtml(member.group || '-')}</td>
         <td>${statusBadge(member.status)}</td>
+        <td>${escapeHtml(member.visitCount || 0)}</td>
+        <td>${formatDate(member.lastVisitDate)}</td>
         <td>
           <div class="row-actions">
             <button class="icon-btn" data-action="view-team" data-id="${member.id}">Ver</button>
@@ -1101,7 +1197,7 @@
           </div>
         </td>
       </tr>
-    `).join('') || '<tr><td colspan="6" class="empty-state">Nenhum colaborador cadastrado.</td></tr>';
+    `).join('') || '<tr><td colspan="8" class="empty-state">Nenhum colaborador cadastrado.</td></tr>';
   }
 
   function editTeamMember(member) {
@@ -1112,6 +1208,8 @@
     $('#teamGroup').value = member.group || '';
     $('#teamPhone').value = member.phone || '';
     $('#teamStatus').value = member.status || 'Ativo';
+    $('#teamLastVisitDate').value = member.lastVisitDate || '';
+    $('#teamVisitCount').value = member.visitCount || 0;
     $('#teamNotes').value = member.notes || '';
     toast('Colaborador carregado para edição.');
   }
@@ -1125,6 +1223,8 @@
         <p><strong>Equipe</strong>${escapeHtml(member.group || '-')}</p>
         <p><strong>Telefone</strong>${escapeHtml(member.phone || '-')}</p>
         <p><strong>Status</strong>${escapeHtml(member.status || '-')}</p>
+        <p><strong>Visitas registradas</strong>${escapeHtml(member.visitCount || 0)}</p>
+        <p><strong>Última visita</strong>${formatDate(member.lastVisitDate)}</p>
         <p><strong>Observações</strong>${escapeHtml(member.notes || '-')}</p>
       </div>
     `);
@@ -1561,6 +1661,7 @@
         { Indicador: 'Despesas gerais', Valor: totalExpenses },
         { Indicador: 'Gastos do veículo', Valor: vehicleExpenses },
         { Indicador: 'Colaboradores cadastrados', Valor: state.teamMembers.length },
+        { Indicador: 'Visitas às equipes', Valor: state.teamMembers.reduce((sum, item) => sum + Number(item.visitCount || 0), 0) },
         { Indicador: 'Lembretes ativos', Valor: activeReminders },
         { Indicador: 'Usuário logado', Valor: getCurrentUser()?.name || '-' },
         { Indicador: 'Perfil', Valor: roleLabel(getCurrentUser()?.role || '-') },
@@ -1592,10 +1693,12 @@
       Equipes: state.teamMembers.map((item) => ({
         Nome: item.name,
         Funcao: item.role,
-        Encarregado: item.supervisor,
-        Equipe: item.team,
+        Encarregado: item.leader,
+        Equipe: item.group,
         Telefone: item.phone,
         Status: item.status,
+        Visitas_Registradas: Number(item.visitCount || 0),
+        Ultima_Visita: formatDate(item.lastVisitDate),
         Observacoes: item.notes,
       })),
       Veiculo: [{
@@ -1786,7 +1889,8 @@
     state.teamMembers.slice(0, 30).forEach((item, index) => {
       addPageIfNeeded(45);
       text(`${index + 1}. ${item.name || '-'} - ${item.role || '-'}`, margin, { style: 'bold', size: 10, gap: 0 });
-      row('Equipe / Encarregado', `${item.team || '-'} / ${item.supervisor || '-'}`);
+      row('Equipe / Encarregado', `${item.group || '-'} / ${item.leader || '-'}`);
+      row('Visitas / Última visita', `${item.visitCount || 0} / ${formatDate(item.lastVisitDate)}`);
     });
 
     section('Veiculo e agenda');

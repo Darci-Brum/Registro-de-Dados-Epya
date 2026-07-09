@@ -329,3 +329,7 @@ create index if not exists agenda_items_date_time_idx on public.agenda_items(dat
 -- 3) Faça login no site com esse e-mail.
 -- 4) Cadastre novos e-mails na aba Usuários e perfis.
 -- 5) Cada novo usuário entra em "Primeiro acesso" e cria a própria senha.
+
+
+alter table if exists public.team_members add column if not exists last_visit_date date;
+alter table if exists public.team_members add column if not exists visit_count integer default 0;

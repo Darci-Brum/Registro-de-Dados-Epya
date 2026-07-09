@@ -14,73 +14,27 @@
 
   <section class="login-screen" id="loginScreen">
     <div class="login-screen-backdrop" aria-hidden="true"></div>
-    <div class="login-layout">
-      <div class="login-hero-panel">
-        <div class="login-hero-copy">
-          <span class="hero-kicker">EPYA + ARAUCO</span>
-          <h1>Controle de Qualidade com acesso protegido antes da entrada no sistema.</h1>
-          <p>Faça login para carregar seus dados do Supabase, acessar RDO, despesas, equipes, veículo, agenda e perfis de usuários com segurança.</p>
-          <div class="login-feature-list">
-            <div class="login-feature-item">
-              <strong>Gestão ferroviária</strong>
-              <small>Painel pensado para rotina operacional, inspeções e acompanhamento diário.</small>
-            </div>
-            <div class="login-feature-item">
-              <strong>Perfis por função</strong>
-              <small>Controle de acesso para administrador, analista e consulta.</small>
-            </div>
-            <div class="login-feature-item">
-              <strong>Base sincronizada</strong>
-              <small>Os dados só são carregados após autenticação válida no Supabase.</small>
-            </div>
-          </div>
+    <div class="login-card login-card-minimal">
+      <div class="login-brand login-brand-minimal">
+        <img src="assets/epya-emblema.svg" alt="Emblema EPYA" />
+        <div>
+          <strong>EPYA Infraestrutura</strong>
+          <small>Controle de Qualidade</small>
         </div>
       </div>
 
-      <div class="login-card">
-        <div class="login-brand">
-          <img src="assets/epya-emblema.svg" alt="Emblema EPYA" />
-          <div>
-            <span>EPYA</span>
-            <strong>Controle de Qualidade</strong>
-            <small>Responsável Darci Brum</small>
-          </div>
-        </div>
+      <form id="loginForm" class="login-form">
+        <h1>Acesso ao sistema</h1>
+        <label>E-mail
+          <input type="email" id="loginEmail" autocomplete="email" required placeholder="seuemail@empresa.com" />
+        </label>
+        <label>Senha
+          <input type="password" id="loginPassword" autocomplete="current-password" required placeholder="Digite sua senha" />
+        </label>
+        <button type="submit" class="primary-btn full-btn">Entrar</button>
+      </form>
 
-        <div class="login-tabs" role="tablist" aria-label="Acesso ao sistema">
-          <button class="login-tab active" type="button" data-login-mode="signin">Entrar</button>
-          <button class="login-tab" type="button" data-login-mode="signup">Primeiro acesso</button>
-        </div>
-
-        <form id="loginForm" class="login-form">
-          <h2>Login do sistema</h2>
-          <p>Esta é a tela inicial obrigatória. Informe e-mail e senha para validar seu perfil antes de abrir o painel.</p>
-          <label>E-mail
-            <input type="email" id="loginEmail" autocomplete="email" required placeholder="seuemail@empresa.com" />
-          </label>
-          <label>Senha
-            <input type="password" id="loginPassword" autocomplete="current-password" required placeholder="Digite sua senha" />
-          </label>
-          <button type="submit" class="primary-btn full-btn">Entrar</button>
-        </form>
-
-        <form id="signupForm" class="login-form" hidden>
-          <h2>Primeiro acesso</h2>
-          <p>Use esta opção somente depois que o administrador cadastrar seu e-mail na aba Usuários e perfis.</p>
-          <label>Nome
-            <input type="text" id="signupName" autocomplete="name" required placeholder="Seu nome" />
-          </label>
-          <label>E-mail autorizado
-            <input type="email" id="signupEmail" autocomplete="email" required placeholder="seuemail@empresa.com" />
-          </label>
-          <label>Criar senha
-            <input type="password" id="signupPassword" autocomplete="new-password" required minlength="6" placeholder="Mínimo 6 caracteres" />
-          </label>
-          <button type="submit" class="primary-btn full-btn">Ativar meu acesso</button>
-        </form>
-
-        <p class="login-note" id="loginMessage">Administrador principal: DarciBrum3010@gmail.com</p>
-      </div>
+      <p class="login-note" id="loginMessage">Acesso restrito a usuários cadastrados.</p>
     </div>
   </section>
 
@@ -90,20 +44,20 @@
         <img src="assets/epya-emblema.svg" alt="Emblema EPYA" class="brand-logo" />
         <div>
           <span class="brand-eyebrow">EPYA</span>
-          <strong>Controle de Qualidade</strong>
-          <small>Responsável Darci Brum</small>
+          <strong>EPYA Infraestrutura</strong>
+          <small>Controle de Qualidade</small>
         </div>
       </div>
 
       <nav class="nav-list" id="navList">
-        <button class="nav-item active" data-tab="dashboard">Dashboard</button>
-        <button class="nav-item" data-tab="rdo">RDO</button>
-        <button class="nav-item" data-tab="despesas">Despesas mensais</button>
-        <button class="nav-item" data-tab="equipes">Equipes</button>
-        <button class="nav-item" data-tab="veiculo">Meu carro</button>
-        <button class="nav-item" data-tab="agenda">Agenda e lembretes</button>
-        <button class="nav-item" data-tab="usuarios" data-admin-only="true">Usuários e perfis</button>
-        <button class="nav-item" data-tab="backup">Backup / Supabase</button>
+        <button class="nav-item active" data-tab="dashboard" data-nav-icon="▦"><span>Dashboard</span></button>
+        <button class="nav-item" data-tab="rdo" data-nav-icon="▣"><span>RDO</span></button>
+        <button class="nav-item" data-tab="despesas" data-nav-icon="R$"><span>Despesas mensais</span></button>
+        <button class="nav-item" data-tab="equipes" data-nav-icon="◎"><span>Equipes</span></button>
+        <button class="nav-item" data-tab="veiculo" data-nav-icon="◇"><span>Meu carro</span></button>
+        <button class="nav-item" data-tab="agenda" data-nav-icon="◷"><span>Agenda e lembretes</span></button>
+        <button class="nav-item" data-tab="usuarios" data-admin-only="true" data-nav-icon="◉"><span>Usuários e perfis</span></button>
+        <button class="nav-item" data-tab="backup" data-nav-icon="⇅"><span>Backup / Supabase</span></button>
       </nav>
 
       <div class="sidebar-footer">
@@ -119,8 +73,15 @@
     </aside>
 
     <main class="main-content">
-      <header class="topbar">
-        <div>
+      <header class="topbar corporate-topbar">
+        <div class="topbar-title-area">
+          <div class="topbar-company">
+            <img src="assets/epya-emblema.svg" alt="Emblema EPYA" />
+            <div>
+              <strong>EPYA Infraestrutura</strong>
+              <small>Painel de Controle de Qualidade</small>
+            </div>
+          </div>
           <p class="page-kicker">Painel administrativo</p>
           <h1 id="pageTitle">Dashboard</h1>
         </div>
@@ -132,26 +93,37 @@
       </header>
 
       <section class="tab-panel active" id="dashboard" aria-labelledby="Dashboard">
-        <div class="hero-card">
+        <div class="hero-card corporate-hero">
           <div>
-            <span class="status-pill">Inspetor de Qualidade</span>
-            <h2>Controle diário de obra, equipes, despesas e lembretes.</h2>
-            <p>Feito para acompanhar RDO, colaboradores, gastos mensais, veículo e agenda operacional em um único painel.</p>
+            <span class="status-pill">Painel corporativo</span>
+            <h2>Dashboard executivo para acompanhar RDO, custos, visitas e evolução das frentes operacionais.</h2>
+            <p>Indicadores consolidados para inspeção de qualidade, rotina de campo, despesas e acompanhamento das equipes.</p>
           </div>
           <div class="hero-badge">
             <span>EPYA</span>
-            <strong>RDO</strong>
+            <strong>QA</strong>
           </div>
         </div>
 
         <div class="metrics-grid" id="metricsGrid"></div>
 
-        <div class="dashboard-grid">
+        <div class="dashboard-grid dashboard-grid-3">
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h3>RDOs por status</h3>
+                <p>Distribuição dos lançamentos registrados.</p>
+              </div>
+              <span class="mini-tag">RDO</span>
+            </div>
+            <canvas id="rdoChart" width="520" height="260" aria-label="Gráfico de RDO por status"></canvas>
+          </article>
+
           <article class="card wide-card">
             <div class="card-header">
               <div>
-                <h3>Despesas por mês</h3>
-                <p>Somatório de despesas gerais e gastos do veículo.</p>
+                <h3>Gastos por mês</h3>
+                <p>Somatório das despesas gerais e dos gastos do veículo.</p>
               </div>
               <span class="mini-tag">R$</span>
             </div>
@@ -161,11 +133,34 @@
           <article class="card">
             <div class="card-header">
               <div>
+                <h3>Visitas às equipes</h3>
+                <p>Total de visitas registradas por equipe.</p>
+              </div>
+              <span class="mini-tag">Visitas</span>
+            </div>
+            <canvas id="teamVisitsChart" width="520" height="260" aria-label="Gráfico de visitas às equipes"></canvas>
+          </article>
+        </div>
+
+        <div class="dashboard-grid dashboard-grid-side">
+          <article class="card">
+            <div class="card-header">
+              <div>
                 <h3>Próximos lembretes</h3>
                 <p>Alertas cadastrados na agenda.</p>
               </div>
             </div>
             <div id="upcomingReminders" class="stack-list"></div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h3>Resumo operacional</h3>
+                <p>Visão rápida do que foi lançado no sistema.</p>
+              </div>
+            </div>
+            <div id="dashboardSummary" class="stack-list"></div>
           </article>
         </div>
 
@@ -400,6 +395,12 @@
                 <option>Desligado</option>
               </select>
             </label>
+            <label>Última visita
+              <input type="date" id="teamLastVisitDate" />
+            </label>
+            <label>Visitas registradas
+              <input type="number" id="teamVisitCount" min="0" step="1" value="0" />
+            </label>
             <label class="full-span">Observações
               <textarea id="teamNotes" rows="2" placeholder="Treinamentos, restrições, habilidades, documentação."></textarea>
             </label>
@@ -427,6 +428,8 @@
                   <th>Encarregado</th>
                   <th>Equipe</th>
                   <th>Status</th>
+                  <th>Visitas</th>
+                  <th>Última visita</th>
                   <th>Ações</th>
                 </tr>
               </thead>
@@ -642,6 +645,8 @@
                   <th>E-mail</th>
                   <th>Perfil</th>
                   <th>Status</th>
+                  <th>Visitas</th>
+                  <th>Última visita</th>
                   <th>Ações</th>
                 </tr>
               </thead>
