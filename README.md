@@ -1,48 +1,53 @@
-# Ferrovia Engenharia — Site institucional premium
+# EPYA Controle de Qualidade - Darci Brum
 
-Projeto em **HTML, CSS e JavaScript puro**, pronto para publicar no **GitHub Pages**.
+Sistema web estático para controle operacional de inspeção de qualidade, RDO, despesas, equipes, veículo, agenda e perfis de usuários.
 
-## O que vem no projeto
+## Como abrir
 
-- `index.html` — página institucional moderna e corporativa.
-- `controle.html` — área de controle operacional com:
-  - controle de equipes;
-  - abastecimentos;
-  - gastos mensais;
-  - KPIs;
-  - gráficos;
-  - formulários para novos lançamentos;
-  - exportação CSV.
-- `css/style.css` — identidade visual premium com preto, grafite, cinza claro e amarelo/dourado.
-- `js/app.js` — menu mobile, header fixo e navegação.
-- `js/data.js` — dados demonstrativos editáveis.
-- `js/controle.js` — lógica do dashboard operacional.
-- `assets/` — logo e imagens vetoriais de ferrovia, trilhos, viadutos e manutenção.
+1. Extraia o arquivo `.zip`.
+2. Abra `index.html` no navegador.
+3. O sistema salva os dados no próprio navegador usando `localStorage`.
+4. Para evitar bloqueios de arquivos locais, também é possível rodar com um servidor simples:
 
-## Como editar os dados
-
-Edite o arquivo:
-
-```txt
-js/data.js
+```bash
+python -m http.server 8080
 ```
 
-Você pode trocar nomes de equipes, locais, supervisores, gastos e abastecimentos.
+Depois acesse `http://localhost:8080`.
 
-A página `controle.html` também permite adicionar abastecimentos e gastos direto pelo navegador. Esses lançamentos são salvos via `localStorage`, ou seja, ficam no navegador usado.
+## O que já está pronto
 
-## Como publicar no GitHub Pages
+- Dashboard com indicadores e gráfico mensal.
+- Aba de RDO com anexos, ocorrências, segurança e qualidade.
+- Aba de despesas mensais com comprovantes e exportação CSV.
+- Aba de colaboradores/equipes de encarregados.
+- Aba de controle do carro: modelo, placa, odômetro e gastos.
+- Agenda com lembrete por data e hora.
+- Perfis de usuários: administrador, inspetor, encarregado e consulta.
+- Backup/importação JSON.
+- Layout responsivo com identidade visual inspirada na EPYA.
+- Arquivo SQL para Supabase.
 
-1. Crie um repositório no GitHub.
-2. Envie todos os arquivos deste projeto para o repositório.
-3. Vá em **Settings**.
-4. Acesse **Pages**.
-5. Em **Build and deployment**, escolha:
-   - Source: `Deploy from a branch`
-   - Branch: `main`
-   - Folder: `/root`
-6. Salve e aguarde o link do GitHub Pages.
+## Importante sobre anexos e lembretes
 
-## Observação
+No modo local, arquivos pequenos são salvos dentro do navegador. Para uso real em produção, use Supabase Storage.
 
-Os nomes, indicadores, clientes e dados de controle são demonstrativos. Troque pelos dados reais da sua empresa antes de publicar oficialmente.
+Os lembretes funcionam enquanto o site estiver aberto. O navegador precisa permitir notificações. Para alertas mesmo com o site fechado, será necessário backend, PWA com service worker avançado ou automação externa.
+
+## Como migrar para Supabase
+
+1. Crie um projeto no Supabase.
+2. Abra o SQL Editor.
+3. Execute o arquivo `supabase_schema.sql`.
+4. Crie os usuários pelo Supabase Auth.
+5. Cadastre cada usuário na tabela `profiles` com o papel correto.
+6. Substitua, no `js/app.js`, as funções `loadState`, `saveState`, `upsert` e `removeItem` por chamadas ao Supabase.
+7. Envie anexos para o bucket `epya-anexos`.
+
+## Segurança
+
+O controle de usuários dentro desta versão local é apenas organizacional. Ele não protege dados de verdade. Para permissões reais, use Supabase Auth + RLS, conforme o SQL incluso.
+
+## Personalização da marca
+
+Não foi localizado, junto ao pacote, um manual oficial de identidade com códigos HEX públicos. Por isso a paleta foi montada com amarelo, preto e cinza escuro inspirados na presença visual pública da EPYA.

@@ -3,326 +3,626 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ferrovia Engenharia | Infraestrutura Ferroviária</title>
-  <meta name="description" content="Site institucional premium para empresa brasileira de engenharia e infraestrutura ferroviária." />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css" />
+  <meta name="theme-color" content="#f3c229" />
+  <title>EPYA | Controle de Qualidade - Darci Brum</title>
+  <link rel="icon" href="assets/epya-emblema.svg" type="image/svg+xml" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <header class="site-header" id="topo">
-    <div class="container header-inner">
-      <a href="index.html" class="brand" aria-label="Página inicial">
-        <img src="assets/logo.svg" alt="Ferrovia Engenharia" />
-      </a>
+  <noscript>Este sistema precisa de JavaScript ativado para salvar os registros no navegador.</noscript>
 
-      <button class="menu-toggle" aria-label="Abrir menu" aria-expanded="false">
-        <span></span><span></span><span></span>
-      </button>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Menu principal">
+      <div class="brand-block">
+        <img src="assets/epya-emblema.svg" alt="Emblema EPYA" class="brand-logo" />
+        <div>
+          <span class="brand-eyebrow">EPYA</span>
+          <strong>Controle de Qualidade</strong>
+          <small>Responsável Darci Brum</small>
+        </div>
+      </div>
 
-      <nav class="main-nav" aria-label="Menu principal">
-        <a href="#home">Home</a>
-        <a href="#quem-somos">Quem Somos</a>
-        <a href="#servicos">Serviços</a>
-        <a href="#portfolio">Portfólio</a>
-        <a href="#clientes">Clientes</a>
-        <a href="#trabalhe">Trabalhe Conosco</a>
-        <a class="nav-cta" href="controle.html">Controle</a>
+      <nav class="nav-list" id="navList">
+        <button class="nav-item active" data-tab="dashboard">Dashboard</button>
+        <button class="nav-item" data-tab="rdo">RDO</button>
+        <button class="nav-item" data-tab="despesas">Despesas mensais</button>
+        <button class="nav-item" data-tab="equipes">Equipes</button>
+        <button class="nav-item" data-tab="veiculo">Meu carro</button>
+        <button class="nav-item" data-tab="agenda">Agenda e lembretes</button>
+        <button class="nav-item" data-tab="usuarios" data-admin-only="true">Usuários e perfis</button>
+        <button class="nav-item" data-tab="backup">Backup / Supabase</button>
       </nav>
-    </div>
-  </header>
 
-  <main>
-    <section class="hero" id="home" aria-label="Apresentação institucional">
-      <div class="hero-media" role="img" aria-label="Trilhos ferroviários e infraestrutura pesada"></div>
-      <div class="hero-overlay"></div>
-      <div class="container hero-content">
-        <div class="hero-kicker">
-          <span></span>
-          Engenharia ferroviária brasileira
-        </div>
-        <h1>Movemos o futuro sobre trilhos.</h1>
-        <p>
-          Soluções técnicas em infraestrutura ferroviária, manutenção, conservação e execução em campo com segurança operacional, precisão e compromisso com resultados.
-        </p>
-        <div class="hero-actions">
-          <a class="btn btn-primary" href="#servicos">Conheça nossas soluções</a>
-          <a class="btn btn-outline-light" href="#portfolio">Ver portfólio</a>
-        </div>
+      <div class="sidebar-footer">
+        <label for="activeUserSelect">Usuário ativo</label>
+        <select id="activeUserSelect"></select>
+        <p class="hint">Sistema local com estrutura pronta para Supabase.</p>
       </div>
-      <div class="hero-stat-card" aria-label="Indicadores institucionais">
-        <strong>24/7</strong>
-        <span>Operação, segurança e resposta em campo</span>
-      </div>
-    </section>
+    </aside>
 
-    <section class="section metrics-strip" aria-label="Indicadores de autoridade">
-      <div class="container metrics-grid">
+    <main class="main-content">
+      <header class="topbar">
         <div>
-          <strong>+1.200 km</strong>
-          <span>de malha monitorada</span>
+          <p class="page-kicker">Painel administrativo</p>
+          <h1 id="pageTitle">Dashboard</h1>
         </div>
-        <div>
-          <strong>98%</strong>
-          <span>de aderência operacional</span>
+        <div class="topbar-actions">
+          <button class="ghost-btn" id="notificationButton">Ativar notificações</button>
+          <button class="primary-btn" id="quickRdoButton">Novo RDO</button>
         </div>
-        <div>
-          <strong>+350</strong>
-          <span>intervenções técnicas/ano</span>
-        </div>
-        <div>
-          <strong>Zero</strong>
-          <span>tolerância a desvios de segurança</span>
-        </div>
-      </div>
-    </section>
+      </header>
 
-    <section class="section purposes" id="quem-somos">
-      <div class="container">
-        <div class="section-heading">
-          <div class="section-marker"></div>
+      <section class="tab-panel active" id="dashboard" aria-labelledby="Dashboard">
+        <div class="hero-card">
           <div>
-            <span class="eyebrow">Propósitos</span>
-            <h2>Engenharia com precisão, segurança e responsabilidade nacional.</h2>
+            <span class="status-pill">Inspetor de Qualidade</span>
+            <h2>Controle diário de obra, equipes, despesas e lembretes.</h2>
+            <p>Feito para acompanhar RDO, colaboradores, gastos mensais, veículo e agenda operacional em um único painel.</p>
+          </div>
+          <div class="hero-badge">
+            <span>EPYA</span>
+            <strong>RDO</strong>
           </div>
         </div>
 
-        <div class="purpose-grid">
-          <article class="purpose-card">
-            <div class="icon-line" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M4 18h16M6 15l4-8 4 5 2-3 2 6"/></svg>
-            </div>
-            <h3>Excelência técnica</h3>
-            <p>Metodologias de engenharia, controle de qualidade e padronização operacional para entregas de alto desempenho.</p>
-          </article>
-          <article class="purpose-card">
-            <div class="icon-line" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 3l8 4v6c0 5-3.5 7.5-8 8-4.5-.5-8-3-8-8V7l8-4zM9 12l2 2 4-5"/></svg>
-            </div>
-            <h3>Segurança operacional</h3>
-            <p>Atuação preventiva, equipes treinadas e rotinas de campo orientadas à proteção de pessoas, ativos e operação.</p>
-          </article>
-          <article class="purpose-card">
-            <div class="icon-line" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M3 12h4M17 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>
-            </div>
-            <h3>Inovação aplicada</h3>
-            <p>Uso de dados, inspeções técnicas, indicadores operacionais e tecnologia para aumentar previsibilidade e eficiência.</p>
-          </article>
-          <article class="purpose-card">
-            <div class="icon-line" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-7M20 16V6"/></svg>
-            </div>
-            <h3>Compromisso com resultados</h3>
-            <p>Planejamento, produtividade e gestão de recursos para transformar estratégia em execução real no trecho ferroviário.</p>
-          </article>
-          <article class="purpose-card">
-            <div class="icon-line" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 3l7 4v6c0 4.5-3 7-7 8-4-1-7-3.5-7-8V7l7-4zM9 12h6M9 16h6M9 8h6"/></svg>
-            </div>
-            <h3>Ética e transparência</h3>
-            <p>Governança, conformidade documental e comunicação objetiva com clientes, comunidades e parceiros estratégicos.</p>
-          </article>
-          <article class="purpose-card">
-            <div class="icon-line" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M5 19c7 0 14-5 14-14-7 0-14 4-14 14zM5 19c1-4 5-8 10-10"/></svg>
-            </div>
-            <h3>Sustentabilidade</h3>
-            <p>Projetos que reduzem desperdícios, preservam o entorno e contribuem para uma matriz logística mais eficiente.</p>
-          </article>
-          <article class="purpose-card wide-card">
-            <div class="icon-line" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M3 18h18M5 18V9l7-4 7 4v9M8 18v-6h8v6M10 12v6M14 12v6"/></svg>
-            </div>
-            <h3>Desenvolvimento nacional</h3>
-            <p>Atuação voltada à expansão da infraestrutura brasileira, apoiando corredores logísticos, integração regional e crescimento econômico.</p>
-          </article>
-        </div>
-      </div>
-    </section>
+        <div class="metrics-grid" id="metricsGrid"></div>
 
-    <section class="section about-block">
-      <div class="container split-grid">
-        <div class="text-panel">
-          <span class="eyebrow">Onde a engenharia encontra propósito</span>
-          <h2>Execução técnica para ambientes complexos, ativos críticos e grandes operações ferroviárias.</h2>
-          <p>
-            Integramos planejamento, engenharia de campo, controle de equipes, manutenção de via permanente, conservação estrutural e gestão de indicadores para garantir disponibilidade, segurança e performance em cada trecho atendido.
-          </p>
-          <a class="btn btn-secondary" href="#trabalhe">Sobre nós</a>
-        </div>
-        <div class="engineering-panel" aria-label="Bloco visual de engenharia ferroviária">
-          <div class="panel-card top-card">
-            <span>Inspeção técnica</span>
-            <strong>Checklists digitais e rotinas de conformidade</strong>
-          </div>
-          <div class="panel-card bottom-card">
-            <span>Gestão de ativos</span>
-            <strong>Manutenção preditiva, corretiva e preventiva</strong>
-          </div>
-          <div class="rail-diagram" aria-hidden="true">
-            <span></span><span></span><span></span><span></span><span></span>
-          </div>
-        </div>
-      </div>
-    </section>
+        <div class="dashboard-grid">
+          <article class="card wide-card">
+            <div class="card-header">
+              <div>
+                <h3>Despesas por mês</h3>
+                <p>Somatório de despesas gerais e gastos do veículo.</p>
+              </div>
+              <span class="mini-tag">R$</span>
+            </div>
+            <canvas id="expensesChart" width="900" height="260" aria-label="Gráfico de despesas por mês"></canvas>
+          </article>
 
-    <section class="section services" id="servicos">
-      <div class="container">
-        <div class="section-heading compact">
-          <div class="section-marker"></div>
-          <div>
-            <span class="eyebrow">Nossos serviços</span>
-            <h2>O que entregamos em campo</h2>
-          </div>
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h3>Próximos lembretes</h3>
+                <p>Alertas cadastrados na agenda.</p>
+              </div>
+            </div>
+            <div id="upcomingReminders" class="stack-list"></div>
+          </article>
         </div>
 
-        <div class="service-grid">
-          <article class="service-card service-card-large">
-            <div class="service-number">01</div>
-            <h3>Manutenção e conservação de ferrovias</h3>
-            <p>
-              Conservação de via permanente, substituição de componentes, correção geométrica, limpeza, inspeções operacionais e resposta técnica para preservar a disponibilidade da malha.
-            </p>
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Últimos RDOs lançados</h3>
+              <p>Resumo rápido dos registros recentes.</p>
+            </div>
+            <button class="small-btn" data-open-tab="rdo">Ver RDO</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Frente/Obra</th>
+                  <th>Local</th>
+                  <th>Status</th>
+                  <th>Responsável</th>
+                </tr>
+              </thead>
+              <tbody id="recentRdoTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="rdo" aria-labelledby="RDO">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Anotações de RDO</h3>
+              <p>Registre dados diários de frente de serviço, ocorrências, segurança e qualidade.</p>
+            </div>
+            <button class="small-btn" id="clearRdoForm">Limpar formulário</button>
+          </div>
+
+          <form id="rdoForm" class="form-grid">
+            <input type="hidden" id="rdoId" />
+            <label>Data
+              <input type="date" id="rdoDate" required />
+            </label>
+            <label>Turno
+              <select id="rdoShift">
+                <option>Diurno</option>
+                <option>Noturno</option>
+                <option>Integral</option>
+              </select>
+            </label>
+            <label>Frente / Obra
+              <input type="text" id="rdoProject" placeholder="Ex.: Revitalização, manutenção, via permanente" required />
+            </label>
+            <label>Local
+              <input type="text" id="rdoLocation" placeholder="Cidade, pátio, trecho, km" />
+            </label>
+            <label>Condição climática
+              <select id="rdoWeather">
+                <option>Sol</option>
+                <option>Nublado</option>
+                <option>Chuva</option>
+                <option>Frio</option>
+                <option>Calor intenso</option>
+              </select>
+            </label>
+            <label>Status do dia
+              <select id="rdoStatus">
+                <option>Em andamento</option>
+                <option>Concluído</option>
+                <option>Pendente</option>
+                <option>Interrompido</option>
+              </select>
+            </label>
+            <label class="full-span">Atividades executadas
+              <textarea id="rdoActivities" rows="4" placeholder="Descreva as atividades do dia, equipes envolvidas e principais medições."></textarea>
+            </label>
+            <label class="full-span">Ocorrências / Não conformidades
+              <textarea id="rdoIssues" rows="3" placeholder="Informe desvios, restrições, riscos, atrasos ou pendências."></textarea>
+            </label>
+            <label class="full-span">Observações de segurança e qualidade
+              <textarea id="rdoQuality" rows="3" placeholder="EPIs, liberação de frente, inspeções, ações corretivas e pontos de atenção."></textarea>
+            </label>
+            <label class="full-span">Anexos do RDO
+              <input type="file" id="rdoAttachment" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" />
+              <small>Arquivos pequenos podem ser salvos no navegador. Para produção, use Supabase Storage.</small>
+            </label>
+            <div class="form-actions full-span">
+              <button type="submit" class="primary-btn">Salvar RDO</button>
+              <button type="button" class="ghost-btn" id="exportRdoCsv">Exportar CSV</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Registros de RDO</h3>
+              <p>Edite, exclua ou consulte os registros lançados.</p>
+            </div>
+            <input class="search-input" id="rdoSearch" placeholder="Buscar RDO..." />
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Frente/Obra</th>
+                  <th>Local</th>
+                  <th>Status</th>
+                  <th>Anexos</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="rdoTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="despesas" aria-labelledby="Despesas mensais">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Despesas mensais</h3>
+              <p>Controle alimentação, hospedagem, ferramentas, materiais, deslocamentos e outros gastos.</p>
+            </div>
+          </div>
+          <form id="expenseForm" class="form-grid compact-form">
+            <input type="hidden" id="expenseId" />
+            <label>Data
+              <input type="date" id="expenseDate" required />
+            </label>
+            <label>Categoria
+              <select id="expenseCategory">
+                <option>Alimentação</option>
+                <option>Hospedagem</option>
+                <option>Material</option>
+                <option>Ferramenta</option>
+                <option>Pedágio</option>
+                <option>Combustível</option>
+                <option>Outros</option>
+              </select>
+            </label>
+            <label>Fornecedor
+              <input type="text" id="expenseSupplier" placeholder="Empresa / posto / loja" />
+            </label>
+            <label>Valor
+              <input type="number" id="expenseValue" min="0" step="0.01" placeholder="0,00" required />
+            </label>
+            <label>Forma de pagamento
+              <select id="expensePayment">
+                <option>Dinheiro</option>
+                <option>Pix</option>
+                <option>Cartão</option>
+                <option>Boleto</option>
+                <option>Reembolso</option>
+              </select>
+            </label>
+            <label>Comprovante
+              <input type="file" id="expenseAttachment" accept="image/*,.pdf" />
+            </label>
+            <label class="full-span">Descrição
+              <textarea id="expenseDescription" rows="2" placeholder="Detalhe o motivo da despesa."></textarea>
+            </label>
+            <div class="form-actions full-span">
+              <button type="submit" class="primary-btn">Salvar despesa</button>
+              <button type="button" class="ghost-btn" id="exportExpenseCsv">Exportar CSV</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Resumo de despesas</h3>
+              <p>Total filtrado por mês.</p>
+            </div>
+            <input type="month" id="expenseMonthFilter" />
+          </div>
+          <div class="total-strip">
+            <span>Total do mês</span>
+            <strong id="expenseMonthTotal">R$ 0,00</strong>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Categoria</th>
+                  <th>Fornecedor</th>
+                  <th>Valor</th>
+                  <th>Comprovante</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="expenseTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="equipes" aria-labelledby="Equipes">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Colaboradores das equipes de encarregados</h3>
+              <p>Cadastre nomes, funções, encarregados, contatos e status de cada equipe.</p>
+            </div>
+          </div>
+          <form id="teamForm" class="form-grid compact-form">
+            <input type="hidden" id="teamId" />
+            <label>Nome do colaborador
+              <input type="text" id="teamName" required />
+            </label>
+            <label>Função
+              <input type="text" id="teamRole" placeholder="Ex.: Inspetor, ajudante, operador" />
+            </label>
+            <label>Encarregado
+              <input type="text" id="teamLeader" placeholder="Nome do encarregado" />
+            </label>
+            <label>Equipe / Frente
+              <input type="text" id="teamGroup" placeholder="Ex.: Equipe A, Via Permanente" />
+            </label>
+            <label>Telefone
+              <input type="tel" id="teamPhone" placeholder="(00) 00000-0000" />
+            </label>
+            <label>Status
+              <select id="teamStatus">
+                <option>Ativo</option>
+                <option>Férias</option>
+                <option>Afastado</option>
+                <option>Desligado</option>
+              </select>
+            </label>
+            <label class="full-span">Observações
+              <textarea id="teamNotes" rows="2" placeholder="Treinamentos, restrições, habilidades, documentação."></textarea>
+            </label>
+            <div class="form-actions full-span">
+              <button type="submit" class="primary-btn">Salvar colaborador</button>
+              <button type="button" class="ghost-btn" id="exportTeamCsv">Exportar CSV</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Lista de colaboradores</h3>
+              <p>Controle operacional das equipes.</p>
+            </div>
+            <input class="search-input" id="teamSearch" placeholder="Buscar colaborador..." />
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Função</th>
+                  <th>Encarregado</th>
+                  <th>Equipe</th>
+                  <th>Status</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="teamTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="veiculo" aria-labelledby="Meu carro">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Controle do meu carro</h3>
+              <p>Registre modelo, placa, quilometragem e gastos de uso.</p>
+            </div>
+          </div>
+          <form id="vehicleProfileForm" class="form-grid compact-form profile-form">
+            <label>Modelo
+              <input type="text" id="vehicleModel" placeholder="Ex.: HB20 1.0 Comfort" />
+            </label>
+            <label>Placa
+              <input type="text" id="vehiclePlate" placeholder="ABC1D23" maxlength="8" />
+            </label>
+            <label>Cor
+              <input type="text" id="vehicleColor" />
+            </label>
+            <label>Odômetro atual
+              <input type="number" id="vehicleOdometer" min="0" />
+            </label>
+            <div class="form-actions full-span">
+              <button type="submit" class="primary-btn">Salvar dados do carro</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Gastos do veículo</h3>
+              <p>Combustível, manutenção, seguro, pedágio, limpeza, multas e outros.</p>
+            </div>
+          </div>
+          <form id="vehicleCostForm" class="form-grid compact-form">
+            <input type="hidden" id="vehicleCostId" />
+            <label>Data
+              <input type="date" id="vehicleCostDate" required />
+            </label>
+            <label>Tipo de gasto
+              <select id="vehicleCostType">
+                <option>Combustível</option>
+                <option>Manutenção</option>
+                <option>Pedágio</option>
+                <option>Seguro</option>
+                <option>Estacionamento</option>
+                <option>Lavagem</option>
+                <option>Multa</option>
+                <option>Outros</option>
+              </select>
+            </label>
+            <label>Valor
+              <input type="number" id="vehicleCostValue" min="0" step="0.01" required />
+            </label>
+            <label>Km/Odômetro
+              <input type="number" id="vehicleCostKm" min="0" />
+            </label>
+            <label>Comprovante
+              <input type="file" id="vehicleAttachment" accept="image/*,.pdf" />
+            </label>
+            <label class="full-span">Descrição
+              <textarea id="vehicleCostDescription" rows="2"></textarea>
+            </label>
+            <div class="form-actions full-span">
+              <button type="submit" class="primary-btn">Salvar gasto</button>
+              <button type="button" class="ghost-btn" id="exportVehicleCsv">Exportar CSV</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Resumo do veículo</h3>
+              <p id="vehicleSummary">Nenhum veículo cadastrado.</p>
+            </div>
+            <strong id="vehicleTotal" class="value-highlight">R$ 0,00</strong>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Tipo</th>
+                  <th>Valor</th>
+                  <th>Km</th>
+                  <th>Comprovante</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="vehicleCostTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="agenda" aria-labelledby="Agenda e lembretes">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Agenda com lembretes</h3>
+              <p>Cadastre prazos, inspeções, reuniões, vencimentos e alertas importantes.</p>
+            </div>
+          </div>
+          <form id="agendaForm" class="form-grid compact-form">
+            <input type="hidden" id="agendaId" />
+            <label>Título
+              <input type="text" id="agendaTitle" placeholder="Ex.: Inspeção de qualidade no trecho" required />
+            </label>
+            <label>Data e hora do lembrete
+              <input type="datetime-local" id="agendaDateTime" required />
+            </label>
+            <label>Prioridade
+              <select id="agendaPriority">
+                <option>Normal</option>
+                <option>Alta</option>
+                <option>Crítica</option>
+              </select>
+            </label>
+            <label>Status
+              <select id="agendaStatus">
+                <option>Pendente</option>
+                <option>Concluído</option>
+                <option>Adiado</option>
+              </select>
+            </label>
+            <label class="full-span">Anotações importantes
+              <textarea id="agendaNotes" rows="3" placeholder="Detalhes, local, pessoas envolvidas e materiais necessários."></textarea>
+            </label>
+            <div class="form-actions full-span">
+              <button type="submit" class="primary-btn">Salvar lembrete</button>
+              <button type="button" class="ghost-btn" id="exportAgendaCsv">Exportar CSV</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Compromissos cadastrados</h3>
+              <p>O alerta aparece enquanto o site estiver aberto. Permita notificações no navegador.</p>
+            </div>
+            <select id="agendaFilter" class="search-input">
+              <option value="all">Todos</option>
+              <option value="pending">Pendentes</option>
+              <option value="today">Hoje</option>
+              <option value="overdue">Vencidos</option>
+            </select>
+          </div>
+          <div id="agendaList" class="agenda-list"></div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="usuarios" aria-labelledby="Usuários e perfis">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Usuários e perfis</h3>
+              <p>Crie perfis para outros usuários alimentarem os dados diariamente. No modo local, isso é organizacional; no Supabase, vira controle real com autenticação.</p>
+            </div>
+          </div>
+          <form id="userForm" class="form-grid compact-form">
+            <input type="hidden" id="userId" />
+            <label>Nome
+              <input type="text" id="userName" required />
+            </label>
+            <label>E-mail
+              <input type="email" id="userEmail" placeholder="usuario@empresa.com" />
+            </label>
+            <label>Perfil
+              <select id="userRole">
+                <option value="admin">Administrador</option>
+                <option value="inspetor">Inspetor de Qualidade</option>
+                <option value="encarregado">Encarregado</option>
+                <option value="consulta">Consulta</option>
+              </select>
+            </label>
+            <label>Status
+              <select id="userStatus">
+                <option>Ativo</option>
+                <option>Inativo</option>
+              </select>
+            </label>
+            <label class="full-span">Permissões / Observações
+              <textarea id="userNotes" rows="2" placeholder="Ex.: Pode lançar RDO e despesas, somente consulta, etc."></textarea>
+            </label>
+            <div class="form-actions full-span">
+              <button type="submit" class="primary-btn">Salvar usuário</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Perfis cadastrados</h3>
+              <p>O responsável inicial é Darci Brum.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>E-mail</th>
+                  <th>Perfil</th>
+                  <th>Status</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="userTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="backup" aria-labelledby="Backup e Supabase">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Backup e restauração</h3>
+              <p>Exporte seus dados em JSON para guardar ou importar em outro computador.</p>
+            </div>
+          </div>
+          <div class="backup-actions">
+            <button class="primary-btn" id="exportBackup">Baixar backup JSON</button>
+            <label class="file-label">Importar backup JSON
+              <input type="file" id="importBackup" accept="application/json" />
+            </label>
+            <button class="danger-btn" id="resetDemo">Limpar todos os dados</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Preparado para Supabase</h3>
+              <p>O arquivo <strong>supabase_schema.sql</strong> acompanha este ZIP com as tabelas sugeridas.</p>
+            </div>
+          </div>
+          <div class="supabase-box">
+            <h4>Próxima etapa para virar multiusuário real</h4>
+            <p>Crie um projeto no Supabase, rode o SQL do pacote, configure autenticação e troque o armazenamento local por chamadas ao banco. O painel já foi separado por módulos para facilitar essa migração.</p>
             <ul>
-              <li>Manutenção preventiva e corretiva</li>
-              <li>Inspeção de trilhos, dormentes e fixações</li>
-              <li>Controle de equipes e produtividade</li>
+              <li>RDOs: tabela <code>rdos</code></li>
+              <li>Despesas: tabela <code>expenses</code></li>
+              <li>Equipes: tabela <code>team_members</code></li>
+              <li>Veículo: tabelas <code>vehicles</code> e <code>vehicle_costs</code></li>
+              <li>Agenda: tabela <code>agenda_items</code></li>
+              <li>Usuários/perfis: tabela <code>profiles</code></li>
             </ul>
-          </article>
-          <article class="service-card service-card-large dark-card">
-            <div class="service-number">02</div>
-            <h3>Infraestrutura de ferrovias</h3>
-            <p>
-              Obras civis, drenagem, contenções, viadutos, passagens, revitalizações e soluções de engenharia para expansão, modernização e recuperação de corredores ferroviários.
-            </p>
-            <ul>
-              <li>Projetos de campo e construção pesada</li>
-              <li>Revitalização de trechos críticos</li>
-              <li>Integração com segurança operacional</li>
-            </ul>
-          </article>
-        </div>
-
-        <div class="center-action">
-          <a href="controle.html" class="btn btn-primary">Soluções completas</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="section portfolio" id="portfolio">
-      <div class="container">
-        <div class="section-heading compact">
-          <div class="section-marker"></div>
-          <div>
-            <span class="eyebrow">Portfólio</span>
-            <h2>Projetos que refletem excelência em campo.</h2>
           </div>
-        </div>
+        </article>
+      </section>
+    </main>
+  </div>
 
-        <div class="portfolio-grid">
-          <article class="portfolio-card featured">
-            <img src="assets/portfolio-viaduto.svg" alt="Viaduto sobre linha ferroviária" />
-            <div class="portfolio-content">
-              <span>Obras civis</span>
-              <h3>Viadutos sobre linha ferroviária</h3>
-              <p>Projetos estruturais com foco em segurança, integração logística e precisão executiva.</p>
-            </div>
-          </article>
-          <article class="portfolio-card">
-            <img src="assets/portfolio-serra.svg" alt="Revitalização ferroviária em serra" />
-            <div class="portfolio-content">
-              <span>Revitalização</span>
-              <h3>Revitalização da Serra do Mar</h3>
-              <p>Recuperação de trechos críticos em ambientes complexos e de alta exigência técnica.</p>
-            </div>
-          </article>
-          <article class="portfolio-card">
-            <img src="assets/portfolio-manutencao.svg" alt="Manutenção de trilhos com máquinas de campo" />
-            <div class="portfolio-content">
-              <span>Manutenção</span>
-              <h3>Manutenção mecanizada de via</h3>
-              <p>Frentes de serviço integradas para inspeção, correção e conservação da malha.</p>
-            </div>
-          </article>
-          <article class="portfolio-card">
-            <img src="assets/portfolio-trilhos.svg" alt="Trilhos ferroviários e infraestrutura" />
-            <div class="portfolio-content">
-              <span>Infraestrutura</span>
-              <h3>Modernização de trilhos</h3>
-              <p>Intervenções planejadas para elevar disponibilidade, confiabilidade e vida útil dos ativos.</p>
-            </div>
-          </article>
-        </div>
-
-        <div class="center-action">
-          <a href="#clientes" class="btn btn-secondary">Portfólio completo</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="section clients" id="clientes">
-      <div class="container">
-        <div class="section-heading centered">
-          <span class="eyebrow">Clientes e parceiros</span>
-          <h2>Confiam na nossa infraestrutura!</h2>
-          <p>Grade demonstrativa para substituição pelos logos reais da empresa.</p>
-        </div>
-        <div class="logo-grid" aria-label="Logos de clientes demonstrativos">
-          <div>LOGÍSTICA SUL</div>
-          <div>BR RAIL</div>
-          <div>PORTOS & VIA</div>
-          <div>ENGEMALHA</div>
-          <div>MINERAÇÃO NORTE</div>
-          <div>CORREDOR ATLÂNTICO</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section careers" id="trabalhe">
-      <div class="container careers-box">
-        <div>
-          <span class="eyebrow">Trabalhe conosco</span>
-          <h2>Faça parte de uma equipe que constrói infraestrutura para o Brasil.</h2>
-          <p>Engenheiros, técnicos, operadores, líderes de campo e profissionais de segurança operacional encontram aqui projetos desafiadores e de impacto nacional.</p>
-        </div>
-        <a class="btn btn-primary" href="mailto:rh@ferroviaengenharia.com.br">Enviar currículo</a>
-      </div>
-    </section>
-  </main>
-
-  <footer class="site-footer">
-    <div class="container footer-grid">
-      <div>
-        <img src="assets/logo.svg" alt="Ferrovia Engenharia" class="footer-logo" />
-        <p>Infraestrutura ferroviária, manutenção de trilhos e engenharia de campo com segurança, precisão e solidez corporativa.</p>
-      </div>
-      <div>
-        <h3>Contato</h3>
-        <p>Av. Engenharia Ferroviária, 1200<br>Curitiba - PR, Brasil</p>
-        <p>Telefone: (41) 3000-0000<br>E-mail: contato@ferroviaengenharia.com.br</p>
-      </div>
-      <div>
-        <h3>Navegação</h3>
-        <a href="#quem-somos">Quem Somos</a>
-        <a href="#servicos">Serviços</a>
-        <a href="#portfolio">Portfólio</a>
-        <a href="controle.html">Controle operacional</a>
-      </div>
-      <div>
-        <h3>LinkedIn</h3>
-        <p>Conecte-se para acompanhar projetos, vagas e atualizações institucionais.</p>
-        <a class="footer-link" href="https://www.linkedin.com" target="_blank" rel="noreferrer">Acessar LinkedIn</a>
-      </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card">
+      <button id="closeModal" class="modal-close" aria-label="Fechar">×</button>
+      <h3 id="modalTitle">Detalhes</h3>
+      <div id="modalBody"></div>
     </div>
-    <div class="footer-bottom">
-      <div class="container">
-        <span>© 2026 Ferrovia Engenharia. Todos os direitos reservados.</span>
-        <span>Site demonstrativo pronto para GitHub Pages.</span>
-      </div>
-    </div>
-  </footer>
+  </div>
 
   <script src="js/app.js"></script>
 </body>

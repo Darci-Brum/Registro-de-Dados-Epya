@@ -1,40 +1,1125 @@
-const header = document.querySelector('.site-header');
-const toggle = document.querySelector('.menu-toggle');
-const nav = document.querySelector('.main-nav');
+(() => {
+  const STORAGE_KEY = 'epya-quality-control-v1';
+  const MAX_ATTACHMENT_SIZE = 2.5 * 1024 * 1024;
 
-function updateHeader() {
-  if (!header) return;
-  header.classList.toggle('is-scrolled', window.scrollY > 12);
-}
+  const defaultState = {
+    users: [
+      {
+        id: 'usr-darci-admin',
+        name: 'Darci Brum',
+        email: '',
+        role: 'admin',
+        status: 'Ativo',
+        notes: 'Responsável pelo painel de controle de qualidade EPYA.',
+        createdAt: new Date().toISOString(),
+      },
+    ],
+    activeUserId: 'usr-darci-admin',
+    rdos: [],
+    expenses: [],
+    teamMembers: [],
+    vehicle: {
+      model: '',
+      plate: '',
+      color: '',
+      odometer: '',
+    },
+    vehicleCosts: [],
+    agendaItems: [],
+  };
 
-window.addEventListener('scroll', updateHeader);
-updateHeader();
+  let state = loadState();
 
-if (toggle && nav) {
-  toggle.addEventListener('click', () => {
-    const isOpen = nav.classList.toggle('is-open');
-    toggle.classList.toggle('is-open', isOpen);
-    toggle.setAttribute('aria-expanded', String(isOpen));
-  });
+  const $ = (selector) => document.querySelector(selector);
+  const $$ = (selector) => [...document.querySelectorAll(selector)];
 
-  nav.querySelectorAll('a').forEach((link) => {
-    link.addEventListener('click', () => {
-      nav.classList.remove('is-open');
-      toggle.classList.remove('is-open');
-      toggle.setAttribute('aria-expanded', 'false');
+  const elements = {
+    pageTitle: $('#pageTitle'),
+    navList: $('#navList'),
+    activeUserSelect: $('#activeUserSelect'),
+    metricsGrid: $('#metricsGrid'),
+    upcomingReminders: $('#upcomingReminders'),
+    recentRdoTable: $('#recentRdoTable'),
+    expensesChart: $('#expensesChart'),
+    toast: $('#toast'),
+    modal: $('#modal'),
+    modalTitle: $('#modalTitle'),
+    modalBody: $('#modalBody'),
+  };
+
+  function loadState() {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (!saved) return structuredClone(defaultState);
+      const parsed = JSON.parse(saved);
+      return {
+        ...structuredClone(defaultState),
+        ...parsed,
+        vehicle: { ...defaultState.vehicle, ...(parsed.vehicle || {}) },
+      };
+    } catch (error) {
+      console.error('Erro ao carregar dados locais:', error);
+      return structuredClone(defaultState);
+    }
+  }
+
+  function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function uid(prefix = 'id') {
+    if (crypto?.randomUUID) return `${prefix}-${crypto.randomUUID()}`;
+    return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function pad(value) {
+    return String(value).padStart(2, '0');
+  }
+
+  function todayInput(date = new Date()) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  function monthInput(date = new Date()) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
+  }
+
+  function datetimeLocalInput(date = new Date()) {
+    return `${todayInput(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function formatDate(value) {
+    if (!value) return '-';
+    const date = new Date(`${value}T00:00:00`);
+    return date.toLocaleDateString('pt-BR');
+  }
+
+  function formatDateTime(value) {
+    if (!value) return '-';
+    return new Date(value).toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
     });
-  });
-}
+  }
 
-const sections = [...document.querySelectorAll('main section[id]')];
-const navLinks = [...document.querySelectorAll('.main-nav a[href^="#"]')];
+  function currency(value) {
+    return Number(value || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
+  }
 
-function setActiveLink() {
-  const current = sections.findLast((section) => window.scrollY >= section.offsetTop - 120);
-  navLinks.forEach((link) => {
-    link.classList.toggle('active', current && link.getAttribute('href') === `#${current.id}`);
-  });
-}
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
 
-window.addEventListener('scroll', setActiveLink);
-setActiveLink();
+  function normalizeText(value) {
+    return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  }
+
+  function getCurrentUser() {
+    return state.users.find((user) => user.id === state.activeUserId) || state.users[0];
+  }
+
+  function canEdit() {
+    return getCurrentUser()?.role !== 'consulta';
+  }
+
+  function assertCanEdit() {
+    if (canEdit()) return true;
+    toast('Este perfil é somente consulta. Troque para um perfil com permissão de lançamento.');
+    return false;
+  }
+
+  function toast(message) {
+    elements.toast.textContent = message;
+    elements.toast.classList.add('show');
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => elements.toast.classList.remove('show'), 3600);
+  }
+
+  function openModal(title, bodyHtml) {
+    elements.modalTitle.textContent = title;
+    elements.modalBody.innerHTML = bodyHtml;
+    elements.modal.hidden = false;
+  }
+
+  function closeModal() {
+    elements.modal.hidden = true;
+  }
+
+  async function readAttachments(input, existing = [], append = false) {
+    const files = [...(input?.files || [])];
+    if (!files.length) return append ? existing : existing;
+
+    const accepted = [];
+    for (const file of files) {
+      if (file.size > MAX_ATTACHMENT_SIZE) {
+        toast(`Arquivo ignorado por ser maior que 2,5MB: ${file.name}`);
+        continue;
+      }
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      accepted.push({
+        id: uid('file'),
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        dataUrl,
+        uploadedAt: new Date().toISOString(),
+      });
+    }
+    return append ? [...existing, ...accepted] : accepted;
+  }
+
+  function attachmentBadge(attachments = []) {
+    if (!attachments.length) return '<span class="badge warn">Sem anexo</span>';
+    return `<span class="badge ok">${attachments.length} anexo${attachments.length > 1 ? 's' : ''}</span>`;
+  }
+
+  function renderAttachmentLinks(attachments = []) {
+    if (!attachments.length) return '<span class="empty-state">Nenhum anexo salvo.</span>';
+    return `<div class="attachments-list">${attachments.map((file) => `<a href="${file.dataUrl}" download="${escapeHtml(file.name)}">${escapeHtml(file.name)}</a>`).join('')}</div>`;
+  }
+
+  function sortByDateDesc(list, field = 'date') {
+    return [...list].sort((a, b) => String(b[field] || '').localeCompare(String(a[field] || '')));
+  }
+
+  function setupNavigation() {
+    elements.navList.addEventListener('click', (event) => {
+      const button = event.target.closest('.nav-item');
+      if (!button) return;
+      openTab(button.dataset.tab);
+    });
+
+    document.body.addEventListener('click', (event) => {
+      const opener = event.target.closest('[data-open-tab]');
+      if (opener) openTab(opener.dataset.openTab);
+    });
+
+    $('#quickRdoButton').addEventListener('click', () => openTab('rdo'));
+  }
+
+  function openTab(tabId) {
+    $$('.nav-item').forEach((button) => button.classList.toggle('active', button.dataset.tab === tabId));
+    $$('.tab-panel').forEach((panel) => panel.classList.toggle('active', panel.id === tabId));
+    const nav = $(`.nav-item[data-tab="${tabId}"]`);
+    elements.pageTitle.textContent = nav?.textContent || 'Dashboard';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function renderUsersSelect() {
+    const current = getCurrentUser();
+    elements.activeUserSelect.innerHTML = state.users
+      .filter((user) => user.status === 'Ativo')
+      .map((user) => `<option value="${user.id}" ${user.id === current.id ? 'selected' : ''}>${escapeHtml(user.name)} — ${roleLabel(user.role)}</option>`)
+      .join('');
+
+    $$('.nav-item[data-admin-only="true"]').forEach((item) => {
+      item.style.display = current.role === 'admin' ? '' : 'none';
+      if (item.classList.contains('active') && current.role !== 'admin') openTab('dashboard');
+    });
+  }
+
+  function roleLabel(role) {
+    const labels = {
+      admin: 'Administrador',
+      inspetor: 'Inspetor',
+      encarregado: 'Encarregado',
+      consulta: 'Consulta',
+    };
+    return labels[role] || role;
+  }
+
+  function currentUserStamp() {
+    const user = getCurrentUser();
+    return user ? user.name : 'Não informado';
+  }
+
+  function renderDashboard() {
+    const now = new Date();
+    const currentMonth = monthInput(now);
+    const expensesThisMonth = state.expenses
+      .filter((item) => item.date?.startsWith(currentMonth))
+      .reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const vehicleThisMonth = state.vehicleCosts
+      .filter((item) => item.date?.startsWith(currentMonth))
+      .reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const activeTeam = state.teamMembers.filter((member) => member.status === 'Ativo').length;
+    const pendingReminders = state.agendaItems.filter((item) => item.status !== 'Concluído' && new Date(item.dateTime) >= now).length;
+    const monthRdos = state.rdos.filter((item) => item.date?.startsWith(currentMonth)).length;
+
+    const metrics = [
+      { label: 'RDOs no mês', value: monthRdos },
+      { label: 'Despesas no mês', value: currency(expensesThisMonth) },
+      { label: 'Gastos do carro', value: currency(vehicleThisMonth) },
+      { label: 'Colaboradores ativos', value: activeTeam },
+      { label: 'Lembretes pendentes', value: pendingReminders },
+    ];
+
+    elements.metricsGrid.innerHTML = metrics.map((metric) => `
+      <div class="metric-card">
+        <small>${escapeHtml(metric.label)}</small>
+        <strong>${escapeHtml(metric.value)}</strong>
+      </div>
+    `).join('');
+
+    elements.upcomingReminders.innerHTML = upcomingAgendaItems(5).map((item) => `
+      <div class="stack-item">
+        <strong>${escapeHtml(item.title)}</strong>
+        <small>${formatDateTime(item.dateTime)} • ${escapeHtml(item.priority)}</small>
+      </div>
+    `).join('') || '<p class="empty-state">Nenhum lembrete pendente.</p>';
+
+    elements.recentRdoTable.innerHTML = sortByDateDesc(state.rdos).slice(0, 6).map((rdo) => `
+      <tr>
+        <td>${formatDate(rdo.date)}</td>
+        <td>${escapeHtml(rdo.project)}</td>
+        <td>${escapeHtml(rdo.location || '-')}</td>
+        <td>${statusBadge(rdo.status)}</td>
+        <td>${escapeHtml(rdo.createdBy || '-')}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="5" class="empty-state">Nenhum RDO lançado ainda.</td></tr>';
+
+    drawExpensesChart();
+  }
+
+  function upcomingAgendaItems(limit = 10) {
+    const now = new Date();
+    return [...state.agendaItems]
+      .filter((item) => item.status !== 'Concluído' && new Date(item.dateTime) >= now)
+      .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime))
+      .slice(0, limit);
+  }
+
+  function statusBadge(status) {
+    const normalized = normalizeText(status);
+    let kind = 'warn';
+    if (normalized.includes('concluido') || normalized.includes('ativo')) kind = 'ok';
+    if (normalized.includes('interrompido') || normalized.includes('critica') || normalized.includes('desligado')) kind = 'danger';
+    return `<span class="badge ${kind}">${escapeHtml(status || '-')}</span>`;
+  }
+
+  function drawExpensesChart() {
+    const canvas = elements.expensesChart;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+
+    const months = [];
+    const base = new Date();
+    for (let index = 5; index >= 0; index -= 1) {
+      const date = new Date(base.getFullYear(), base.getMonth() - index, 1);
+      months.push(monthInput(date));
+    }
+
+    const values = months.map((month) => {
+      const general = state.expenses.filter((item) => item.date?.startsWith(month)).reduce((sum, item) => sum + Number(item.value || 0), 0);
+      const vehicle = state.vehicleCosts.filter((item) => item.date?.startsWith(month)).reduce((sum, item) => sum + Number(item.value || 0), 0);
+      return general + vehicle;
+    });
+
+    const max = Math.max(...values, 100);
+    const padding = 38;
+    const barGap = 26;
+    const barWidth = (width - padding * 2 - barGap * (months.length - 1)) / months.length;
+
+    ctx.strokeStyle = '#e1e4e8';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padding, height - padding);
+    ctx.lineTo(width - padding, height - padding);
+    ctx.stroke();
+
+    months.forEach((month, index) => {
+      const x = padding + index * (barWidth + barGap);
+      const barHeight = (values[index] / max) * (height - padding * 2 - 18);
+      const y = height - padding - barHeight;
+      const gradient = ctx.createLinearGradient(0, y, 0, height - padding);
+      gradient.addColorStop(0, '#f3c229');
+      gradient.addColorStop(1, '#c99a0e');
+      ctx.fillStyle = gradient;
+      roundRect(ctx, x, y, barWidth, barHeight, 8);
+      ctx.fill();
+
+      ctx.fillStyle = '#676b73';
+      ctx.font = '13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(month.split('-').reverse().join('/'), x + barWidth / 2, height - 13);
+      ctx.fillStyle = '#26272b';
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      if (values[index] > 0) ctx.fillText(currency(values[index]), x + barWidth / 2, Math.max(18, y - 8));
+    });
+  }
+
+  function roundRect(ctx, x, y, width, height, radius) {
+    const r = Math.min(radius, width / 2, height / 2 || radius);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + width, y, x + width, y + height, r);
+    ctx.arcTo(x + width, y + height, x, y + height, r);
+    ctx.arcTo(x, y + height, x, y, r);
+    ctx.arcTo(x, y, x + width, y, r);
+    ctx.closePath();
+  }
+
+  function setupRdo() {
+    $('#rdoDate').value = todayInput();
+
+    $('#rdoForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!assertCanEdit()) return;
+      const id = $('#rdoId').value || uid('rdo');
+      const existing = state.rdos.find((item) => item.id === id);
+      const attachments = await readAttachments($('#rdoAttachment'), existing?.attachments || [], true);
+      const rdo = {
+        id,
+        date: $('#rdoDate').value,
+        shift: $('#rdoShift').value,
+        project: $('#rdoProject').value.trim(),
+        location: $('#rdoLocation').value.trim(),
+        weather: $('#rdoWeather').value,
+        status: $('#rdoStatus').value,
+        activities: $('#rdoActivities').value.trim(),
+        issues: $('#rdoIssues').value.trim(),
+        quality: $('#rdoQuality').value.trim(),
+        attachments,
+        createdBy: existing?.createdBy || currentUserStamp(),
+        updatedBy: currentUserStamp(),
+        updatedAt: new Date().toISOString(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+      };
+      upsert('rdos', rdo);
+      event.target.reset();
+      $('#rdoId').value = '';
+      $('#rdoDate').value = todayInput();
+      renderAll();
+      toast('RDO salvo com sucesso.');
+    });
+
+    $('#clearRdoForm').addEventListener('click', () => {
+      $('#rdoForm').reset();
+      $('#rdoId').value = '';
+      $('#rdoDate').value = todayInput();
+    });
+
+    $('#rdoSearch').addEventListener('input', renderRdoTable);
+    $('#exportRdoCsv').addEventListener('click', () => exportCsv('rdos.csv', state.rdos));
+
+    $('#rdoTable').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const id = button.dataset.id;
+      const rdo = state.rdos.find((item) => item.id === id);
+      if (!rdo) return;
+      if (button.dataset.action === 'view-rdo') viewRdo(rdo);
+      if (button.dataset.action === 'edit-rdo') editRdo(rdo);
+      if (button.dataset.action === 'delete-rdo') removeItem('rdos', id, 'RDO excluído.');
+    });
+  }
+
+  function renderRdoTable() {
+    const query = normalizeText($('#rdoSearch')?.value);
+    const list = sortByDateDesc(state.rdos).filter((rdo) => {
+      const searchable = normalizeText([rdo.date, rdo.project, rdo.location, rdo.status, rdo.createdBy].join(' '));
+      return searchable.includes(query);
+    });
+
+    $('#rdoTable').innerHTML = list.map((rdo) => `
+      <tr>
+        <td>${formatDate(rdo.date)}<br><small>${escapeHtml(rdo.shift)}</small></td>
+        <td>${escapeHtml(rdo.project)}</td>
+        <td>${escapeHtml(rdo.location || '-')}</td>
+        <td>${statusBadge(rdo.status)}</td>
+        <td>${attachmentBadge(rdo.attachments)}</td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-btn" data-action="view-rdo" data-id="${rdo.id}">Ver</button>
+            <button class="icon-btn" data-action="edit-rdo" data-id="${rdo.id}">Editar</button>
+            <button class="icon-btn danger" data-action="delete-rdo" data-id="${rdo.id}">Excluir</button>
+          </div>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" class="empty-state">Nenhum RDO encontrado.</td></tr>';
+  }
+
+  function viewRdo(rdo) {
+    openModal(`RDO - ${formatDate(rdo.date)}`, `
+      <div class="detail-grid">
+        <p><strong>Frente/Obra</strong>${escapeHtml(rdo.project)}</p>
+        <p><strong>Local</strong>${escapeHtml(rdo.location || '-')}</p>
+        <p><strong>Turno / Clima / Status</strong>${escapeHtml(rdo.shift)} • ${escapeHtml(rdo.weather)} • ${escapeHtml(rdo.status)}</p>
+        <p><strong>Atividades executadas</strong>${escapeHtml(rdo.activities || '-')}</p>
+        <p><strong>Ocorrências / Não conformidades</strong>${escapeHtml(rdo.issues || '-')}</p>
+        <p><strong>Segurança e qualidade</strong>${escapeHtml(rdo.quality || '-')}</p>
+        <p><strong>Anexos</strong>${renderAttachmentLinks(rdo.attachments)}</p>
+        <p><strong>Atualizado por</strong>${escapeHtml(rdo.updatedBy || rdo.createdBy || '-')}</p>
+      </div>
+    `);
+  }
+
+  function editRdo(rdo) {
+    openTab('rdo');
+    $('#rdoId').value = rdo.id;
+    $('#rdoDate').value = rdo.date || todayInput();
+    $('#rdoShift').value = rdo.shift || 'Diurno';
+    $('#rdoProject').value = rdo.project || '';
+    $('#rdoLocation').value = rdo.location || '';
+    $('#rdoWeather').value = rdo.weather || 'Sol';
+    $('#rdoStatus').value = rdo.status || 'Em andamento';
+    $('#rdoActivities').value = rdo.activities || '';
+    $('#rdoIssues').value = rdo.issues || '';
+    $('#rdoQuality').value = rdo.quality || '';
+    toast('RDO carregado para edição. Se anexar novos arquivos, eles serão somados aos atuais.');
+  }
+
+  function setupExpenses() {
+    $('#expenseDate').value = todayInput();
+    $('#expenseMonthFilter').value = monthInput();
+
+    $('#expenseForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!assertCanEdit()) return;
+      const id = $('#expenseId').value || uid('exp');
+      const existing = state.expenses.find((item) => item.id === id);
+      const attachments = await readAttachments($('#expenseAttachment'), existing?.attachments || [], false);
+      const expense = {
+        id,
+        date: $('#expenseDate').value,
+        category: $('#expenseCategory').value,
+        supplier: $('#expenseSupplier').value.trim(),
+        value: Number($('#expenseValue').value || 0),
+        payment: $('#expensePayment').value,
+        description: $('#expenseDescription').value.trim(),
+        attachments,
+        createdBy: existing?.createdBy || currentUserStamp(),
+        updatedBy: currentUserStamp(),
+        updatedAt: new Date().toISOString(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+      };
+      upsert('expenses', expense);
+      event.target.reset();
+      $('#expenseId').value = '';
+      $('#expenseDate').value = todayInput();
+      renderAll();
+      toast('Despesa salva com sucesso.');
+    });
+
+    $('#expenseMonthFilter').addEventListener('change', renderExpenseTable);
+    $('#exportExpenseCsv').addEventListener('click', () => exportCsv('despesas.csv', state.expenses));
+
+    $('#expenseTable').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const item = state.expenses.find((expense) => expense.id === button.dataset.id);
+      if (!item) return;
+      if (button.dataset.action === 'edit-expense') editExpense(item);
+      if (button.dataset.action === 'delete-expense') removeItem('expenses', item.id, 'Despesa excluída.');
+      if (button.dataset.action === 'view-expense') viewExpense(item);
+    });
+  }
+
+  function renderExpenseTable() {
+    const month = $('#expenseMonthFilter')?.value || monthInput();
+    const list = sortByDateDesc(state.expenses).filter((expense) => !month || expense.date?.startsWith(month));
+    const total = list.reduce((sum, expense) => sum + Number(expense.value || 0), 0);
+    $('#expenseMonthTotal').textContent = currency(total);
+    $('#expenseTable').innerHTML = list.map((expense) => `
+      <tr>
+        <td>${formatDate(expense.date)}</td>
+        <td>${escapeHtml(expense.category)}</td>
+        <td>${escapeHtml(expense.supplier || '-')}</td>
+        <td><strong>${currency(expense.value)}</strong></td>
+        <td>${attachmentBadge(expense.attachments)}</td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-btn" data-action="view-expense" data-id="${expense.id}">Ver</button>
+            <button class="icon-btn" data-action="edit-expense" data-id="${expense.id}">Editar</button>
+            <button class="icon-btn danger" data-action="delete-expense" data-id="${expense.id}">Excluir</button>
+          </div>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" class="empty-state">Nenhuma despesa no mês selecionado.</td></tr>';
+  }
+
+  function editExpense(expense) {
+    $('#expenseId').value = expense.id;
+    $('#expenseDate').value = expense.date || todayInput();
+    $('#expenseCategory').value = expense.category || 'Outros';
+    $('#expenseSupplier').value = expense.supplier || '';
+    $('#expenseValue').value = expense.value || '';
+    $('#expensePayment').value = expense.payment || 'Pix';
+    $('#expenseDescription').value = expense.description || '';
+    toast('Despesa carregada para edição.');
+  }
+
+  function viewExpense(expense) {
+    openModal('Detalhes da despesa', `
+      <div class="detail-grid">
+        <p><strong>Data</strong>${formatDate(expense.date)}</p>
+        <p><strong>Categoria</strong>${escapeHtml(expense.category)}</p>
+        <p><strong>Fornecedor</strong>${escapeHtml(expense.supplier || '-')}</p>
+        <p><strong>Valor</strong>${currency(expense.value)}</p>
+        <p><strong>Pagamento</strong>${escapeHtml(expense.payment || '-')}</p>
+        <p><strong>Descrição</strong>${escapeHtml(expense.description || '-')}</p>
+        <p><strong>Comprovante</strong>${renderAttachmentLinks(expense.attachments)}</p>
+      </div>
+    `);
+  }
+
+  function setupTeams() {
+    $('#teamForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!assertCanEdit()) return;
+      const id = $('#teamId').value || uid('team');
+      const existing = state.teamMembers.find((item) => item.id === id);
+      const member = {
+        id,
+        name: $('#teamName').value.trim(),
+        role: $('#teamRole').value.trim(),
+        leader: $('#teamLeader').value.trim(),
+        group: $('#teamGroup').value.trim(),
+        phone: $('#teamPhone').value.trim(),
+        status: $('#teamStatus').value,
+        notes: $('#teamNotes').value.trim(),
+        createdBy: existing?.createdBy || currentUserStamp(),
+        updatedBy: currentUserStamp(),
+        updatedAt: new Date().toISOString(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+      };
+      upsert('teamMembers', member);
+      event.target.reset();
+      $('#teamId').value = '';
+      renderAll();
+      toast('Colaborador salvo com sucesso.');
+    });
+
+    $('#teamSearch').addEventListener('input', renderTeamTable);
+    $('#exportTeamCsv').addEventListener('click', () => exportCsv('equipes.csv', state.teamMembers));
+
+    $('#teamTable').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const member = state.teamMembers.find((item) => item.id === button.dataset.id);
+      if (!member) return;
+      if (button.dataset.action === 'edit-team') editTeamMember(member);
+      if (button.dataset.action === 'delete-team') removeItem('teamMembers', member.id, 'Colaborador excluído.');
+      if (button.dataset.action === 'view-team') viewTeamMember(member);
+    });
+  }
+
+  function renderTeamTable() {
+    const query = normalizeText($('#teamSearch')?.value);
+    const list = [...state.teamMembers]
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+      .filter((member) => normalizeText(Object.values(member).join(' ')).includes(query));
+
+    $('#teamTable').innerHTML = list.map((member) => `
+      <tr>
+        <td>${escapeHtml(member.name)}</td>
+        <td>${escapeHtml(member.role || '-')}</td>
+        <td>${escapeHtml(member.leader || '-')}</td>
+        <td>${escapeHtml(member.group || '-')}</td>
+        <td>${statusBadge(member.status)}</td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-btn" data-action="view-team" data-id="${member.id}">Ver</button>
+            <button class="icon-btn" data-action="edit-team" data-id="${member.id}">Editar</button>
+            <button class="icon-btn danger" data-action="delete-team" data-id="${member.id}">Excluir</button>
+          </div>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" class="empty-state">Nenhum colaborador cadastrado.</td></tr>';
+  }
+
+  function editTeamMember(member) {
+    $('#teamId').value = member.id;
+    $('#teamName').value = member.name || '';
+    $('#teamRole').value = member.role || '';
+    $('#teamLeader').value = member.leader || '';
+    $('#teamGroup').value = member.group || '';
+    $('#teamPhone').value = member.phone || '';
+    $('#teamStatus').value = member.status || 'Ativo';
+    $('#teamNotes').value = member.notes || '';
+    toast('Colaborador carregado para edição.');
+  }
+
+  function viewTeamMember(member) {
+    openModal('Detalhes do colaborador', `
+      <div class="detail-grid">
+        <p><strong>Nome</strong>${escapeHtml(member.name)}</p>
+        <p><strong>Função</strong>${escapeHtml(member.role || '-')}</p>
+        <p><strong>Encarregado</strong>${escapeHtml(member.leader || '-')}</p>
+        <p><strong>Equipe</strong>${escapeHtml(member.group || '-')}</p>
+        <p><strong>Telefone</strong>${escapeHtml(member.phone || '-')}</p>
+        <p><strong>Status</strong>${escapeHtml(member.status || '-')}</p>
+        <p><strong>Observações</strong>${escapeHtml(member.notes || '-')}</p>
+      </div>
+    `);
+  }
+
+  function setupVehicle() {
+    $('#vehicleProfileForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!assertCanEdit()) return;
+      state.vehicle = {
+        model: $('#vehicleModel').value.trim(),
+        plate: $('#vehiclePlate').value.trim().toUpperCase(),
+        color: $('#vehicleColor').value.trim(),
+        odometer: $('#vehicleOdometer').value,
+      };
+      saveState();
+      renderAll();
+      toast('Dados do carro salvos.');
+    });
+
+    $('#vehicleCostDate').value = todayInput();
+
+    $('#vehicleCostForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!assertCanEdit()) return;
+      const id = $('#vehicleCostId').value || uid('car');
+      const existing = state.vehicleCosts.find((item) => item.id === id);
+      const attachments = await readAttachments($('#vehicleAttachment'), existing?.attachments || [], false);
+      const item = {
+        id,
+        date: $('#vehicleCostDate').value,
+        type: $('#vehicleCostType').value,
+        value: Number($('#vehicleCostValue').value || 0),
+        km: $('#vehicleCostKm').value,
+        description: $('#vehicleCostDescription').value.trim(),
+        attachments,
+        createdBy: existing?.createdBy || currentUserStamp(),
+        updatedBy: currentUserStamp(),
+        updatedAt: new Date().toISOString(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+      };
+      upsert('vehicleCosts', item);
+      event.target.reset();
+      $('#vehicleCostId').value = '';
+      $('#vehicleCostDate').value = todayInput();
+      renderAll();
+      toast('Gasto do veículo salvo.');
+    });
+
+    $('#exportVehicleCsv').addEventListener('click', () => exportCsv('gastos-veiculo.csv', state.vehicleCosts));
+
+    $('#vehicleCostTable').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const item = state.vehicleCosts.find((cost) => cost.id === button.dataset.id);
+      if (!item) return;
+      if (button.dataset.action === 'view-car') viewVehicleCost(item);
+      if (button.dataset.action === 'edit-car') editVehicleCost(item);
+      if (button.dataset.action === 'delete-car') removeItem('vehicleCosts', item.id, 'Gasto do veículo excluído.');
+    });
+  }
+
+  function renderVehicle() {
+    $('#vehicleModel').value = state.vehicle.model || '';
+    $('#vehiclePlate').value = state.vehicle.plate || '';
+    $('#vehicleColor').value = state.vehicle.color || '';
+    $('#vehicleOdometer').value = state.vehicle.odometer || '';
+
+    const vehicleText = state.vehicle.model || state.vehicle.plate
+      ? `${state.vehicle.model || 'Modelo não informado'} • Placa ${state.vehicle.plate || '-'} • Km ${state.vehicle.odometer || '-'}`
+      : 'Nenhum veículo cadastrado.';
+    $('#vehicleSummary').textContent = vehicleText;
+    const total = state.vehicleCosts.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    $('#vehicleTotal').textContent = currency(total);
+
+    $('#vehicleCostTable').innerHTML = sortByDateDesc(state.vehicleCosts).map((item) => `
+      <tr>
+        <td>${formatDate(item.date)}</td>
+        <td>${escapeHtml(item.type)}</td>
+        <td><strong>${currency(item.value)}</strong></td>
+        <td>${escapeHtml(item.km || '-')}</td>
+        <td>${attachmentBadge(item.attachments)}</td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-btn" data-action="view-car" data-id="${item.id}">Ver</button>
+            <button class="icon-btn" data-action="edit-car" data-id="${item.id}">Editar</button>
+            <button class="icon-btn danger" data-action="delete-car" data-id="${item.id}">Excluir</button>
+          </div>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" class="empty-state">Nenhum gasto cadastrado.</td></tr>';
+  }
+
+  function editVehicleCost(item) {
+    $('#vehicleCostId').value = item.id;
+    $('#vehicleCostDate').value = item.date || todayInput();
+    $('#vehicleCostType').value = item.type || 'Outros';
+    $('#vehicleCostValue').value = item.value || '';
+    $('#vehicleCostKm').value = item.km || '';
+    $('#vehicleCostDescription').value = item.description || '';
+    toast('Gasto do veículo carregado para edição.');
+  }
+
+  function viewVehicleCost(item) {
+    openModal('Detalhes do gasto do veículo', `
+      <div class="detail-grid">
+        <p><strong>Data</strong>${formatDate(item.date)}</p>
+        <p><strong>Tipo</strong>${escapeHtml(item.type)}</p>
+        <p><strong>Valor</strong>${currency(item.value)}</p>
+        <p><strong>Km</strong>${escapeHtml(item.km || '-')}</p>
+        <p><strong>Descrição</strong>${escapeHtml(item.description || '-')}</p>
+        <p><strong>Comprovante</strong>${renderAttachmentLinks(item.attachments)}</p>
+      </div>
+    `);
+  }
+
+  function setupAgenda() {
+    const nextHour = new Date(Date.now() + 60 * 60 * 1000);
+    nextHour.setSeconds(0, 0);
+    $('#agendaDateTime').value = datetimeLocalInput(nextHour);
+
+    $('#notificationButton').addEventListener('click', requestNotificationPermission);
+
+    $('#agendaForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!assertCanEdit()) return;
+      const id = $('#agendaId').value || uid('agenda');
+      const existing = state.agendaItems.find((item) => item.id === id);
+      const item = {
+        id,
+        title: $('#agendaTitle').value.trim(),
+        dateTime: $('#agendaDateTime').value,
+        priority: $('#agendaPriority').value,
+        status: $('#agendaStatus').value,
+        notes: $('#agendaNotes').value.trim(),
+        notified: existing?.dateTime === $('#agendaDateTime').value ? Boolean(existing?.notified) : false,
+        createdBy: existing?.createdBy || currentUserStamp(),
+        updatedBy: currentUserStamp(),
+        updatedAt: new Date().toISOString(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+      };
+      upsert('agendaItems', item);
+      event.target.reset();
+      $('#agendaId').value = '';
+      const newDefault = new Date(Date.now() + 60 * 60 * 1000);
+      newDefault.setSeconds(0, 0);
+      $('#agendaDateTime').value = datetimeLocalInput(newDefault);
+      renderAll();
+      toast('Lembrete salvo. Mantenha o site aberto para receber o alerta.');
+    });
+
+    $('#agendaFilter').addEventListener('change', renderAgendaList);
+    $('#exportAgendaCsv').addEventListener('click', () => exportCsv('agenda.csv', state.agendaItems));
+
+    $('#agendaList').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const item = state.agendaItems.find((agenda) => agenda.id === button.dataset.id);
+      if (!item) return;
+      if (button.dataset.action === 'done-agenda') {
+        item.status = 'Concluído';
+        saveState();
+        renderAll();
+        toast('Lembrete concluído.');
+      }
+      if (button.dataset.action === 'edit-agenda') editAgendaItem(item);
+      if (button.dataset.action === 'delete-agenda') removeItem('agendaItems', item.id, 'Lembrete excluído.');
+    });
+
+    setInterval(checkReminders, 60 * 1000);
+  }
+
+  function renderAgendaList() {
+    const filter = $('#agendaFilter')?.value || 'all';
+    const now = new Date();
+    const today = todayInput(now);
+    let list = [...state.agendaItems];
+
+    if (filter === 'pending') list = list.filter((item) => item.status !== 'Concluído');
+    if (filter === 'today') list = list.filter((item) => item.dateTime?.slice(0, 10) === today);
+    if (filter === 'overdue') list = list.filter((item) => item.status !== 'Concluído' && new Date(item.dateTime) < now);
+
+    list.sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
+
+    $('#agendaList').innerHTML = list.map((item) => {
+      const due = new Date(item.dateTime);
+      const overdue = item.status !== 'Concluído' && due < now;
+      return `
+        <div class="agenda-item">
+          <div>
+            <strong>${escapeHtml(item.title)}</strong>
+            <small>${formatDateTime(item.dateTime)} • Criado por ${escapeHtml(item.createdBy || '-')}</small>
+            <div class="agenda-meta">
+              ${statusBadge(item.status)}
+              <span class="badge ${item.priority === 'Crítica' ? 'danger' : item.priority === 'Alta' ? 'warn' : 'ok'}">${escapeHtml(item.priority)}</span>
+              ${overdue ? '<span class="badge danger">Vencido</span>' : ''}
+            </div>
+            ${item.notes ? `<p>${escapeHtml(item.notes)}</p>` : ''}
+          </div>
+          <div class="row-actions">
+            <button class="icon-btn" data-action="done-agenda" data-id="${item.id}">Concluir</button>
+            <button class="icon-btn" data-action="edit-agenda" data-id="${item.id}">Editar</button>
+            <button class="icon-btn danger" data-action="delete-agenda" data-id="${item.id}">Excluir</button>
+          </div>
+        </div>
+      `;
+    }).join('') || '<p class="empty-state">Nenhum compromisso cadastrado.</p>';
+  }
+
+  function editAgendaItem(item) {
+    $('#agendaId').value = item.id;
+    $('#agendaTitle').value = item.title || '';
+    $('#agendaDateTime').value = item.dateTime || '';
+    $('#agendaPriority').value = item.priority || 'Normal';
+    $('#agendaStatus').value = item.status || 'Pendente';
+    $('#agendaNotes').value = item.notes || '';
+    toast('Lembrete carregado para edição.');
+  }
+
+  async function requestNotificationPermission() {
+    if (!('Notification' in window)) {
+      toast('Seu navegador não suporta notificação nativa. O alerta interno continuará funcionando.');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    toast(permission === 'granted' ? 'Notificações ativadas.' : 'Notificações não autorizadas pelo navegador.');
+  }
+
+  function checkReminders() {
+    const now = new Date();
+    let changed = false;
+    state.agendaItems.forEach((item) => {
+      if (item.status === 'Concluído' || item.notified || !item.dateTime) return;
+      if (new Date(item.dateTime) <= now) {
+        const message = `${item.title} — ${formatDateTime(item.dateTime)}`;
+        toast(`Lembrete: ${message}`);
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Lembrete EPYA', {
+            body: message,
+            icon: 'assets/epya-emblema.svg',
+          });
+        }
+        openModal('Lembrete importante', `
+          <div class="detail-grid">
+            <p><strong>${escapeHtml(item.title)}</strong>${escapeHtml(item.notes || 'Sem observações adicionais.')}</p>
+            <p><strong>Data e hora</strong>${formatDateTime(item.dateTime)}</p>
+            <p><strong>Prioridade</strong>${escapeHtml(item.priority)}</p>
+          </div>
+        `);
+        item.notified = true;
+        changed = true;
+      }
+    });
+    if (changed) {
+      saveState();
+      renderAll();
+    }
+  }
+
+  function setupUsers() {
+    elements.activeUserSelect.addEventListener('change', (event) => {
+      state.activeUserId = event.target.value;
+      saveState();
+      renderAll();
+      toast(`Usuário ativo: ${getCurrentUser().name}`);
+    });
+
+    $('#userForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (getCurrentUser().role !== 'admin') {
+        toast('Somente administrador pode criar usuários.');
+        return;
+      }
+      const id = $('#userId').value || uid('usr');
+      const existing = state.users.find((user) => user.id === id);
+      const user = {
+        id,
+        name: $('#userName').value.trim(),
+        email: $('#userEmail').value.trim(),
+        role: $('#userRole').value,
+        status: $('#userStatus').value,
+        notes: $('#userNotes').value.trim(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      upsert('users', user);
+      event.target.reset();
+      $('#userId').value = '';
+      renderAll();
+      toast('Usuário salvo com sucesso.');
+    });
+
+    $('#userTable').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const user = state.users.find((item) => item.id === button.dataset.id);
+      if (!user) return;
+      if (button.dataset.action === 'edit-user') editUser(user);
+      if (button.dataset.action === 'delete-user') {
+        if (user.id === 'usr-darci-admin' || user.id === state.activeUserId) {
+          toast('Não é possível excluir o administrador inicial ou o usuário ativo.');
+          return;
+        }
+        removeItem('users', user.id, 'Usuário excluído.');
+      }
+    });
+  }
+
+  function renderUserTable() {
+    $('#userTable').innerHTML = state.users.map((user) => `
+      <tr>
+        <td>${escapeHtml(user.name)}</td>
+        <td>${escapeHtml(user.email || '-')}</td>
+        <td>${escapeHtml(roleLabel(user.role))}</td>
+        <td>${statusBadge(user.status)}</td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-btn" data-action="edit-user" data-id="${user.id}">Editar</button>
+            <button class="icon-btn danger" data-action="delete-user" data-id="${user.id}">Excluir</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function editUser(user) {
+    $('#userId').value = user.id;
+    $('#userName').value = user.name || '';
+    $('#userEmail').value = user.email || '';
+    $('#userRole').value = user.role || 'consulta';
+    $('#userStatus').value = user.status || 'Ativo';
+    $('#userNotes').value = user.notes || '';
+    toast('Usuário carregado para edição.');
+  }
+
+  function setupBackup() {
+    $('#exportBackup').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json;charset=utf-8;' });
+      downloadBlob(blob, `backup-epya-${todayInput()}.json`);
+    });
+
+    $('#importBackup').addEventListener('change', (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const imported = JSON.parse(reader.result);
+          state = { ...structuredClone(defaultState), ...imported, vehicle: { ...defaultState.vehicle, ...(imported.vehicle || {}) } };
+          if (!state.users?.length) state.users = structuredClone(defaultState.users);
+          if (!state.activeUserId) state.activeUserId = state.users[0].id;
+          saveState();
+          renderAll();
+          toast('Backup importado com sucesso.');
+        } catch (error) {
+          console.error(error);
+          toast('Não foi possível importar o arquivo. Verifique se é um JSON válido.');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = '';
+    });
+
+    $('#resetDemo').addEventListener('click', () => {
+      const confirmed = confirm('Tem certeza que deseja limpar todos os dados salvos neste navegador?');
+      if (!confirmed) return;
+      state = structuredClone(defaultState);
+      saveState();
+      renderAll();
+      toast('Dados locais apagados.');
+    });
+  }
+
+  function upsert(collection, item) {
+    const index = state[collection].findIndex((entry) => entry.id === item.id);
+    if (index >= 0) state[collection][index] = item;
+    else state[collection].push(item);
+    saveState();
+  }
+
+  function removeItem(collection, id, message) {
+    if (!assertCanEdit()) return;
+    const confirmed = confirm('Confirmar exclusão?');
+    if (!confirmed) return;
+    state[collection] = state[collection].filter((item) => item.id !== id);
+    if (collection === 'users' && state.activeUserId === id) state.activeUserId = state.users[0]?.id || defaultState.activeUserId;
+    saveState();
+    renderAll();
+    toast(message);
+  }
+
+  function exportCsv(filename, rows) {
+    if (!rows?.length) {
+      toast('Não existem dados para exportar.');
+      return;
+    }
+    const flattened = rows.map((row) => {
+      const copy = { ...row };
+      if (copy.attachments) copy.attachments = copy.attachments.map((file) => file.name).join(' | ');
+      return copy;
+    });
+    const headers = [...new Set(flattened.flatMap((row) => Object.keys(row)))];
+    const csv = [
+      headers.join(';'),
+      ...flattened.map((row) => headers.map((header) => quoteCsv(row[header])).join(';')),
+    ].join('\n');
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' });
+    downloadBlob(blob, filename);
+  }
+
+  function quoteCsv(value) {
+    if (value == null) return '';
+    const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+
+  function downloadBlob(blob, filename) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  }
+
+  function renderAll() {
+    renderUsersSelect();
+    renderDashboard();
+    renderRdoTable();
+    renderExpenseTable();
+    renderTeamTable();
+    renderVehicle();
+    renderAgendaList();
+    renderUserTable();
+  }
+
+  function init() {
+    setupNavigation();
+    setupRdo();
+    setupExpenses();
+    setupTeams();
+    setupVehicle();
+    setupAgenda();
+    setupUsers();
+    setupBackup();
+
+    $('#closeModal').addEventListener('click', closeModal);
+    elements.modal.addEventListener('click', (event) => {
+      if (event.target === elements.modal) closeModal();
+    });
+
+    renderAll();
+    setTimeout(checkReminders, 1500);
+  }
+
+  init();
+})();
