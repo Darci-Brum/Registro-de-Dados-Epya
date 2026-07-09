@@ -155,6 +155,11 @@ button {
   line-height: 1.45;
 }
 
+.strong-hint {
+  color: var(--epya-gray);
+  font-weight: 600;
+}
+
 .main-content {
   min-width: 0;
   padding: 28px;

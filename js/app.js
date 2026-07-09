@@ -297,8 +297,8 @@
 
   async function restoreSession() {
     if (!supabaseClient) {
-      showApp();
-      toast('Modo local: Supabase indisponível.');
+      showLogin();
+      setLoginMessage('Não foi possível carregar a biblioteca do Supabase. Verifique sua internet ou os scripts CDN no final do index.html.');
       return;
     }
     const { data } = await supabaseClient.auth.getSession();
@@ -1502,6 +1502,9 @@
 
     $('#syncLocalToSupabase')?.addEventListener('click', syncLocalBackupToSupabase);
     $('#refreshSupabaseData')?.addEventListener('click', refreshRemoteData);
+    $('#exportFullExcel')?.addEventListener('click', exportFullExcel);
+    $('#exportFullPdf')?.addEventListener('click', downloadFullPdf);
+    $('#sharePdfWhatsapp')?.addEventListener('click', sharePdfToWhatsapp);
   }
 
   function upsert(collection, item) {
@@ -1524,6 +1527,290 @@
     deleteRemote(collection, id);
     renderAll();
     toast(message);
+  }
+
+  function exportFullExcel() {
+    if (!window.XLSX) {
+      toast('Biblioteca de Excel não carregou. Verifique sua internet ou o script xlsx no index.html.');
+      return;
+    }
+
+    const workbook = XLSX.utils.book_new();
+    const sheets = buildWorkbookSheets();
+    Object.entries(sheets).forEach(([sheetName, rows]) => {
+      const safeRows = rows.length ? rows : [{ Informacao: 'Sem dados cadastrados' }];
+      const worksheet = XLSX.utils.json_to_sheet(safeRows);
+      worksheet['!cols'] = autoExcelWidths(safeRows);
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.slice(0, 31));
+    });
+
+    XLSX.writeFile(workbook, `relatorio-epya-${todayInput()}.xlsx`);
+    toast('Planilha Excel gerada com sucesso.');
+  }
+
+  function buildWorkbookSheets() {
+    const totalExpenses = state.expenses.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const vehicleExpenses = state.vehicleCosts.reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const openRdos = state.rdos.filter((item) => item.status !== 'Concluído').length;
+    const activeReminders = state.agendaItems.filter((item) => item.status !== 'Concluído').length;
+
+    return {
+      Dashboard: [
+        { Indicador: 'RDOs cadastrados', Valor: state.rdos.length },
+        { Indicador: 'RDOs em aberto', Valor: openRdos },
+        { Indicador: 'Despesas gerais', Valor: totalExpenses },
+        { Indicador: 'Gastos do veículo', Valor: vehicleExpenses },
+        { Indicador: 'Colaboradores cadastrados', Valor: state.teamMembers.length },
+        { Indicador: 'Lembretes ativos', Valor: activeReminders },
+        { Indicador: 'Usuário logado', Valor: getCurrentUser()?.name || '-' },
+        { Indicador: 'Perfil', Valor: roleLabel(getCurrentUser()?.role || '-') },
+        { Indicador: 'Data de emissão', Valor: new Date().toLocaleString('pt-BR') },
+      ],
+      RDO: state.rdos.map((item) => ({
+        Data: formatDate(item.date),
+        Turno: item.shift,
+        Frente_Obra: item.project,
+        Local: item.location,
+        Clima: item.weather,
+        Status: item.status,
+        Atividades: item.activities,
+        Ocorrencias_Nao_Conformidades: item.issues,
+        Seguranca_Qualidade: item.quality,
+        Anexos: attachmentNames(item.attachments),
+        Responsavel: userName(item.createdBy),
+      })),
+      Despesas: state.expenses.map((item) => ({
+        Data: formatDate(item.date),
+        Mes_Referencia: item.month,
+        Categoria: item.category,
+        Valor: Number(item.value || 0),
+        Forma_Pagamento: item.payment,
+        Descricao: item.description,
+        Anexos: attachmentNames(item.attachments),
+        Responsavel: userName(item.createdBy),
+      })),
+      Equipes: state.teamMembers.map((item) => ({
+        Nome: item.name,
+        Funcao: item.role,
+        Encarregado: item.supervisor,
+        Equipe: item.team,
+        Telefone: item.phone,
+        Status: item.status,
+        Observacoes: item.notes,
+      })),
+      Veiculo: [{
+        Modelo: state.vehicle.model || '',
+        Placa: state.vehicle.plate || '',
+        Cor: state.vehicle.color || '',
+        Odometro_Atual: state.vehicle.odometer || '',
+      }],
+      Gastos_Veiculo: state.vehicleCosts.map((item) => ({
+        Data: formatDate(item.date),
+        Tipo: item.type,
+        Valor: Number(item.value || 0),
+        KM: item.km,
+        Descricao: item.description,
+        Anexos: attachmentNames(item.attachments),
+      })),
+      Agenda: state.agendaItems.map((item) => ({
+        Data_Hora: formatDateTime(item.dateTime),
+        Titulo: item.title,
+        Prioridade: item.priority,
+        Status: item.status,
+        Observacoes: item.notes,
+      })),
+      Usuarios: state.users.map((item) => ({
+        Nome: item.name,
+        Email: item.email,
+        Perfil: roleLabel(item.role),
+        Status: item.status,
+        Observacoes: item.notes,
+        Criado_Em: item.createdAt ? new Date(item.createdAt).toLocaleString('pt-BR') : '',
+      })),
+    };
+  }
+
+  function autoExcelWidths(rows) {
+    const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+    return headers.map((header) => {
+      const max = Math.max(String(header).length, ...rows.map((row) => String(row[header] ?? '').length));
+      return { wch: Math.min(Math.max(max + 2, 12), 42) };
+    });
+  }
+
+  function attachmentNames(files) {
+    return Array.isArray(files) && files.length ? files.map((file) => file.name).join(' | ') : '';
+  }
+
+  function userName(userId) {
+    return state.users.find((user) => user.id === userId)?.name || userId || '-';
+  }
+
+  async function downloadFullPdf() {
+    const { blob, filename } = createReportPdfBlob();
+    if (!blob) return;
+    downloadBlob(blob, filename);
+    toast('PDF do relatório gerado com sucesso.');
+  }
+
+  async function sharePdfToWhatsapp() {
+    const { blob, filename } = createReportPdfBlob();
+    if (!blob) return;
+
+    const message = `Relatório EPYA Controle de Qualidade - Responsável Darci Brum - ${new Date().toLocaleString('pt-BR')}`;
+    const file = new File([blob], filename, { type: 'application/pdf' });
+
+    try {
+      if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+        await navigator.share({ title: 'Relatório EPYA', text: message, files: [file] });
+        toast('Compartilhamento aberto. Escolha o WhatsApp para enviar o PDF.');
+        return;
+      }
+    } catch (error) {
+      console.warn('Compartilhamento nativo não concluído:', error);
+    }
+
+    downloadBlob(blob, filename);
+    const whatsappText = encodeURIComponent(`${message}\n\nO PDF foi baixado no navegador. No WhatsApp Web, anexe o arquivo ${filename} na conversa desejada.`);
+    window.open(`https://wa.me/?text=${whatsappText}`, '_blank', 'noopener,noreferrer');
+    toast('PDF baixado. O WhatsApp Web foi aberto para você anexar o arquivo.');
+  }
+
+  function createReportPdfBlob() {
+    const jsPDFCtor = window.jspdf?.jsPDF;
+    if (!jsPDFCtor) {
+      toast('Biblioteca de PDF não carregou. Verifique sua internet ou o script jsPDF no index.html.');
+      return { blob: null, filename: null };
+    }
+
+    const doc = new jsPDFCtor({ unit: 'pt', format: 'a4' });
+    const margin = 42;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let y = 44;
+
+    const addPageIfNeeded = (needed = 48) => {
+      if (y + needed <= pageHeight - 42) return;
+      doc.addPage();
+      y = 44;
+      footer();
+    };
+
+    const footer = () => {
+      const current = doc.internal.getCurrentPageInfo().pageNumber;
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      doc.text(`EPYA Controle de Qualidade - pagina ${current}`, margin, pageHeight - 20);
+    };
+
+    const text = (content, x, options = {}) => {
+      const size = options.size || 10;
+      const style = options.style || 'normal';
+      const color = options.color || [36, 39, 43];
+      const maxWidth = options.maxWidth || pageWidth - margin * 2;
+      doc.setFont('helvetica', style);
+      doc.setFontSize(size);
+      doc.setTextColor(...color);
+      const lines = doc.splitTextToSize(String(content || '-'), maxWidth);
+      doc.text(lines, x, y);
+      y += lines.length * (size + 4) + (options.gap ?? 6);
+    };
+
+    const section = (title) => {
+      addPageIfNeeded(70);
+      y += 8;
+      doc.setFillColor(243, 194, 41);
+      doc.roundedRect(margin, y, pageWidth - margin * 2, 26, 8, 8, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(28, 29, 32);
+      doc.text(title, margin + 12, y + 18);
+      y += 42;
+    };
+
+    const row = (label, value) => {
+      addPageIfNeeded(30);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(70);
+      doc.text(String(label), margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(32);
+      const lines = doc.splitTextToSize(String(value || '-'), pageWidth - margin * 2 - 145);
+      doc.text(lines, margin + 145, y);
+      y += Math.max(18, lines.length * 13 + 4);
+    };
+
+    doc.setFillColor(23, 24, 27);
+    doc.rect(0, 0, pageWidth, 112, 'F');
+    doc.setTextColor(243, 194, 41);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text('EPYA', margin, 48);
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    doc.text('Relatorio de Controle de Qualidade', margin, 76);
+    doc.setFontSize(10);
+    doc.text(`Responsavel Darci Brum - Emitido em ${new Date().toLocaleString('pt-BR')}`, margin, 96);
+    y = 142;
+
+    section('Resumo geral');
+    row('Usuario', `${getCurrentUser()?.name || '-'} (${roleLabel(getCurrentUser()?.role || '-')})`);
+    row('RDOs cadastrados', state.rdos.length);
+    row('Despesas gerais', currency(state.expenses.reduce((sum, item) => sum + Number(item.value || 0), 0)));
+    row('Gastos do veiculo', currency(state.vehicleCosts.reduce((sum, item) => sum + Number(item.value || 0), 0)));
+    row('Colaboradores', state.teamMembers.length);
+    row('Lembretes ativos', state.agendaItems.filter((item) => item.status !== 'Concluído').length);
+
+    section('Ultimos RDOs');
+    if (!state.rdos.length) text('Sem RDOs cadastrados.', margin);
+    state.rdos.slice(0, 12).forEach((item, index) => {
+      addPageIfNeeded(110);
+      text(`${index + 1}. ${formatDate(item.date)} - ${item.project || 'Frente/obra não informada'}`, margin, { style: 'bold', size: 11, gap: 2 });
+      row('Local / Status', `${item.location || '-'} / ${item.status || '-'}`);
+      row('Atividades', item.activities || '-');
+      row('Ocorrencias', item.issues || '-');
+      y += 8;
+    });
+
+    section('Despesas gerais');
+    if (!state.expenses.length) text('Sem despesas cadastradas.', margin);
+    state.expenses.slice(0, 20).forEach((item, index) => {
+      addPageIfNeeded(70);
+      text(`${index + 1}. ${formatDate(item.date)} - ${item.category || '-'} - ${currency(item.value)}`, margin, { style: 'bold', size: 10, gap: 2 });
+      row('Descricao', item.description || '-');
+    });
+
+    section('Equipes');
+    if (!state.teamMembers.length) text('Sem colaboradores cadastrados.', margin);
+    state.teamMembers.slice(0, 30).forEach((item, index) => {
+      addPageIfNeeded(45);
+      text(`${index + 1}. ${item.name || '-'} - ${item.role || '-'}`, margin, { style: 'bold', size: 10, gap: 0 });
+      row('Equipe / Encarregado', `${item.team || '-'} / ${item.supervisor || '-'}`);
+    });
+
+    section('Veiculo e agenda');
+    row('Modelo', state.vehicle.model || '-');
+    row('Placa', state.vehicle.plate || '-');
+    row('Odometro atual', state.vehicle.odometer || '-');
+    row('Total de gastos do veiculo', currency(state.vehicleCosts.reduce((sum, item) => sum + Number(item.value || 0), 0)));
+    y += 8;
+    text('Proximos lembretes', margin, { style: 'bold', size: 12 });
+    if (!state.agendaItems.length) text('Sem lembretes cadastrados.', margin);
+    state.agendaItems.slice(0, 15).forEach((item, index) => {
+      addPageIfNeeded(55);
+      text(`${index + 1}. ${formatDateTime(item.dateTime)} - ${item.title || '-'}`, margin, { style: 'bold', size: 10, gap: 0 });
+      row('Prioridade / Status', `${item.priority || '-'} / ${item.status || '-'}`);
+    });
+
+    const pages = doc.internal.getNumberOfPages();
+    for (let page = 1; page <= pages; page += 1) {
+      doc.setPage(page);
+      footer();
+    }
+
+    const filename = `relatorio-epya-${todayInput()}.pdf`;
+    return { blob: doc.output('blob'), filename };
   }
 
   function exportCsv(filename, rows) {

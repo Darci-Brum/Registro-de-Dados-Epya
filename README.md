@@ -64,3 +64,14 @@ Os anexos pequenos continuam sendo salvos como JSON/base64 nas tabelas para faci
 ## Como publicar
 
 Você pode subir a pasta em qualquer hospedagem estática, como Netlify, Vercel, GitHub Pages ou um servidor interno. O Supabase será o banco e sistema de autenticação.
+
+
+## Exportação para Excel, PDF e WhatsApp
+
+A versão atualizada inclui, na aba **Backup / Supabase**, três ações novas:
+
+- **Baixar Excel completo**: gera um arquivo `.xlsx` com abas separadas para Dashboard, RDO, Despesas, Equipes, Veículo, Gastos do Veículo, Agenda e Usuários.
+- **Baixar PDF do relatório**: gera um relatório PDF direto no navegador.
+- **Enviar PDF pelo WhatsApp**: no celular, tenta abrir o compartilhamento nativo já com o PDF anexado. Em computadores, por segurança do navegador, o sistema baixa o PDF e abre o WhatsApp Web com uma mensagem pronta para você anexar o arquivo manualmente.
+
+Essas funções usam bibliotecas públicas via CDN no final do `index.html`: SheetJS para Excel e jsPDF para PDF. Se o navegador estiver sem internet ou bloqueando CDN, os botões avisam que a biblioteca não carregou.

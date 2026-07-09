@@ -671,6 +671,25 @@
         <article class="card">
           <div class="card-header">
             <div>
+              <h3>Exportações e envio</h3>
+              <p>Extraia os dados do sistema para Excel, PDF ou compartilhe o relatório pelo WhatsApp.</p>
+            </div>
+          </div>
+          <div class="supabase-box">
+            <h4>Relatórios do painel</h4>
+            <p>O Excel completo é gerado em abas separadas: Dashboard, RDO, Despesas, Equipes, Veículo, Gastos do Veículo, Agenda e Usuários.</p>
+            <div class="backup-actions inline-actions">
+              <button class="primary-btn" id="exportFullExcel" type="button">Baixar Excel completo</button>
+              <button class="ghost-btn" id="exportFullPdf" type="button">Baixar PDF do relatório</button>
+              <button class="ghost-btn" id="sharePdfWhatsapp" type="button">Enviar PDF pelo WhatsApp</button>
+            </div>
+            <p class="hint strong-hint">No celular, o botão de WhatsApp abre o compartilhamento com o PDF anexado quando o navegador permitir. No computador, o PDF será baixado e o WhatsApp Web será aberto para você anexar o arquivo.</p>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
               <h3>Preparado para Supabase</h3>
               <p>O arquivo <strong>supabase_schema.sql</strong> acompanha este ZIP com as tabelas sugeridas.</p>
             </div>
@@ -703,6 +722,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
