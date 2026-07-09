@@ -1,53 +1,66 @@
 # EPYA Controle de Qualidade - Darci Brum
 
-Sistema web estático para controle operacional de inspeção de qualidade, RDO, despesas, equipes, veículo, agenda e perfis de usuários.
+Sistema web para controle de qualidade, RDO, despesas, equipes, veículo, agenda, usuários e perfis, agora com integração ao Supabase.
 
-## Como abrir
+## O que foi adicionado nesta versão
 
-1. Extraia o arquivo `.zip`.
-2. Abra `index.html` no navegador.
-3. O sistema salva os dados no próprio navegador usando `localStorage`.
-4. Para evitar bloqueios de arquivos locais, também é possível rodar com um servidor simples:
+- Tela de login com Supabase Auth.
+- Primeiro acesso para usuários pré-cadastrados pelo administrador.
+- Perfis de acesso: `admin`, `analista` e `consulta`.
+- Administrador principal: `DarciBrum3010@gmail.com`.
+- Botão de tema claro/escuro na parte superior.
+- Sincronização dos dados do site com tabelas do Supabase.
+- Botões para atualizar dados do Supabase e enviar backup local para o banco.
+- SQL completo com tabelas, RLS e funções de segurança.
 
-```bash
-python -m http.server 8080
+## Configuração já preenchida no código
+
+Projeto Supabase usado no `js/app.js`:
+
+```js
+SUPABASE_PROJECT_URL = 'https://eerebnizeuwxxqoxhjqh.supabase.co'
+SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Dvp7n399kM679L0dXf9R8w_1ih-WiWY'
 ```
 
-Depois acesse `http://localhost:8080`.
+> Observação: a chave publishable/anon pode ficar no front-end. Nunca coloque chave `service_role` no navegador.
 
-## O que já está pronto
+## Como ativar o banco de dados
 
-- Dashboard com indicadores e gráfico mensal.
-- Aba de RDO com anexos, ocorrências, segurança e qualidade.
-- Aba de despesas mensais com comprovantes e exportação CSV.
-- Aba de colaboradores/equipes de encarregados.
-- Aba de controle do carro: modelo, placa, odômetro e gastos.
-- Agenda com lembrete por data e hora.
-- Perfis de usuários: administrador, inspetor, encarregado e consulta.
-- Backup/importação JSON.
-- Layout responsivo com identidade visual inspirada na EPYA.
-- Arquivo SQL para Supabase.
+1. Abra o Supabase.
+2. Entre no projeto `eerebnizeuwxxqoxhjqh`.
+3. Vá em **SQL Editor**.
+4. Copie e execute todo o conteúdo do arquivo `supabase_schema.sql`.
+5. Vá em **Authentication > Users**.
+6. Crie o usuário `DarciBrum3010@gmail.com` com uma senha.
+7. Confirme o e-mail do usuário, caso a confirmação esteja ativada.
+8. Abra o arquivo `index.html` e entre com o e-mail e senha criados.
 
-## Importante sobre anexos e lembretes
+## Como cadastrar outros usuários
 
-No modo local, arquivos pequenos são salvos dentro do navegador. Para uso real em produção, use Supabase Storage.
+1. Entre como `DarciBrum3010@gmail.com`.
+2. Abra a aba **Usuários e perfis**.
+3. Cadastre nome, e-mail, perfil e status.
+4. O usuário cadastrado deve abrir a tela de login e clicar em **Primeiro acesso**.
+5. Ele informa nome, e-mail cadastrado e cria a própria senha.
 
-Os lembretes funcionam enquanto o site estiver aberto. O navegador precisa permitir notificações. Para alertas mesmo com o site fechado, será necessário backend, PWA com service worker avançado ou automação externa.
+## Perfis disponíveis
 
-## Como migrar para Supabase
+- **Admin**: acessa tudo, cria usuários e edita dados.
+- **Analista**: cria e edita RDO, despesas, equipes, veículo e agenda.
+- **Consulta**: apenas visualiza os dados.
 
-1. Crie um projeto no Supabase.
-2. Abra o SQL Editor.
-3. Execute o arquivo `supabase_schema.sql`.
-4. Crie os usuários pelo Supabase Auth.
-5. Cadastre cada usuário na tabela `profiles` com o papel correto.
-6. Substitua, no `js/app.js`, as funções `loadState`, `saveState`, `upsert` e `removeItem` por chamadas ao Supabase.
-7. Envie anexos para o bucket `epya-anexos`.
+## Arquivos principais
 
-## Segurança
+- `index.html`: estrutura do sistema e tela de login.
+- `css/styles.css`: tema visual, responsividade e modo claro/escuro.
+- `js/app.js`: regras do sistema, Supabase Auth e operações no banco.
+- `supabase_schema.sql`: tabelas, políticas RLS, funções e usuário admin inicial.
+- `assets/epya-emblema.svg`: emblema visual inspirado na identidade EPYA.
 
-O controle de usuários dentro desta versão local é apenas organizacional. Ele não protege dados de verdade. Para permissões reais, use Supabase Auth + RLS, conforme o SQL incluso.
+## Observação sobre anexos
 
-## Personalização da marca
+Os anexos pequenos continuam sendo salvos como JSON/base64 nas tabelas para facilitar o uso inicial. Para uso pesado em produção, o ideal é migrar anexos para o Supabase Storage e guardar apenas os links nas tabelas.
 
-Não foi localizado, junto ao pacote, um manual oficial de identidade com códigos HEX públicos. Por isso a paleta foi montada com amarelo, preto e cinza escuro inspirados na presença visual pública da EPYA.
+## Como publicar
+
+Você pode subir a pasta em qualquer hospedagem estática, como Netlify, Vercel, GitHub Pages ou um servidor interno. O Supabase será o banco e sistema de autenticação.

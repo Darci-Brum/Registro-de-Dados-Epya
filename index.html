@@ -10,9 +10,56 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <noscript>Este sistema precisa de JavaScript ativado para salvar os registros no navegador.</noscript>
+  <noscript>Este sistema precisa de JavaScript ativado para salvar os registros no navegador e sincronizar com o Supabase.</noscript>
 
-  <div class="app-shell">
+  <section class="login-screen" id="loginScreen">
+    <div class="login-card">
+      <div class="login-brand">
+        <img src="assets/epya-emblema.svg" alt="Emblema EPYA" />
+        <div>
+          <span>EPYA</span>
+          <strong>Controle de Qualidade</strong>
+          <small>Responsável Darci Brum</small>
+        </div>
+      </div>
+
+      <div class="login-tabs" role="tablist" aria-label="Acesso ao sistema">
+        <button class="login-tab active" type="button" data-login-mode="signin">Entrar</button>
+        <button class="login-tab" type="button" data-login-mode="signup">Primeiro acesso</button>
+      </div>
+
+      <form id="loginForm" class="login-form">
+        <h1>Login do sistema</h1>
+        <p>Use o e-mail e senha cadastrados no Supabase. Apenas usuários liberados pelo administrador conseguem acessar.</p>
+        <label>E-mail
+          <input type="email" id="loginEmail" autocomplete="email" required placeholder="seuemail@empresa.com" />
+        </label>
+        <label>Senha
+          <input type="password" id="loginPassword" autocomplete="current-password" required placeholder="Digite sua senha" />
+        </label>
+        <button type="submit" class="primary-btn full-btn">Entrar</button>
+      </form>
+
+      <form id="signupForm" class="login-form" hidden>
+        <h1>Primeiro acesso</h1>
+        <p>Use esta opção somente depois que o administrador cadastrar seu e-mail na aba Usuários e perfis.</p>
+        <label>Nome
+          <input type="text" id="signupName" autocomplete="name" required placeholder="Seu nome" />
+        </label>
+        <label>E-mail autorizado
+          <input type="email" id="signupEmail" autocomplete="email" required placeholder="seuemail@empresa.com" />
+        </label>
+        <label>Criar senha
+          <input type="password" id="signupPassword" autocomplete="new-password" required minlength="6" placeholder="Mínimo 6 caracteres" />
+        </label>
+        <button type="submit" class="primary-btn full-btn">Ativar meu acesso</button>
+      </form>
+
+      <p class="login-note" id="loginMessage">Administrador principal: DarciBrum3010@gmail.com</p>
+    </div>
+  </section>
+
+  <div class="app-shell" id="appShell" hidden>
     <aside class="sidebar" aria-label="Menu principal">
       <div class="brand-block">
         <img src="assets/epya-emblema.svg" alt="Emblema EPYA" class="brand-logo" />
@@ -37,7 +84,12 @@
       <div class="sidebar-footer">
         <label for="activeUserSelect">Usuário ativo</label>
         <select id="activeUserSelect"></select>
-        <p class="hint">Sistema local com estrutura pronta para Supabase.</p>
+        <div class="session-card">
+          <strong id="sessionUserName">Não conectado</strong>
+          <span id="sessionUserRole">Supabase</span>
+          <button class="ghost-btn small-full" id="logoutButton" type="button">Sair</button>
+        </div>
+        <p class="hint">Dados sincronizados com Supabase quando o usuário estiver autenticado.</p>
       </div>
     </aside>
 
@@ -48,6 +100,7 @@
           <h1 id="pageTitle">Dashboard</h1>
         </div>
         <div class="topbar-actions">
+          <button class="ghost-btn" id="themeToggle" type="button" aria-label="Alternar tema claro e escuro">Tema escuro</button>
           <button class="ghost-btn" id="notificationButton">Ativar notificações</button>
           <button class="primary-btn" id="quickRdoButton">Novo RDO</button>
         </div>
@@ -516,7 +569,7 @@
           <div class="card-header">
             <div>
               <h3>Usuários e perfis</h3>
-              <p>Crie perfis para outros usuários alimentarem os dados diariamente. No modo local, isso é organizacional; no Supabase, vira controle real com autenticação.</p>
+              <p>Cadastre os e-mails autorizados. Depois disso, cada pessoa usa “Primeiro acesso” na tela de login para criar a própria senha.</p>
             </div>
           </div>
           <form id="userForm" class="form-grid compact-form">
@@ -529,9 +582,8 @@
             </label>
             <label>Perfil
               <select id="userRole">
-                <option value="admin">Administrador</option>
-                <option value="inspetor">Inspetor de Qualidade</option>
-                <option value="encarregado">Encarregado</option>
+                <option value="admin">Admin</option>
+                <option value="analista">Analista</option>
                 <option value="consulta">Consulta</option>
               </select>
             </label>
@@ -599,15 +651,16 @@
             </div>
           </div>
           <div class="supabase-box">
-            <h4>Próxima etapa para virar multiusuário real</h4>
-            <p>Crie um projeto no Supabase, rode o SQL do pacote, configure autenticação e troque o armazenamento local por chamadas ao banco. O painel já foi separado por módulos para facilitar essa migração.</p>
+            <h4>Supabase conectado no código</h4>
+            <p>O projeto já está configurado para usar autenticação, perfis e tabelas no Supabase. Rode o arquivo <strong>supabase_schema.sql</strong> no SQL Editor antes de usar em produção.</p>
+            <div class="backup-actions inline-actions">
+              <button class="primary-btn" id="syncLocalToSupabase" type="button">Enviar dados locais para Supabase</button>
+              <button class="ghost-btn" id="refreshSupabaseData" type="button">Atualizar dados do Supabase</button>
+            </div>
             <ul>
-              <li>RDOs: tabela <code>rdos</code></li>
-              <li>Despesas: tabela <code>expenses</code></li>
-              <li>Equipes: tabela <code>team_members</code></li>
-              <li>Veículo: tabelas <code>vehicles</code> e <code>vehicle_costs</code></li>
-              <li>Agenda: tabela <code>agenda_items</code></li>
-              <li>Usuários/perfis: tabela <code>profiles</code></li>
+              <li><strong>Admin:</strong> acessa tudo e cadastra usuários.</li>
+              <li><strong>Analista:</strong> lança e edita RDO, despesas, equipes, veículo e agenda.</li>
+              <li><strong>Consulta:</strong> visualiza os dados sem editar.</li>
             </ul>
           </div>
         </article>
@@ -624,6 +677,7 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

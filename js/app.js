@@ -1,13 +1,25 @@
 (() => {
   const STORAGE_KEY = 'epya-quality-control-v1';
+  const THEME_KEY = 'epya-theme-preference';
   const MAX_ATTACHMENT_SIZE = 2.5 * 1024 * 1024;
+  const SUPABASE_PROJECT_URL = 'https://eerebnizeuwxxqoxhjqh.supabase.co';
+  const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Dvp7n399kM679L0dXf9R8w_1ih-WiWY';
+  const ADMIN_EMAIL = 'DarciBrum3010@gmail.com';
+  const supabaseClient = window.supabase?.createClient
+    ? window.supabase.createClient(SUPABASE_PROJECT_URL, SUPABASE_PUBLISHABLE_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      })
+    : null;
+  let currentSession = null;
+  let currentProfile = null;
+  let remoteReady = false;
 
   const defaultState = {
     users: [
       {
         id: 'usr-darci-admin',
         name: 'Darci Brum',
-        email: '',
+        email: ADMIN_EMAIL,
         role: 'admin',
         status: 'Ativo',
         notes: 'Responsável pelo painel de controle de qualidade EPYA.',
@@ -45,6 +57,12 @@
     modal: $('#modal'),
     modalTitle: $('#modalTitle'),
     modalBody: $('#modalBody'),
+    loginScreen: $('#loginScreen'),
+    appShell: $('#appShell'),
+    loginMessage: $('#loginMessage'),
+    sessionUserName: $('#sessionUserName'),
+    sessionUserRole: $('#sessionUserRole'),
+    themeToggle: $('#themeToggle'),
   };
 
   function loadState() {
@@ -123,16 +141,28 @@
   }
 
   function getCurrentUser() {
+    if (currentProfile) return currentProfile;
     return state.users.find((user) => user.id === state.activeUserId) || state.users[0];
   }
 
   function canEdit() {
-    return getCurrentUser()?.role !== 'consulta';
+    const role = getCurrentUser()?.role;
+    return role === 'admin' || role === 'analista';
+  }
+
+  function isAdmin() {
+    return getCurrentUser()?.role === 'admin';
   }
 
   function assertCanEdit() {
     if (canEdit()) return true;
-    toast('Este perfil é somente consulta. Troque para um perfil com permissão de lançamento.');
+    toast('Este perfil é somente consulta. Peça acesso de analista ou admin para lançar/editar dados.');
+    return false;
+  }
+
+  function assertAdmin() {
+    if (isAdmin()) return true;
+    toast('Somente administrador pode acessar esta função.');
     return false;
   }
 
@@ -151,6 +181,426 @@
 
   function closeModal() {
     elements.modal.hidden = true;
+  }
+
+  function setLoginMessage(message) {
+    if (elements.loginMessage) elements.loginMessage.textContent = message;
+  }
+
+  function showLogin() {
+    elements.loginScreen.hidden = false;
+    elements.appShell.hidden = true;
+  }
+
+  function showApp() {
+    elements.loginScreen.hidden = true;
+    elements.appShell.hidden = false;
+  }
+
+  function setupTheme() {
+    const savedTheme = localStorage.getItem(THEME_KEY) || 'light';
+    document.body.dataset.theme = savedTheme;
+    updateThemeButton(savedTheme);
+
+    elements.themeToggle?.addEventListener('click', () => {
+      const next = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.body.dataset.theme = next;
+      localStorage.setItem(THEME_KEY, next);
+      updateThemeButton(next);
+      drawExpensesChart();
+    });
+  }
+
+  function updateThemeButton(theme) {
+    if (!elements.themeToggle) return;
+    elements.themeToggle.textContent = theme === 'dark' ? 'Tema claro' : 'Tema escuro';
+  }
+
+  function setupAuthForms() {
+    document.querySelectorAll('[data-login-mode]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const mode = button.dataset.loginMode;
+        document.querySelectorAll('[data-login-mode]').forEach((item) => item.classList.toggle('active', item === button));
+        $('#loginForm').hidden = mode !== 'signin';
+        $('#signupForm').hidden = mode !== 'signup';
+        setLoginMessage(mode === 'signin'
+          ? `Administrador principal: ${ADMIN_EMAIL}`
+          : 'O primeiro acesso só libera e-mails previamente cadastrados pelo admin.');
+      });
+    });
+
+    $('#loginForm')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!supabaseClient) {
+        setLoginMessage('Biblioteca do Supabase não carregou. Verifique a conexão com a internet.');
+        return;
+      }
+      setLoginMessage('Validando acesso...');
+      const email = $('#loginEmail').value.trim();
+      const password = $('#loginPassword').value;
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) {
+        setLoginMessage(`Não foi possível entrar: ${error.message}`);
+        return;
+      }
+      currentSession = data.session;
+      await loadAuthenticatedApp();
+    });
+
+    $('#signupForm')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!supabaseClient) {
+        setLoginMessage('Biblioteca do Supabase não carregou. Verifique a conexão com a internet.');
+        return;
+      }
+      const name = $('#signupName').value.trim();
+      const email = $('#signupEmail').value.trim();
+      const password = $('#signupPassword').value;
+      setLoginMessage('Conferindo se o e-mail foi liberado pelo administrador...');
+
+      const { data: approved, error: approvalError } = await supabaseClient.rpc('is_email_preapproved', { p_email: email });
+      if (approvalError) {
+        setLoginMessage(`Não consegui validar o cadastro: ${approvalError.message}. Rode o supabase_schema.sql no projeto.`);
+        return;
+      }
+      if (!approved) {
+        setLoginMessage('Este e-mail ainda não foi cadastrado pelo administrador.');
+        return;
+      }
+
+      const { data, error } = await supabaseClient.auth.signUp({
+        email,
+        password,
+        options: { data: { name } },
+      });
+      if (error) {
+        setLoginMessage(`Não foi possível ativar o acesso: ${error.message}`);
+        return;
+      }
+      if (data.session) {
+        currentSession = data.session;
+        await loadAuthenticatedApp();
+      } else {
+        setLoginMessage('Acesso criado. Se o Supabase pedir confirmação, confirme o e-mail e depois entre pela aba Login.');
+      }
+    });
+
+    $('#logoutButton')?.addEventListener('click', async () => {
+      await supabaseClient?.auth.signOut();
+      currentSession = null;
+      currentProfile = null;
+      remoteReady = false;
+      showLogin();
+      setLoginMessage('Você saiu do sistema.');
+    });
+  }
+
+  async function restoreSession() {
+    if (!supabaseClient) {
+      showApp();
+      toast('Modo local: Supabase indisponível.');
+      return;
+    }
+    const { data } = await supabaseClient.auth.getSession();
+    currentSession = data.session;
+    if (!currentSession) {
+      showLogin();
+      return;
+    }
+    await loadAuthenticatedApp();
+  }
+
+  async function loadAuthenticatedApp() {
+    try {
+      await loadCurrentProfile();
+      if (!currentProfile || currentProfile.status !== 'Ativo') {
+        await supabaseClient.auth.signOut();
+        currentSession = null;
+        currentProfile = null;
+        remoteReady = false;
+        showLogin();
+        setLoginMessage('Seu usuário está inativo ou não foi cadastrado pelo administrador.');
+        return;
+      }
+      await loadRemoteData();
+      showApp();
+      renderAll();
+      toast('Dados carregados do Supabase.');
+    } catch (error) {
+      console.error(error);
+      showLogin();
+      setLoginMessage(`Erro ao carregar Supabase: ${error.message || error}`);
+    }
+  }
+
+  async function loadCurrentProfile() {
+    const user = currentSession?.user;
+    if (!user) return null;
+
+    let { data: profile, error } = await supabaseClient
+      .from('profiles')
+      .select('*')
+      .eq('auth_user_id', user.id)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') throw error;
+
+    if (!profile && user.email) {
+      const byEmail = await supabaseClient
+        .from('profiles')
+        .select('*')
+        .ilike('email', user.email)
+        .maybeSingle();
+      if (byEmail.error && byEmail.error.code !== 'PGRST116') throw byEmail.error;
+      profile = byEmail.data;
+      if (profile && !profile.auth_user_id) {
+        await supabaseClient.from('profiles').update({ auth_user_id: user.id, updated_at: new Date().toISOString() }).eq('id', profile.id);
+        profile.auth_user_id = user.id;
+      }
+    }
+
+    currentProfile = profile ? profileFromDb(profile) : null;
+    if (currentProfile) state.activeUserId = currentProfile.id;
+    return currentProfile;
+  }
+
+  async function loadRemoteData() {
+    if (!supabaseClient || !currentSession) return;
+    const [profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems] = await Promise.all([
+      supabaseClient.from('profiles').select('*').order('name', { ascending: true }),
+      supabaseClient.from('rdos').select('*').order('date', { ascending: false }),
+      supabaseClient.from('expenses').select('*').order('date', { ascending: false }),
+      supabaseClient.from('team_members').select('*').order('name', { ascending: true }),
+      supabaseClient.from('vehicles').select('*').limit(1),
+      supabaseClient.from('vehicle_costs').select('*').order('date', { ascending: false }),
+      supabaseClient.from('agenda_items').select('*').order('date_time', { ascending: true }),
+    ]);
+
+    const responses = { profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems };
+    Object.entries(responses).forEach(([name, response]) => {
+      if (response.error) throw new Error(`${name}: ${response.error.message}`);
+    });
+
+    state = {
+      ...structuredClone(defaultState),
+      users: profiles.data.map(profileFromDb),
+      activeUserId: currentProfile?.id || profiles.data[0]?.id || defaultState.activeUserId,
+      rdos: rdos.data.map(rdoFromDb),
+      expenses: expenses.data.map(expenseFromDb),
+      teamMembers: teamMembers.data.map(teamMemberFromDb),
+      vehicle: vehicleFromDb(vehicles.data?.[0]),
+      vehicleCosts: vehicleCosts.data.map(vehicleCostFromDb),
+      agendaItems: agendaItems.data.map(agendaFromDb),
+    };
+    remoteReady = true;
+    saveState();
+  }
+
+  async function refreshRemoteData() {
+    if (!remoteReady) {
+      toast('Entre no sistema para atualizar os dados do Supabase.');
+      return;
+    }
+    await loadRemoteData();
+    renderAll();
+    toast('Dados atualizados do Supabase.');
+  }
+
+  function profileFromDb(row) {
+    return {
+      id: row.id,
+      authUserId: row.auth_user_id,
+      name: row.name || row.email || 'Usuário',
+      email: row.email || '',
+      role: row.role || 'consulta',
+      status: row.status || 'Ativo',
+      notes: row.notes || '',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function profileToDb(user) {
+    return {
+      id: user.id || uid('usr'),
+      auth_user_id: user.authUserId || null,
+      name: user.name,
+      email: String(user.email || '').trim(),
+      role: user.role,
+      status: user.status,
+      notes: user.notes || '',
+      updated_at: new Date().toISOString(),
+      created_at: user.createdAt || new Date().toISOString(),
+    };
+  }
+
+  function rdoFromDb(row) {
+    return {
+      id: row.id, date: row.date, shift: row.shift, project: row.project, location: row.location,
+      weather: row.weather, status: row.status, activities: row.activities, issues: row.issues,
+      quality: row.quality, attachments: row.attachments || [], createdBy: row.created_by,
+      updatedBy: row.updated_by, createdAt: row.created_at, updatedAt: row.updated_at,
+    };
+  }
+
+  function rdoToDb(item) {
+    return {
+      id: item.id, date: item.date, shift: item.shift, project: item.project, location: item.location,
+      weather: item.weather, status: item.status, activities: item.activities, issues: item.issues,
+      quality: item.quality, attachments: item.attachments || [], created_by: item.createdBy,
+      updated_by: item.updatedBy, created_at: item.createdAt || new Date().toISOString(), updated_at: item.updatedAt || new Date().toISOString(),
+    };
+  }
+
+  function expenseFromDb(row) {
+    return {
+      id: row.id, date: row.date, category: row.category, supplier: row.supplier,
+      value: Number(row.value || 0), payment: row.payment, description: row.description,
+      attachments: row.attachments || [], createdBy: row.created_by, updatedBy: row.updated_by,
+      createdAt: row.created_at, updatedAt: row.updated_at,
+    };
+  }
+
+  function expenseToDb(item) {
+    return {
+      id: item.id, date: item.date, category: item.category, supplier: item.supplier,
+      value: Number(item.value || 0), payment: item.payment, description: item.description,
+      attachments: item.attachments || [], created_by: item.createdBy, updated_by: item.updatedBy,
+      created_at: item.createdAt || new Date().toISOString(), updated_at: item.updatedAt || new Date().toISOString(),
+    };
+  }
+
+  function teamMemberFromDb(row) {
+    return {
+      id: row.id, name: row.name, role: row.member_role, leader: row.leader, group: row.team_group,
+      phone: row.phone, status: row.status, notes: row.notes, createdBy: row.created_by,
+      updatedBy: row.updated_by, createdAt: row.created_at, updatedAt: row.updated_at,
+    };
+  }
+
+  function teamMemberToDb(item) {
+    return {
+      id: item.id, name: item.name, member_role: item.role, leader: item.leader, team_group: item.group,
+      phone: item.phone, status: item.status, notes: item.notes, created_by: item.createdBy,
+      updated_by: item.updatedBy, created_at: item.createdAt || new Date().toISOString(), updated_at: item.updatedAt || new Date().toISOString(),
+    };
+  }
+
+  function vehicleFromDb(row) {
+    if (!row) return structuredClone(defaultState.vehicle);
+    return { id: row.id, model: row.model || '', plate: row.plate || '', color: row.color || '', odometer: row.odometer || '' };
+  }
+
+  function vehicleToDb(vehicle) {
+    return {
+      id: vehicle.id || `vehicle-${currentProfile?.id || 'local'}`,
+      model: vehicle.model || '', plate: vehicle.plate || '', color: vehicle.color || '', odometer: Number(vehicle.odometer || 0),
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  function vehicleCostFromDb(row) {
+    return {
+      id: row.id, date: row.date, type: row.cost_type, value: Number(row.value || 0), km: row.km,
+      description: row.description, attachments: row.attachments || [], createdBy: row.created_by,
+      updatedBy: row.updated_by, createdAt: row.created_at, updatedAt: row.updated_at,
+    };
+  }
+
+  function vehicleCostToDb(item) {
+    return {
+      id: item.id, date: item.date, cost_type: item.type, value: Number(item.value || 0), km: item.km,
+      description: item.description, attachments: item.attachments || [], created_by: item.createdBy,
+      updated_by: item.updatedBy, created_at: item.createdAt || new Date().toISOString(), updated_at: item.updatedAt || new Date().toISOString(),
+    };
+  }
+
+  function agendaFromDb(row) {
+    return {
+      id: row.id, title: row.title, dateTime: row.date_time, priority: row.priority, status: row.status,
+      notes: row.notes, notified: row.notified, createdBy: row.created_by, updatedBy: row.updated_by,
+      createdAt: row.created_at, updatedAt: row.updated_at,
+    };
+  }
+
+  function agendaToDb(item) {
+    return {
+      id: item.id, title: item.title, date_time: item.dateTime, priority: item.priority, status: item.status,
+      notes: item.notes, notified: Boolean(item.notified), created_by: item.createdBy, updated_by: item.updatedBy,
+      created_at: item.createdAt || new Date().toISOString(), updated_at: item.updatedAt || new Date().toISOString(),
+    };
+  }
+
+  function remoteMapping(collection, item) {
+    const map = {
+      users: ['profiles', profileToDb],
+      rdos: ['rdos', rdoToDb],
+      expenses: ['expenses', expenseToDb],
+      teamMembers: ['team_members', teamMemberToDb],
+      vehicleCosts: ['vehicle_costs', vehicleCostToDb],
+      agendaItems: ['agenda_items', agendaToDb],
+    };
+    const found = map[collection];
+    return found ? { table: found[0], row: found[1](item) } : null;
+  }
+
+  async function saveRemote(collection, item) {
+    if (!remoteReady || !supabaseClient) return;
+    const mapping = remoteMapping(collection, item);
+    if (!mapping) return;
+    const { error } = await supabaseClient.from(mapping.table).upsert(mapping.row, { onConflict: 'id' });
+    if (error) {
+      console.error(error);
+      toast(`Erro ao salvar no Supabase: ${error.message}`);
+      return;
+    }
+    if (collection === 'users') await loadRemoteData();
+  }
+
+  async function deleteRemote(collection, id) {
+    if (!remoteReady || !supabaseClient) return;
+    const mapping = remoteMapping(collection, { id });
+    if (!mapping) return;
+    const { error } = await supabaseClient.from(mapping.table).delete().eq('id', id);
+    if (error) {
+      console.error(error);
+      toast(`Erro ao excluir no Supabase: ${error.message}`);
+    }
+  }
+
+  async function saveVehicleRemote() {
+    if (!remoteReady || !supabaseClient) return;
+    const row = vehicleToDb(state.vehicle);
+    state.vehicle.id = row.id;
+    const { error } = await supabaseClient.from('vehicles').upsert(row, { onConflict: 'id' });
+    if (error) toast(`Erro ao salvar veículo no Supabase: ${error.message}`);
+  }
+
+  async function syncLocalBackupToSupabase() {
+    if (!remoteReady) {
+      toast('Entre no sistema com Supabase antes de sincronizar.');
+      return;
+    }
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) {
+      toast('Não encontrei backup local para enviar.');
+      return;
+    }
+    const local = JSON.parse(saved);
+    const confirmed = confirm('Enviar os dados locais deste navegador para o Supabase? Registros com mesmo ID serão atualizados.');
+    if (!confirmed) return;
+
+    const collections = ['rdos', 'expenses', 'teamMembers', 'vehicleCosts', 'agendaItems'];
+    for (const collection of collections) {
+      for (const item of local[collection] || []) await saveRemote(collection, item);
+    }
+    if (local.vehicle) {
+      state.vehicle = { ...state.vehicle, ...local.vehicle };
+      await saveVehicleRemote();
+    }
+    await loadRemoteData();
+    renderAll();
+    toast('Dados locais enviados para o Supabase.');
   }
 
   async function readAttachments(input, existing = [], append = false) {
@@ -220,25 +670,35 @@
 
   function renderUsersSelect() {
     const current = getCurrentUser();
-    elements.activeUserSelect.innerHTML = state.users
-      .filter((user) => user.status === 'Ativo')
-      .map((user) => `<option value="${user.id}" ${user.id === current.id ? 'selected' : ''}>${escapeHtml(user.name)} — ${roleLabel(user.role)}</option>`)
-      .join('');
+    if (remoteReady && currentProfile) {
+      elements.activeUserSelect.innerHTML = `<option value="${currentProfile.id}">${escapeHtml(currentProfile.name)} — ${roleLabel(currentProfile.role)}</option>`;
+      elements.activeUserSelect.disabled = true;
+    } else {
+      elements.activeUserSelect.disabled = false;
+      elements.activeUserSelect.innerHTML = state.users
+        .filter((user) => user.status === 'Ativo')
+        .map((user) => `<option value="${user.id}" ${user.id === current.id ? 'selected' : ''}>${escapeHtml(user.name)} — ${roleLabel(user.role)}</option>`)
+        .join('');
+    }
+
+    if (elements.sessionUserName) elements.sessionUserName.textContent = current?.name || 'Não conectado';
+    if (elements.sessionUserRole) elements.sessionUserRole.textContent = `${roleLabel(current?.role)} • ${current?.email || 'local'}`;
 
     $$('.nav-item[data-admin-only="true"]').forEach((item) => {
-      item.style.display = current.role === 'admin' ? '' : 'none';
-      if (item.classList.contains('active') && current.role !== 'admin') openTab('dashboard');
+      item.style.display = current?.role === 'admin' ? '' : 'none';
+      if (item.classList.contains('active') && current?.role !== 'admin') openTab('dashboard');
     });
+
+    document.body.classList.toggle('read-only', !canEdit());
   }
 
   function roleLabel(role) {
     const labels = {
-      admin: 'Administrador',
-      inspetor: 'Inspetor',
-      encarregado: 'Encarregado',
+      admin: 'Admin',
+      analista: 'Analista',
       consulta: 'Consulta',
     };
-    return labels[role] || role;
+    return labels[role] || role || '-';
   }
 
   function currentUserStamp() {
@@ -671,16 +1131,18 @@
   }
 
   function setupVehicle() {
-    $('#vehicleProfileForm').addEventListener('submit', (event) => {
+    $('#vehicleProfileForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       if (!assertCanEdit()) return;
       state.vehicle = {
+        ...state.vehicle,
         model: $('#vehicleModel').value.trim(),
         plate: $('#vehiclePlate').value.trim().toUpperCase(),
         color: $('#vehicleColor').value.trim(),
         odometer: $('#vehicleOdometer').value,
       };
       saveState();
+      await saveVehicleRemote();
       renderAll();
       toast('Dados do carro salvos.');
     });
@@ -926,6 +1388,7 @@
 
   function setupUsers() {
     elements.activeUserSelect.addEventListener('change', (event) => {
+      if (remoteReady) return;
       state.activeUserId = event.target.value;
       saveState();
       renderAll();
@@ -934,10 +1397,7 @@
 
     $('#userForm').addEventListener('submit', (event) => {
       event.preventDefault();
-      if (getCurrentUser().role !== 'admin') {
-        toast('Somente administrador pode criar usuários.');
-        return;
-      }
+      if (!assertAdmin()) return;
       const id = $('#userId').value || uid('usr');
       const existing = state.users.find((user) => user.id === id);
       const user = {
@@ -947,6 +1407,7 @@
         role: $('#userRole').value,
         status: $('#userStatus').value,
         notes: $('#userNotes').value.trim(),
+        authUserId: existing?.authUserId || null,
         createdAt: existing?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -954,18 +1415,20 @@
       event.target.reset();
       $('#userId').value = '';
       renderAll();
-      toast('Usuário salvo com sucesso.');
+      toast('Usuário salvo. Agora ele pode criar a senha em Primeiro acesso.');
     });
 
     $('#userTable').addEventListener('click', (event) => {
       const button = event.target.closest('[data-action]');
       if (!button) return;
+      if (!assertAdmin()) return;
       const user = state.users.find((item) => item.id === button.dataset.id);
       if (!user) return;
       if (button.dataset.action === 'edit-user') editUser(user);
       if (button.dataset.action === 'delete-user') {
-        if (user.id === 'usr-darci-admin' || user.id === state.activeUserId) {
-          toast('Não é possível excluir o administrador inicial ou o usuário ativo.');
+        const isProtectedAdmin = user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        if (isProtectedAdmin || user.id === state.activeUserId) {
+          toast('Não é possível excluir o administrador principal ou o usuário ativo.');
           return;
         }
         removeItem('users', user.id, 'Usuário excluído.');
@@ -1036,6 +1499,9 @@
       renderAll();
       toast('Dados locais apagados.');
     });
+
+    $('#syncLocalToSupabase')?.addEventListener('click', syncLocalBackupToSupabase);
+    $('#refreshSupabaseData')?.addEventListener('click', refreshRemoteData);
   }
 
   function upsert(collection, item) {
@@ -1043,15 +1509,19 @@
     if (index >= 0) state[collection][index] = item;
     else state[collection].push(item);
     saveState();
+    saveRemote(collection, item);
   }
 
   function removeItem(collection, id, message) {
-    if (!assertCanEdit()) return;
+    if (collection === 'users') {
+      if (!assertAdmin()) return;
+    } else if (!assertCanEdit()) return;
     const confirmed = confirm('Confirmar exclusão?');
     if (!confirmed) return;
     state[collection] = state[collection].filter((item) => item.id !== id);
     if (collection === 'users' && state.activeUserId === id) state.activeUserId = state.users[0]?.id || defaultState.activeUserId;
     saveState();
+    deleteRemote(collection, id);
     renderAll();
     toast(message);
   }
@@ -1102,7 +1572,9 @@
     renderUserTable();
   }
 
-  function init() {
+  async function init() {
+    setupTheme();
+    setupAuthForms();
     setupNavigation();
     setupRdo();
     setupExpenses();
@@ -1118,6 +1590,7 @@
     });
 
     renderAll();
+    await restoreSession();
     setTimeout(checkReminders, 1500);
   }
 
