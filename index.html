@@ -13,49 +13,74 @@
   <noscript>Este sistema precisa de JavaScript ativado para salvar os registros no navegador e sincronizar com o Supabase.</noscript>
 
   <section class="login-screen" id="loginScreen">
-    <div class="login-card">
-      <div class="login-brand">
-        <img src="assets/epya-emblema.svg" alt="Emblema EPYA" />
-        <div>
-          <span>EPYA</span>
-          <strong>Controle de Qualidade</strong>
-          <small>Responsável Darci Brum</small>
+    <div class="login-screen-backdrop" aria-hidden="true"></div>
+    <div class="login-layout">
+      <div class="login-hero-panel">
+        <div class="login-hero-copy">
+          <span class="hero-kicker">EPYA + ARAUCO</span>
+          <h1>Controle de Qualidade com acesso protegido antes da entrada no sistema.</h1>
+          <p>Faça login para carregar seus dados do Supabase, acessar RDO, despesas, equipes, veículo, agenda e perfis de usuários com segurança.</p>
+          <div class="login-feature-list">
+            <div class="login-feature-item">
+              <strong>Gestão ferroviária</strong>
+              <small>Painel pensado para rotina operacional, inspeções e acompanhamento diário.</small>
+            </div>
+            <div class="login-feature-item">
+              <strong>Perfis por função</strong>
+              <small>Controle de acesso para administrador, analista e consulta.</small>
+            </div>
+            <div class="login-feature-item">
+              <strong>Base sincronizada</strong>
+              <small>Os dados só são carregados após autenticação válida no Supabase.</small>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="login-tabs" role="tablist" aria-label="Acesso ao sistema">
-        <button class="login-tab active" type="button" data-login-mode="signin">Entrar</button>
-        <button class="login-tab" type="button" data-login-mode="signup">Primeiro acesso</button>
+      <div class="login-card">
+        <div class="login-brand">
+          <img src="assets/epya-emblema.svg" alt="Emblema EPYA" />
+          <div>
+            <span>EPYA</span>
+            <strong>Controle de Qualidade</strong>
+            <small>Responsável Darci Brum</small>
+          </div>
+        </div>
+
+        <div class="login-tabs" role="tablist" aria-label="Acesso ao sistema">
+          <button class="login-tab active" type="button" data-login-mode="signin">Entrar</button>
+          <button class="login-tab" type="button" data-login-mode="signup">Primeiro acesso</button>
+        </div>
+
+        <form id="loginForm" class="login-form">
+          <h2>Login do sistema</h2>
+          <p>Esta é a tela inicial obrigatória. Informe e-mail e senha para validar seu perfil antes de abrir o painel.</p>
+          <label>E-mail
+            <input type="email" id="loginEmail" autocomplete="email" required placeholder="seuemail@empresa.com" />
+          </label>
+          <label>Senha
+            <input type="password" id="loginPassword" autocomplete="current-password" required placeholder="Digite sua senha" />
+          </label>
+          <button type="submit" class="primary-btn full-btn">Entrar</button>
+        </form>
+
+        <form id="signupForm" class="login-form" hidden>
+          <h2>Primeiro acesso</h2>
+          <p>Use esta opção somente depois que o administrador cadastrar seu e-mail na aba Usuários e perfis.</p>
+          <label>Nome
+            <input type="text" id="signupName" autocomplete="name" required placeholder="Seu nome" />
+          </label>
+          <label>E-mail autorizado
+            <input type="email" id="signupEmail" autocomplete="email" required placeholder="seuemail@empresa.com" />
+          </label>
+          <label>Criar senha
+            <input type="password" id="signupPassword" autocomplete="new-password" required minlength="6" placeholder="Mínimo 6 caracteres" />
+          </label>
+          <button type="submit" class="primary-btn full-btn">Ativar meu acesso</button>
+        </form>
+
+        <p class="login-note" id="loginMessage">Administrador principal: DarciBrum3010@gmail.com</p>
       </div>
-
-      <form id="loginForm" class="login-form">
-        <h1>Login do sistema</h1>
-        <p>Use o e-mail e senha cadastrados no Supabase. Apenas usuários liberados pelo administrador conseguem acessar.</p>
-        <label>E-mail
-          <input type="email" id="loginEmail" autocomplete="email" required placeholder="seuemail@empresa.com" />
-        </label>
-        <label>Senha
-          <input type="password" id="loginPassword" autocomplete="current-password" required placeholder="Digite sua senha" />
-        </label>
-        <button type="submit" class="primary-btn full-btn">Entrar</button>
-      </form>
-
-      <form id="signupForm" class="login-form" hidden>
-        <h1>Primeiro acesso</h1>
-        <p>Use esta opção somente depois que o administrador cadastrar seu e-mail na aba Usuários e perfis.</p>
-        <label>Nome
-          <input type="text" id="signupName" autocomplete="name" required placeholder="Seu nome" />
-        </label>
-        <label>E-mail autorizado
-          <input type="email" id="signupEmail" autocomplete="email" required placeholder="seuemail@empresa.com" />
-        </label>
-        <label>Criar senha
-          <input type="password" id="signupPassword" autocomplete="new-password" required minlength="6" placeholder="Mínimo 6 caracteres" />
-        </label>
-        <button type="submit" class="primary-btn full-btn">Ativar meu acesso</button>
-      </form>
-
-      <p class="login-note" id="loginMessage">Administrador principal: DarciBrum3010@gmail.com</p>
     </div>
   </section>
 
