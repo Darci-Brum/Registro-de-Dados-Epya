@@ -333,3 +333,66 @@ create index if not exists agenda_items_date_time_idx on public.agenda_items(dat
 
 alter table if exists public.team_members add column if not exists last_visit_date date;
 alter table if exists public.team_members add column if not exists visit_count integer default 0;
+
+-- =========================
+-- ATUALIZAÇÃO: Não conformidades e Frentes/Obras
+-- (seguro para rodar mais de uma vez)
+-- =========================
+
+create table if not exists public.ncs (
+  id text primary key,
+  date date not null,
+  project text,
+  nc_type text,
+  severity text not null default 'Leve' check (severity in ('Leve', 'Média', 'Crítica')),
+  responsible text,
+  deadline date,
+  status text not null default 'Aberta' check (status in ('Aberta', 'Em tratativa', 'Fechada')),
+  description text,
+  corrective_action text,
+  attachments jsonb not null default '[]'::jsonb,
+  closed_at timestamptz,
+  created_by text,
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.projects (
+  id text primary key,
+  name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists projects_name_lower_idx on public.projects (lower(trim(name)));
+
+alter table public.ncs enable row level security;
+alter table public.projects enable row level security;
+
+do $$
+declare
+  tbl text;
+begin
+  foreach tbl in array array['ncs', 'projects'] loop
+    execute format('drop policy if exists %I on public.%I', tbl || '_select_active', tbl);
+    execute format('create policy %I on public.%I for select to authenticated using (public.is_active_user())', tbl || '_select_active', tbl);
+
+    execute format('drop policy if exists %I on public.%I', tbl || '_insert_writer', tbl);
+    execute format('create policy %I on public.%I for insert to authenticated with check (public.can_write_app_data())', tbl || '_insert_writer', tbl);
+
+    execute format('drop policy if exists %I on public.%I', tbl || '_update_writer', tbl);
+    execute format('create policy %I on public.%I for update to authenticated using (public.can_write_app_data()) with check (public.can_write_app_data())', tbl || '_update_writer', tbl);
+
+    execute format('drop policy if exists %I on public.%I', tbl || '_delete_writer', tbl);
+    execute format('create policy %I on public.%I for delete to authenticated using (public.can_write_app_data())', tbl || '_delete_writer', tbl);
+  end loop;
+end;
+$$;
+
+grant select, insert, update, delete on public.ncs to authenticated;
+grant select, insert, update, delete on public.projects to authenticated;
+
+create index if not exists ncs_date_idx on public.ncs(date desc);
+create index if not exists ncs_status_idx on public.ncs(status);
+create index if not exists projects_name_idx on public.projects(name);

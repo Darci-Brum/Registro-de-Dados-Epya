@@ -28,6 +28,8 @@
     ],
     activeUserId: 'usr-darci-admin',
     rdos: [],
+    ncs: [],
+    projects: [],
     expenses: [],
     teamMembers: [],
     vehicle: {
@@ -41,6 +43,20 @@
   };
 
   let state = loadState();
+  migrateProjectsFromRdos();
+
+  function migrateProjectsFromRdos() {
+    if (!Array.isArray(state.projects)) state.projects = [];
+    if (!Array.isArray(state.ncs)) state.ncs = [];
+    const known = new Set(state.projects.map((project) => normalizeText(project.name)));
+    [...state.rdos, ...state.ncs].forEach((item) => {
+      const name = String(item.project || '').trim();
+      if (!name || known.has(normalizeText(name))) return;
+      known.add(normalizeText(name));
+      state.projects.push({ id: uid('prj'), name, createdAt: new Date().toISOString() });
+    });
+    state.projects.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }
 
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -211,7 +227,7 @@
       document.body.dataset.theme = next;
       localStorage.setItem(THEME_KEY, next);
       updateThemeButton(next);
-      drawExpensesChart();
+      renderDashboard();
     });
   }
 
@@ -373,7 +389,7 @@
 
   async function loadRemoteData() {
     if (!supabaseClient || !currentSession) return;
-    const [profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems] = await Promise.all([
+    const [profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems, ncs, projects] = await Promise.all([
       supabaseClient.from('profiles').select('*').order('name', { ascending: true }),
       supabaseClient.from('rdos').select('*').order('date', { ascending: false }),
       supabaseClient.from('expenses').select('*').order('date', { ascending: false }),
@@ -381,6 +397,8 @@
       supabaseClient.from('vehicles').select('*').limit(1),
       supabaseClient.from('vehicle_costs').select('*').order('date', { ascending: false }),
       supabaseClient.from('agenda_items').select('*').order('date_time', { ascending: true }),
+      supabaseClient.from('ncs').select('*').order('date', { ascending: false }),
+      supabaseClient.from('projects').select('*').order('name', { ascending: true }),
     ]);
 
     const responses = { profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems };
@@ -388,17 +406,26 @@
       if (response.error) throw new Error(`${name}: ${response.error.message}`);
     });
 
+    const newTablesMissing = Boolean(ncs.error || projects.error);
+    if (newTablesMissing) {
+      console.warn('Tabelas ncs/projects ainda não existem no Supabase. Rode o supabase_schema.sql atualizado.', ncs.error || projects.error);
+      toast('Aviso: rode o supabase_schema.sql atualizado para sincronizar NCs e frentes.');
+    }
+
     state = {
       ...structuredClone(defaultState),
       users: profiles.data.map(profileFromDb),
       activeUserId: currentProfile?.id || profiles.data[0]?.id || defaultState.activeUserId,
       rdos: rdos.data.map(rdoFromDb),
+      ncs: ncs.error ? state.ncs : ncs.data.map(ncFromDb),
+      projects: projects.error ? state.projects : projects.data.map(projectFromDb),
       expenses: expenses.data.map(expenseFromDb),
       teamMembers: teamMembers.data.map(teamMemberFromDb),
       vehicle: vehicleFromDb(vehicles.data?.[0]),
       vehicleCosts: vehicleCosts.data.map(vehicleCostFromDb),
       agendaItems: agendaItems.data.map(agendaFromDb),
     };
+    migrateProjectsFromRdos();
     remoteReady = true;
     saveState();
   }
@@ -538,10 +565,40 @@
     };
   }
 
+  function ncFromDb(row) {
+    return {
+      id: row.id, date: row.date, project: row.project, type: row.nc_type, severity: row.severity,
+      responsible: row.responsible, deadline: row.deadline || '', status: row.status,
+      description: row.description, action: row.corrective_action, attachments: row.attachments || [],
+      closedAt: row.closed_at, createdBy: row.created_by, updatedBy: row.updated_by,
+      createdAt: row.created_at, updatedAt: row.updated_at,
+    };
+  }
+
+  function ncToDb(item) {
+    return {
+      id: item.id, date: item.date, project: item.project, nc_type: item.type, severity: item.severity,
+      responsible: item.responsible, deadline: item.deadline || null, status: item.status,
+      description: item.description, corrective_action: item.action, attachments: item.attachments || [],
+      closed_at: item.closedAt || null, created_by: item.createdBy, updated_by: item.updatedBy,
+      created_at: item.createdAt || new Date().toISOString(), updated_at: item.updatedAt || new Date().toISOString(),
+    };
+  }
+
+  function projectFromDb(row) {
+    return { id: row.id, name: row.name, createdAt: row.created_at };
+  }
+
+  function projectToDb(item) {
+    return { id: item.id, name: item.name, created_at: item.createdAt || new Date().toISOString(), updated_at: new Date().toISOString() };
+  }
+
   function remoteMapping(collection, item) {
     const map = {
       users: ['profiles', profileToDb],
       rdos: ['rdos', rdoToDb],
+      ncs: ['ncs', ncToDb],
+      projects: ['projects', projectToDb],
       expenses: ['expenses', expenseToDb],
       teamMembers: ['team_members', teamMemberToDb],
       vehicleCosts: ['vehicle_costs', vehicleCostToDb],
@@ -597,7 +654,7 @@
     const confirmed = confirm('Enviar os dados locais deste navegador para o Supabase? Registros com mesmo ID serão atualizados.');
     if (!confirmed) return;
 
-    const collections = ['rdos', 'expenses', 'teamMembers', 'vehicleCosts', 'agendaItems'];
+    const collections = ['rdos', 'ncs', 'projects', 'expenses', 'teamMembers', 'vehicleCosts', 'agendaItems'];
     for (const collection of collections) {
       for (const item of local[collection] || []) await saveRemote(collection, item);
     }
@@ -665,13 +722,16 @@
     });
 
     $('#quickRdoButton').addEventListener('click', () => openTab('rdo'));
+
+    $('#dashPeriodFilter')?.addEventListener('change', renderDashboard);
+    $('#dashProjectFilter')?.addEventListener('change', renderDashboard);
   }
 
   function openTab(tabId) {
     $$('.nav-item').forEach((button) => button.classList.toggle('active', button.dataset.tab === tabId));
     $$('.tab-panel').forEach((panel) => panel.classList.toggle('active', panel.id === tabId));
     const nav = $(`.nav-item[data-tab="${tabId}"]`);
-    elements.pageTitle.textContent = nav?.textContent || 'Dashboard';
+    elements.pageTitle.textContent = nav?.querySelector('span')?.textContent || nav?.textContent || 'Dashboard';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -713,38 +773,145 @@
     return user ? user.name : 'Não informado';
   }
 
-  function renderDashboard() {
+  const dashboardCharts = {};
+
+  function dashboardFilters() {
+    return {
+      period: $('#dashPeriodFilter')?.value || 'month',
+      project: $('#dashProjectFilter')?.value || 'all',
+    };
+  }
+
+  function periodStartDate(period) {
     const now = new Date();
-    const currentMonth = monthInput(now);
-    const expensesThisMonth = state.expenses
-      .filter((item) => item.date?.startsWith(currentMonth))
-      .reduce((sum, item) => sum + Number(item.value || 0), 0);
-    const vehicleThisMonth = state.vehicleCosts
-      .filter((item) => item.date?.startsWith(currentMonth))
-      .reduce((sum, item) => sum + Number(item.value || 0), 0);
-    const activeTeam = state.teamMembers.filter((member) => member.status === 'Ativo').length;
-    const pendingReminders = state.agendaItems.filter((item) => item.status !== 'Concluído' && new Date(item.dateTime) >= now).length;
-    const monthRdos = state.rdos.filter((item) => item.date?.startsWith(currentMonth)).length;
-    const totalVisits = state.teamMembers.reduce((sum, item) => sum + Number(item.visitCount || 0), 0);
+    if (period === 'month') return new Date(now.getFullYear(), now.getMonth(), 1);
+    if (period === 'year') return new Date(now.getFullYear(), 0, 1);
+    if (period === 'all') return null;
+    const days = Number(period);
+    if (Number.isFinite(days)) {
+      const start = new Date(now);
+      start.setDate(start.getDate() - days);
+      return start;
+    }
+    return null;
+  }
 
-    const metrics = [
-      { label: 'RDOs lançados no mês', value: monthRdos, icon: 'RDO' },
-      { label: 'Despesas do mês', value: currency(expensesThisMonth), icon: 'R$' },
-      { label: 'Gastos do veículo', value: currency(vehicleThisMonth), icon: 'KM' },
-      { label: 'Visitas às equipes', value: totalVisits, icon: 'VS' },
-      { label: 'Equipes ativas', value: activeTeam, icon: 'EQ' },
-      { label: 'Lembretes pendentes', value: pendingReminders, icon: 'AG' },
-    ];
+  function inDashboardScope(item, dateField = 'date') {
+    const { period, project } = dashboardFilters();
+    if (project !== 'all' && normalizeText(item.project || '') !== normalizeText(project)) return false;
+    const start = periodStartDate(period);
+    if (!start) return true;
+    const raw = item[dateField];
+    if (!raw) return false;
+    const itemDate = new Date(String(raw).length === 10 ? `${raw}T00:00:00` : raw);
+    return itemDate >= start;
+  }
 
-    elements.metricsGrid.innerHTML = metrics.map((metric) => `
-      <div class="metric-card">
+  function chartTheme() {
+    const dark = document.body.dataset.theme === 'dark';
+    return {
+      text: dark ? '#c8cbd3' : '#676b73',
+      grid: dark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(18, 20, 24, 0.08)',
+      surface: dark ? '#1f2126' : '#ffffff',
+    };
+  }
+
+  function upsertChart(key, canvasId, config) {
+    const canvas = $(canvasId);
+    if (!canvas || !window.Chart) return;
+    if (dashboardCharts[key]) {
+      dashboardCharts[key].destroy();
+      delete dashboardCharts[key];
+    }
+    dashboardCharts[key] = new Chart(canvas, config);
+  }
+
+  function metricCard(metric) {
+    const deltaClass = metric.deltaKind ? ` metric-delta-${metric.deltaKind}` : '';
+    const delta = metric.delta ? `<span class="metric-delta${deltaClass}">${escapeHtml(metric.delta)}</span>` : '';
+    const alertClass = metric.alert ? ' metric-card-alert' : '';
+    return `
+      <div class="metric-card${alertClass}">
         <div class="metric-topline">
           <small>${escapeHtml(metric.label)}</small>
           <span class="metric-icon">${escapeHtml(metric.icon)}</span>
         </div>
         <strong>${escapeHtml(metric.value)}</strong>
+        ${delta}
       </div>
-    `).join('');
+    `;
+  }
+
+  function renderDashboard() {
+    renderDashboardProjectFilter();
+
+    const now = new Date();
+    const currentMonth = monthInput(now);
+    const previousMonth = monthInput(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+    const { project: projectFilter } = dashboardFilters();
+    const matchProject = (item) => projectFilter === 'all' || normalizeText(item.project || '') === normalizeText(projectFilter);
+
+    const scopedRdos = state.rdos.filter((item) => inDashboardScope(item));
+    const scopedNcs = state.ncs.filter((item) => inDashboardScope(item));
+
+    const monthRdos = state.rdos.filter((item) => item.date?.startsWith(currentMonth) && matchProject(item)).length;
+    const prevMonthRdos = state.rdos.filter((item) => item.date?.startsWith(previousMonth) && matchProject(item)).length;
+    let rdoDelta = '';
+    let rdoDeltaKind = '';
+    if (prevMonthRdos > 0) {
+      const percent = Math.round(((monthRdos - prevMonthRdos) / prevMonthRdos) * 100);
+      rdoDelta = `${percent >= 0 ? '▲ +' : '▼ '}${percent}% vs mês anterior`;
+      rdoDeltaKind = percent >= 0 ? 'up' : 'down';
+    } else if (monthRdos > 0) {
+      rdoDelta = 'Primeiro mês com lançamentos';
+      rdoDeltaKind = 'up';
+    }
+
+    const openNcs = scopedNcs.filter((item) => normalizeText(item.status) !== 'fechada');
+    const criticalNcs = openNcs.filter((item) => normalizeText(item.severity) === 'critica').length;
+    const lateNcs = openNcs.filter((item) => item.deadline && new Date(`${item.deadline}T23:59:59`) < now).length;
+    let ncDetail = openNcs.length ? `${criticalNcs} crítica${criticalNcs === 1 ? '' : 's'}` : 'Nada pendente';
+    if (lateNcs) ncDetail += ` • ${lateNcs} com prazo vencido`;
+
+    const expensesThisMonth = state.expenses.filter((item) => item.date?.startsWith(currentMonth)).reduce((sum, item) => sum + Number(item.value || 0), 0)
+      + state.vehicleCosts.filter((item) => item.date?.startsWith(currentMonth)).reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const monthTotals = lastMonths(6).map((month) => monthlySpendTotal(month));
+    const historicalMonths = monthTotals.slice(0, 5).filter((value) => value > 0);
+    const averageSpend = historicalMonths.length ? historicalMonths.reduce((sum, value) => sum + value, 0) / historicalMonths.length : 0;
+    let spendDelta = '';
+    let spendKind = '';
+    if (averageSpend > 0) {
+      const percent = Math.round(((expensesThisMonth - averageSpend) / averageSpend) * 100);
+      if (percent > 10) {
+        spendDelta = `⚠ ${percent}% acima da média`;
+        spendKind = 'warn';
+      } else if (percent < -10) {
+        spendDelta = `▼ ${Math.abs(percent)}% abaixo da média`;
+        spendKind = 'up';
+      } else {
+        spendDelta = 'Dentro da média dos últimos meses';
+        spendKind = 'neutral';
+      }
+    }
+
+    const totalRdoScoped = scopedRdos.length;
+    const doneRdoScoped = scopedRdos.filter((item) => normalizeText(item.status) === 'concluido').length;
+    const donePercent = totalRdoScoped ? Math.round((doneRdoScoped / totalRdoScoped) * 100) : 0;
+    const interrupted = scopedRdos.filter((item) => normalizeText(item.status) === 'interrompido').length;
+
+    const totalVisits = state.teamMembers.reduce((sum, item) => sum + Number(item.visitCount || 0), 0);
+    const pendingReminders = state.agendaItems.filter((item) => item.status !== 'Concluído' && new Date(item.dateTime) >= now).length;
+
+    const metrics = [
+      { label: 'RDOs no mês', value: monthRdos, icon: 'RDO', delta: rdoDelta, deltaKind: rdoDeltaKind },
+      { label: 'NCs abertas', value: openNcs.length, icon: 'NC', delta: ncDetail, deltaKind: lateNcs || criticalNcs ? 'down' : 'neutral', alert: openNcs.length > 0 },
+      { label: 'Gastos do mês', value: currency(expensesThisMonth), icon: 'R$', delta: spendDelta, deltaKind: spendKind },
+      { label: 'Dias concluídos', value: `${donePercent}%`, icon: '%', delta: interrupted ? `${interrupted} dia${interrupted === 1 ? '' : 's'} interrompido${interrupted === 1 ? '' : 's'}` : 'Nenhuma interrupção no período', deltaKind: interrupted ? 'warn' : 'up' },
+      { label: 'Visitas às equipes', value: totalVisits, icon: 'VS', delta: '', deltaKind: '' },
+      { label: 'Lembretes pendentes', value: pendingReminders, icon: 'AG', delta: '', deltaKind: '' },
+    ];
+
+    elements.metricsGrid.innerHTML = metrics.map(metricCard).join('');
 
     elements.upcomingReminders.innerHTML = upcomingAgendaItems(5).map((item) => `
       <div class="stack-item">
@@ -760,6 +927,7 @@
       { title: 'RDOs em aberto', value: openRdos, detail: 'Lançamentos ainda não concluídos.' },
       { title: 'Total acumulado de gastos', value: currency(totalExpenses), detail: 'Despesas gerais somadas ao veículo.' },
       { title: 'Frentes / equipes', value: totalTeams, detail: 'Equipes ou frentes cadastradas no sistema.' },
+      { title: 'NCs registradas', value: state.ncs.length, detail: 'Total histórico de não conformidades.' },
     ].map((item) => `
       <div class="stack-item">
         <strong class="summary-number">${escapeHtml(item.value)}</strong>
@@ -777,9 +945,43 @@
       </tr>
     `).join('') || '<tr><td colspan="5" class="empty-state">Nenhum RDO lançado ainda.</td></tr>';
 
-    drawRdoChart();
+    updateNcNavBadge();
+    drawRdoChart(scopedRdos);
     drawExpensesChart();
+    drawExpensesCategoryChart();
     drawTeamVisitsChart();
+    drawNcParetoChart(scopedNcs);
+  }
+
+  function renderDashboardProjectFilter() {
+    const select = $('#dashProjectFilter');
+    if (!select) return;
+    const current = select.value || 'all';
+    select.innerHTML = ['<option value="all">Todas as frentes</option>', ...state.projects.map((project) => `<option value="${escapeHtml(project.name)}">${escapeHtml(project.name)}</option>`)].join('');
+    select.value = [...select.options].some((option) => option.value === current) ? current : 'all';
+  }
+
+  function lastMonths(count) {
+    const months = [];
+    const base = new Date();
+    for (let index = count - 1; index >= 0; index -= 1) {
+      months.push(monthInput(new Date(base.getFullYear(), base.getMonth() - index, 1)));
+    }
+    return months;
+  }
+
+  function monthlySpendTotal(month) {
+    const general = state.expenses.filter((item) => item.date?.startsWith(month)).reduce((sum, item) => sum + Number(item.value || 0), 0);
+    const vehicle = state.vehicleCosts.filter((item) => item.date?.startsWith(month)).reduce((sum, item) => sum + Number(item.value || 0), 0);
+    return general + vehicle;
+  }
+
+  function updateNcNavBadge() {
+    const badge = $('#ncNavBadge');
+    if (!badge) return;
+    const open = state.ncs.filter((item) => normalizeText(item.status) !== 'fechada').length;
+    badge.textContent = open;
+    badge.hidden = open === 0;
   }
 
   function upcomingAgendaItems(limit = 10) {
@@ -793,63 +995,157 @@
   function statusBadge(status) {
     const normalized = normalizeText(status);
     let kind = 'warn';
-    if (normalized.includes('concluido') || normalized.includes('ativo')) kind = 'ok';
-    if (normalized.includes('interrompido') || normalized.includes('critica') || normalized.includes('desligado')) kind = 'danger';
+    if (normalized.includes('concluido') || normalized.includes('ativo') || normalized.includes('fechada')) kind = 'ok';
+    if (normalized.includes('interrompido') || normalized.includes('critica') || normalized.includes('desligado') || normalized.includes('aberta')) kind = 'danger';
+    if (normalized.includes('tratativa') || normalized.includes('andamento')) kind = 'info';
     return `<span class="badge ${kind}">${escapeHtml(status || '-')}</span>`;
   }
 
-  function drawExpensesChart() {
-    const canvas = elements.expensesChart;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
-    ctx.clearRect(0, 0, width, height);
+  function severityBadge(severity) {
+    const normalized = normalizeText(severity);
+    let kind = 'ok';
+    if (normalized === 'media') kind = 'warn';
+    if (normalized === 'critica') kind = 'danger';
+    return `<span class="badge ${kind}">${escapeHtml(severity || '-')}</span>`;
+  }
 
-    const months = [];
-    const base = new Date();
-    for (let index = 5; index >= 0; index -= 1) {
-      const date = new Date(base.getFullYear(), base.getMonth() - index, 1);
-      months.push(monthInput(date));
-    }
+  function isoWeekLabel(dateStr) {
+    const date = new Date(`${dateStr}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return null;
+    const target = new Date(date.valueOf());
+    target.setDate(target.getDate() - ((date.getDay() + 6) % 7) + 3);
+    const firstThursday = new Date(target.getFullYear(), 0, 4);
+    firstThursday.setDate(firstThursday.getDate() - ((firstThursday.getDay() + 6) % 7) + 3);
+    const week = 1 + Math.round((target - firstThursday) / (7 * 24 * 3600 * 1000));
+    return { key: `${target.getFullYear()}-S${pad(week)}`, label: `Sem ${pad(week)}` };
+  }
 
-    const values = months.map((month) => {
-      const general = state.expenses.filter((item) => item.date?.startsWith(month)).reduce((sum, item) => sum + Number(item.value || 0), 0);
-      const vehicle = state.vehicleCosts.filter((item) => item.date?.startsWith(month)).reduce((sum, item) => sum + Number(item.value || 0), 0);
-      return general + vehicle;
+  function drawRdoChart(scopedRdos = state.rdos) {
+    const theme = chartTheme();
+    const statuses = [
+      { name: 'Concluído', color: '#21bf73' },
+      { name: 'Em andamento', color: '#3a86ff' },
+      { name: 'Pendente', color: '#ffbe0b' },
+      { name: 'Interrompido', color: '#ef476f' },
+    ];
+
+    const weeks = new Map();
+    scopedRdos.forEach((rdo) => {
+      const info = rdo.date ? isoWeekLabel(rdo.date) : null;
+      if (!info) return;
+      if (!weeks.has(info.key)) weeks.set(info.key, { label: info.label, counts: {} });
+      const bucket = weeks.get(info.key);
+      const statusKey = normalizeText(rdo.status);
+      bucket.counts[statusKey] = (bucket.counts[statusKey] || 0) + 1;
     });
 
-    const labels = months.map((month) => month.split('-').reverse().join('/'));
-    drawHorizontalBarChart(ctx, width, height, labels, values, {
-      valueFormatter: (value) => currency(value),
-      colors: ['#ff6b35', '#ff9f1c', '#f3c229', '#2ec4b6', '#3a86ff', '#8338ec'],
+    const orderedKeys = [...weeks.keys()].sort().slice(-8);
+    const labels = orderedKeys.length ? orderedKeys.map((key) => weeks.get(key).label) : ['Sem dados'];
+    const datasets = statuses.map((status) => ({
+      label: status.name,
+      data: orderedKeys.length ? orderedKeys.map((key) => weeks.get(key).counts[normalizeText(status.name)] || 0) : [0],
+      backgroundColor: status.color,
+      borderRadius: 4,
+      maxBarThickness: 34,
+    }));
+
+    upsertChart('rdo', '#rdoChart', {
+      type: 'bar',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: theme.text, boxWidth: 12, font: { size: 11 } } } },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { color: theme.text } },
+          y: { stacked: true, grid: { color: theme.grid }, ticks: { color: theme.text, precision: 0 } },
+        },
+      },
     });
   }
 
-  function drawRdoChart() {
-    const canvas = elements.rdoChart;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
-    ctx.clearRect(0, 0, width, height);
+  function drawExpensesChart() {
+    const theme = chartTheme();
+    const months = lastMonths(6);
+    const values = months.map((month) => monthlySpendTotal(month));
+    const labels = months.map((month) => month.split('-').reverse().join('/'));
 
-    const statuses = ['Concluído', 'Em andamento', 'Pendente', 'Interrompido'];
-    const values = statuses.map((status) => state.rdos.filter((item) => normalizeText(item.status) === normalizeText(status)).length);
-    drawHorizontalBarChart(ctx, width, height, statuses, values, {
-      colors: ['#21bf73', '#3a86ff', '#ffbe0b', '#ef476f'],
-      valueFormatter: (value) => String(value),
+    upsertChart('expenses', '#expensesChart', {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Gastos totais',
+          data: values,
+          borderColor: '#3a86ff',
+          backgroundColor: 'rgba(58, 134, 255, 0.14)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#3a86ff',
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (context) => currency(context.parsed.y) } },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: theme.text } },
+          y: { grid: { color: theme.grid }, ticks: { color: theme.text, callback: (value) => currency(value) } },
+        },
+      },
+    });
+  }
+
+  function drawExpensesCategoryChart() {
+    const theme = chartTheme();
+    const { period } = dashboardFilters();
+    const start = periodStartDate(period);
+    const inPeriod = (item) => {
+      if (!start) return true;
+      if (!item.date) return false;
+      return new Date(`${item.date}T00:00:00`) >= start;
+    };
+
+    const grouped = {};
+    state.expenses.filter(inPeriod).forEach((item) => {
+      const key = item.category || 'Outros';
+      grouped[key] = (grouped[key] || 0) + Number(item.value || 0);
+    });
+    state.vehicleCosts.filter(inPeriod).forEach((item) => {
+      const key = `Veículo: ${item.type || 'Outros'}`;
+      grouped[key] = (grouped[key] || 0) + Number(item.value || 0);
+    });
+
+    const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 7);
+    const labels = entries.length ? entries.map(([label]) => label) : ['Sem dados'];
+    const values = entries.length ? entries.map(([, value]) => value) : [1];
+    const colors = ['#3a86ff', '#21bf73', '#ffbe0b', '#8338ec', '#ef476f', '#06d6a0', '#fb8500'];
+
+    upsertChart('expensesCategory', '#expensesCategoryChart', {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{ data: values, backgroundColor: colors.slice(0, labels.length), borderColor: theme.surface, borderWidth: 2 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '60%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: theme.text, boxWidth: 12, font: { size: 11 } } },
+          tooltip: { callbacks: { label: (context) => `${context.label}: ${entries.length ? currency(context.parsed) : 'sem lançamentos'}` } },
+        },
+      },
     });
   }
 
   function drawTeamVisitsChart() {
-    const canvas = elements.teamVisitsChart;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
-    ctx.clearRect(0, 0, width, height);
-
+    const theme = chartTheme();
     const grouped = {};
     state.teamMembers.forEach((item) => {
       const key = item.group || 'Sem equipe';
@@ -858,57 +1154,62 @@
     const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 6);
     const labels = entries.length ? entries.map(([label]) => label) : ['Sem dados'];
     const values = entries.length ? entries.map(([, value]) => value) : [0];
-    drawHorizontalBarChart(ctx, width, height, labels, values, {
-      colors: ['#8338ec', '#ff006e', '#fb5607', '#ffbe0b', '#06d6a0', '#118ab2'],
-      valueFormatter: (value) => String(value),
+
+    upsertChart('teamVisits', '#teamVisitsChart', {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{ label: 'Visitas', data: values, backgroundColor: '#8338ec', borderRadius: 4, maxBarThickness: 30 }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: theme.grid }, ticks: { color: theme.text, precision: 0 } },
+          y: { grid: { display: false }, ticks: { color: theme.text } },
+        },
+      },
     });
   }
 
-  function drawHorizontalBarChart(ctx, width, height, labels, values, options = {}) {
-    const max = Math.max(...values, 1);
-    const padding = 34;
-    const gap = 14;
-    const count = labels.length || 1;
-    const barWidth = (width - padding * 2 - gap * (count - 1)) / count;
-    const colors = options.colors || ['#f3c229'];
-
-    ctx.strokeStyle = '#e1e4e8';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(padding, height - padding);
-    ctx.lineTo(width - padding, height - padding);
-    ctx.stroke();
-
-    labels.forEach((label, index) => {
-      const value = Number(values[index] || 0);
-      const x = padding + index * (barWidth + gap);
-      const barHeight = (value / max) * (height - padding * 2 - 24);
-      const y = height - padding - barHeight;
-      const fill = colors[index % colors.length];
-      ctx.fillStyle = fill;
-      roundRect(ctx, x, y, barWidth, barHeight, 8);
-      ctx.fill();
-
-      ctx.fillStyle = '#676b73';
-      ctx.font = '12px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      const shortLabel = String(label).length > 11 ? `${String(label).slice(0, 11)}…` : String(label);
-      ctx.fillText(shortLabel, x + barWidth / 2, height - 12);
-      ctx.fillStyle = '#26272b';
-      ctx.font = 'bold 13px system-ui, sans-serif';
-      ctx.fillText(String(value), x + barWidth / 2, Math.max(18, y - 8));
+  function drawNcParetoChart(scopedNcs = state.ncs) {
+    const theme = chartTheme();
+    const grouped = {};
+    scopedNcs.forEach((item) => {
+      const key = item.project || 'Sem frente';
+      grouped[key] = (grouped[key] || 0) + 1;
     });
-  }
+    const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const labels = entries.length ? entries.map(([label]) => label) : ['Sem dados'];
+    const values = entries.length ? entries.map(([, value]) => value) : [0];
+    const total = values.reduce((sum, value) => sum + value, 0) || 1;
+    let running = 0;
+    const cumulative = values.map((value) => {
+      running += value;
+      return Math.round((running / total) * 100);
+    });
 
-  function roundRect(ctx, x, y, width, height, radius) {
-    const r = Math.min(radius, width / 2, height / 2 || radius);
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + width, y, x + width, y + height, r);
-    ctx.arcTo(x + width, y + height, x, y + height, r);
-    ctx.arcTo(x, y + height, x, y, r);
-    ctx.arcTo(x, y, x + width, y, r);
-    ctx.closePath();
+    upsertChart('ncPareto', '#ncParetoChart', {
+      data: {
+        labels,
+        datasets: [
+          { type: 'bar', label: 'NCs', data: values, backgroundColor: '#ef476f', borderRadius: 4, maxBarThickness: 34, order: 2 },
+          { type: 'line', label: '% acumulado', data: cumulative, borderColor: '#3a86ff', backgroundColor: '#3a86ff', borderWidth: 2, pointRadius: 4, order: 1, yAxisID: 'percent' },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: theme.text, boxWidth: 12, font: { size: 11 } } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: theme.text } },
+          y: { grid: { color: theme.grid }, ticks: { color: theme.text, precision: 0 } },
+          percent: { position: 'right', min: 0, max: 100, grid: { display: false }, ticks: { color: theme.text, callback: (value) => `${value}%` } },
+        },
+      },
+    });
   }
 
   function setupRdo() {
@@ -1008,6 +1309,7 @@
 
   function editRdo(rdo) {
     openTab('rdo');
+    ensureProjectOption(rdo.project);
     $('#rdoId').value = rdo.id;
     $('#rdoDate').value = rdo.date || todayInput();
     $('#rdoShift').value = rdo.shift || 'Diurno';
@@ -1019,6 +1321,280 @@
     $('#rdoIssues').value = rdo.issues || '';
     $('#rdoQuality').value = rdo.quality || '';
     toast('RDO carregado para edição. Se anexar novos arquivos, eles serão somados aos atuais.');
+  }
+
+  function projectNames() {
+    return state.projects.map((project) => project.name);
+  }
+
+  function renderProjectSelects() {
+    const options = projectNames().map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+    ['#rdoProject', '#ncProject'].forEach((selector) => {
+      const select = $(selector);
+      if (!select) return;
+      const current = select.value;
+      select.innerHTML = `<option value="">Selecione a frente...</option>${options}`;
+      if (current && projectNames().some((name) => name === current)) select.value = current;
+    });
+    renderDashboardProjectFilter();
+  }
+
+  function ensureProjectOption(name) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) return;
+    if (!state.projects.some((project) => normalizeText(project.name) === normalizeText(trimmed))) {
+      state.projects.push({ id: uid('prj'), name: trimmed, createdAt: new Date().toISOString() });
+      state.projects.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+      saveState();
+    }
+    renderProjectSelects();
+    const select = $('#rdoProject');
+    if (select) select.value = trimmed;
+  }
+
+  function addProject(name) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) return false;
+    if (state.projects.some((project) => normalizeText(project.name) === normalizeText(trimmed))) {
+      toast('Essa frente já está cadastrada.');
+      return false;
+    }
+    const project = { id: uid('prj'), name: trimmed, createdAt: new Date().toISOString() };
+    state.projects.push(project);
+    state.projects.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    saveState();
+    saveRemote('projects', project);
+    renderProjectSelects();
+    renderProjectList();
+    toast(`Frente "${trimmed}" cadastrada.`);
+    return true;
+  }
+
+  function renderProjectList() {
+    const container = $('#projectList');
+    if (!container) return;
+    if (!state.projects.length) {
+      container.innerHTML = '<p class="empty-state">Nenhuma frente cadastrada ainda. As frentes usadas nos RDOs antigos são importadas automaticamente.</p>';
+      return;
+    }
+    container.innerHTML = state.projects.map((project) => {
+      const usage = state.rdos.filter((rdo) => normalizeText(rdo.project) === normalizeText(project.name)).length;
+      return `
+        <span class="chip">
+          ${escapeHtml(project.name)}
+          <small>${usage} RDO${usage === 1 ? '' : 's'}</small>
+          <button type="button" class="chip-remove" data-project-id="${project.id}" title="Remover frente">×</button>
+        </span>
+      `;
+    }).join('');
+  }
+
+  function setupProjects() {
+    $('#projectForm')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!assertCanEdit()) return;
+      if (addProject($('#projectName').value)) $('#projectName').value = '';
+    });
+
+    $('#addProjectQuick')?.addEventListener('click', () => {
+      if (!assertCanEdit()) return;
+      const name = prompt('Nome da nova frente / obra:');
+      if (!name) return;
+      if (addProject(name)) {
+        const select = $('#rdoProject');
+        if (select) select.value = name.trim();
+      }
+    });
+
+    $('#projectList')?.addEventListener('click', (event) => {
+      const button = event.target.closest('.chip-remove');
+      if (!button) return;
+      if (!assertCanEdit()) return;
+      const project = state.projects.find((item) => item.id === button.dataset.projectId);
+      if (!project) return;
+      const usage = state.rdos.filter((rdo) => normalizeText(rdo.project) === normalizeText(project.name)).length
+        + state.ncs.filter((nc) => normalizeText(nc.project) === normalizeText(project.name)).length;
+      const message = usage
+        ? `A frente "${project.name}" está em uso em ${usage} registro(s). Os registros existentes não serão alterados. Remover mesmo assim?`
+        : `Remover a frente "${project.name}"?`;
+      if (!confirm(message)) return;
+      state.projects = state.projects.filter((item) => item.id !== project.id);
+      saveState();
+      deleteRemote('projects', project.id);
+      renderProjectSelects();
+      renderProjectList();
+      toast('Frente removida.');
+    });
+
+    renderProjectSelects();
+    renderProjectList();
+  }
+
+  function setupNcs() {
+    $('#ncDate').value = todayInput();
+
+    $('#ncForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!assertCanEdit()) return;
+      const id = $('#ncId').value || uid('nc');
+      const existing = state.ncs.find((item) => item.id === id);
+      const attachments = await readAttachments($('#ncAttachment'), existing?.attachments || [], true);
+      const status = $('#ncStatus').value;
+      const nc = {
+        id,
+        date: $('#ncDate').value,
+        project: $('#ncProject').value,
+        type: $('#ncType').value,
+        severity: $('#ncSeverity').value,
+        responsible: $('#ncResponsible').value.trim(),
+        deadline: $('#ncDeadline').value,
+        status,
+        description: $('#ncDescription').value.trim(),
+        action: $('#ncAction').value.trim(),
+        attachments,
+        closedAt: normalizeText(status) === 'fechada' ? (existing?.closedAt || new Date().toISOString()) : null,
+        createdBy: existing?.createdBy || currentUserStamp(),
+        updatedBy: currentUserStamp(),
+        updatedAt: new Date().toISOString(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+      };
+      upsert('ncs', nc);
+      event.target.reset();
+      $('#ncId').value = '';
+      $('#ncDate').value = todayInput();
+      renderAll();
+      toast('Não conformidade salva.');
+    });
+
+    $('#clearNcForm').addEventListener('click', () => {
+      $('#ncForm').reset();
+      $('#ncId').value = '';
+      $('#ncDate').value = todayInput();
+    });
+
+    $('#ncSearch').addEventListener('input', renderNcTable);
+    $('#ncFilter').addEventListener('change', renderNcTable);
+    $('#exportNcCsv').addEventListener('click', () => exportCsv('nao-conformidades.csv', state.ncs));
+
+    $('#ncTable').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const nc = state.ncs.find((item) => item.id === button.dataset.id);
+      if (!nc) return;
+      if (button.dataset.action === 'view-nc') viewNc(nc);
+      if (button.dataset.action === 'edit-nc') editNc(nc);
+      if (button.dataset.action === 'close-nc') closeNc(nc);
+      if (button.dataset.action === 'delete-nc') removeItem('ncs', nc.id, 'Não conformidade excluída.');
+    });
+  }
+
+  function ncIsLate(nc) {
+    return normalizeText(nc.status) !== 'fechada' && nc.deadline && new Date(`${nc.deadline}T23:59:59`) < new Date();
+  }
+
+  function renderNcMetrics() {
+    const grid = $('#ncMetricsGrid');
+    if (!grid) return;
+    const open = state.ncs.filter((item) => normalizeText(item.status) === 'aberta').length;
+    const inProgress = state.ncs.filter((item) => normalizeText(item.status) === 'em tratativa').length;
+    const late = state.ncs.filter(ncIsLate).length;
+    const closed = state.ncs.filter((item) => normalizeText(item.status) === 'fechada');
+    const closeDays = closed
+      .filter((item) => item.closedAt && item.date)
+      .map((item) => Math.max(0, (new Date(item.closedAt) - new Date(`${item.date}T00:00:00`)) / (24 * 3600 * 1000)));
+    const averageClose = closeDays.length ? Math.round(closeDays.reduce((sum, value) => sum + value, 0) / closeDays.length) : null;
+
+    grid.innerHTML = [
+      { label: 'Abertas', value: open, icon: 'NC', alert: open > 0 },
+      { label: 'Em tratativa', value: inProgress, icon: '→' },
+      { label: 'Prazo vencido', value: late, icon: '!', alert: late > 0 },
+      { label: 'Tempo médio de fechamento', value: averageClose === null ? '-' : `${averageClose} dia${averageClose === 1 ? '' : 's'}`, icon: '⏱' },
+    ].map(metricCard).join('');
+  }
+
+  function renderNcTable() {
+    renderNcMetrics();
+    updateNcNavBadge();
+    const table = $('#ncTable');
+    if (!table) return;
+    const query = normalizeText($('#ncSearch')?.value);
+    const filter = $('#ncFilter')?.value || 'all';
+
+    const list = sortByDateDesc(state.ncs).filter((nc) => {
+      const searchable = normalizeText([nc.date, nc.project, nc.type, nc.severity, nc.responsible, nc.status, nc.description].join(' '));
+      if (query && !searchable.includes(query)) return false;
+      if (filter === 'open') return normalizeText(nc.status) === 'aberta';
+      if (filter === 'progress') return normalizeText(nc.status) === 'em tratativa';
+      if (filter === 'closed') return normalizeText(nc.status) === 'fechada';
+      if (filter === 'late') return ncIsLate(nc);
+      return true;
+    });
+
+    table.innerHTML = list.map((nc) => `
+      <tr>
+        <td>${formatDate(nc.date)}</td>
+        <td>${escapeHtml(nc.project || '-')}</td>
+        <td>${escapeHtml(nc.type || '-')}</td>
+        <td>${severityBadge(nc.severity)}</td>
+        <td>${escapeHtml(nc.responsible || '-')}</td>
+        <td>${nc.deadline ? `${formatDate(nc.deadline)}${ncIsLate(nc) ? ' <span class="badge danger">Vencido</span>' : ''}` : '-'}</td>
+        <td>${statusBadge(nc.status)}</td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-btn" data-action="view-nc" data-id="${nc.id}">Ver</button>
+            <button class="icon-btn" data-action="edit-nc" data-id="${nc.id}">Editar</button>
+            ${normalizeText(nc.status) !== 'fechada' ? `<button class="icon-btn" data-action="close-nc" data-id="${nc.id}">Fechar</button>` : ''}
+            <button class="icon-btn danger" data-action="delete-nc" data-id="${nc.id}">Excluir</button>
+          </div>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="8" class="empty-state">Nenhuma não conformidade registrada.</td></tr>';
+  }
+
+  function closeNc(nc) {
+    if (!assertCanEdit()) return;
+    if (!confirm(`Fechar a NC de ${formatDate(nc.date)} (${nc.project || 'sem frente'})?`)) return;
+    const updated = {
+      ...nc,
+      status: 'Fechada',
+      closedAt: new Date().toISOString(),
+      updatedBy: currentUserStamp(),
+      updatedAt: new Date().toISOString(),
+    };
+    upsert('ncs', updated);
+    renderAll();
+    toast('Não conformidade fechada.');
+  }
+
+  function viewNc(nc) {
+    openModal(`NC - ${formatDate(nc.date)}`, `
+      <div class="detail-grid">
+        <p><strong>Frente/Obra</strong>${escapeHtml(nc.project || '-')}</p>
+        <p><strong>Tipo / Severidade</strong>${escapeHtml(nc.type || '-')} • ${escapeHtml(nc.severity || '-')}</p>
+        <p><strong>Status</strong>${escapeHtml(nc.status || '-')}${nc.closedAt ? ` (fechada em ${formatDate(nc.closedAt.slice(0, 10))})` : ''}</p>
+        <p><strong>Responsável / Prazo</strong>${escapeHtml(nc.responsible || '-')} • ${nc.deadline ? formatDate(nc.deadline) : 'sem prazo'}</p>
+        <p><strong>Descrição</strong>${escapeHtml(nc.description || '-')}</p>
+        <p><strong>Ação corretiva</strong>${escapeHtml(nc.action || '-')}</p>
+        <p><strong>Evidências</strong>${renderAttachmentLinks(nc.attachments)}</p>
+        <p><strong>Atualizado por</strong>${escapeHtml(nc.updatedBy || nc.createdBy || '-')}</p>
+      </div>
+    `);
+  }
+
+  function editNc(nc) {
+    openTab('ncs');
+    renderProjectSelects();
+    $('#ncId').value = nc.id;
+    $('#ncDate').value = nc.date || todayInput();
+    $('#ncProject').value = nc.project || '';
+    $('#ncType').value = nc.type || 'Execução';
+    $('#ncSeverity').value = nc.severity || 'Leve';
+    $('#ncResponsible').value = nc.responsible || '';
+    $('#ncDeadline').value = nc.deadline || '';
+    $('#ncStatus').value = nc.status || 'Aberta';
+    $('#ncDescription').value = nc.description || '';
+    $('#ncAction').value = nc.action || '';
+    toast('NC carregada para edição. Novos anexos serão somados aos atuais.');
   }
 
   function setupExpenses() {
@@ -1636,12 +2212,15 @@
     const totalExpenses = state.expenses.reduce((sum, item) => sum + Number(item.value || 0), 0);
     const vehicleExpenses = state.vehicleCosts.reduce((sum, item) => sum + Number(item.value || 0), 0);
     const openRdos = state.rdos.filter((item) => item.status !== 'Concluído').length;
+    const openNcs = state.ncs.filter((item) => normalizeText(item.status) !== 'fechada').length;
     const activeReminders = state.agendaItems.filter((item) => item.status !== 'Concluído').length;
 
     return {
       Dashboard: [
         { Indicador: 'RDOs cadastrados', Valor: state.rdos.length },
         { Indicador: 'RDOs em aberto', Valor: openRdos },
+        { Indicador: 'Não conformidades registradas', Valor: state.ncs.length },
+        { Indicador: 'Não conformidades abertas', Valor: openNcs },
         { Indicador: 'Despesas gerais', Valor: totalExpenses },
         { Indicador: 'Gastos do veículo', Valor: vehicleExpenses },
         { Indicador: 'Colaboradores cadastrados', Valor: state.teamMembers.length },
@@ -1663,6 +2242,25 @@
         Seguranca_Qualidade: item.quality,
         Anexos: attachmentNames(item.attachments),
         Responsavel: userName(item.createdBy),
+      })),
+      Nao_Conformidades: state.ncs.map((item) => ({
+        Data: formatDate(item.date),
+        Frente_Obra: item.project,
+        Tipo: item.type,
+        Severidade: item.severity,
+        Responsavel: item.responsible,
+        Prazo: item.deadline ? formatDate(item.deadline) : '',
+        Status: item.status,
+        Descricao: item.description,
+        Acao_Corretiva: item.action,
+        Fechada_Em: item.closedAt ? new Date(item.closedAt).toLocaleString('pt-BR') : '',
+        Anexos: attachmentNames(item.attachments),
+        Registrado_Por: item.createdBy,
+      })),
+      Frentes: state.projects.map((item) => ({
+        Frente_Obra: item.name,
+        RDOs: state.rdos.filter((rdo) => normalizeText(rdo.project) === normalizeText(item.name)).length,
+        NCs: state.ncs.filter((nc) => normalizeText(nc.project) === normalizeText(item.name)).length,
       })),
       Despesas: state.expenses.map((item) => ({
         Data: formatDate(item.date),
@@ -1938,8 +2536,11 @@
 
   function renderAll() {
     renderUsersSelect();
+    renderProjectSelects();
+    renderProjectList();
     renderDashboard();
     renderRdoTable();
+    renderNcTable();
     renderExpenseTable();
     renderTeamTable();
     renderVehicle();
@@ -1951,7 +2552,9 @@
     setupTheme();
     setupAuthForms();
     setupNavigation();
+    setupProjects();
     setupRdo();
+    setupNcs();
     setupExpenses();
     setupTeams();
     setupVehicle();

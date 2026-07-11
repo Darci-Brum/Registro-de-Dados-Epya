@@ -53,6 +53,7 @@
       <nav class="nav-list" id="navList">
         <button class="nav-item active" data-tab="dashboard" data-nav-icon="▦"><span>Dashboard</span></button>
         <button class="nav-item" data-tab="rdo" data-nav-icon="▣"><span>RDO</span></button>
+        <button class="nav-item" data-tab="ncs" data-nav-icon="⚠"><span>Não conformidades</span><span class="nav-badge" id="ncNavBadge" hidden>0</span></button>
         <button class="nav-item" data-tab="despesas" data-nav-icon="R$"><span>Despesas mensais</span></button>
         <button class="nav-item" data-tab="equipes" data-nav-icon="◎"><span>Equipes</span></button>
         <button class="nav-item" data-tab="veiculo" data-nav-icon="◇"><span>Meu carro</span></button>
@@ -107,29 +108,49 @@
           </div>
         </div>
 
+        <div class="dashboard-filters">
+          <div class="filter-field">
+            <label for="dashPeriodFilter">Período</label>
+            <select id="dashPeriodFilter">
+              <option value="month" selected>Este mês</option>
+              <option value="30">Últimos 30 dias</option>
+              <option value="90">Últimos 90 dias</option>
+              <option value="year">Este ano</option>
+              <option value="all">Todo o histórico</option>
+            </select>
+          </div>
+          <div class="filter-field">
+            <label for="dashProjectFilter">Frente / Obra</label>
+            <select id="dashProjectFilter">
+              <option value="all">Todas as frentes</option>
+            </select>
+          </div>
+          <p class="filter-hint">Os indicadores e gráficos abaixo respeitam os filtros selecionados.</p>
+        </div>
+
         <div class="metrics-grid" id="metricsGrid"></div>
 
         <div class="dashboard-grid dashboard-grid-3">
           <article class="card">
             <div class="card-header">
               <div>
-                <h3>RDOs por status</h3>
-                <p>Distribuição dos lançamentos registrados.</p>
+                <h3>RDOs por status, semana a semana</h3>
+                <p>Evolução dos lançamentos nas últimas semanas.</p>
               </div>
               <span class="mini-tag">RDO</span>
             </div>
-            <canvas id="rdoChart" width="520" height="260" aria-label="Gráfico de RDO por status"></canvas>
+            <div class="chart-box"><canvas id="rdoChart" aria-label="Gráfico de RDO por status por semana" role="img"></canvas></div>
           </article>
 
-          <article class="card wide-card">
+          <article class="card">
             <div class="card-header">
               <div>
-                <h3>Gastos por mês</h3>
-                <p>Somatório das despesas gerais e dos gastos do veículo.</p>
+                <h3>Despesas por categoria</h3>
+                <p>Onde o dinheiro está indo no período.</p>
               </div>
               <span class="mini-tag">R$</span>
             </div>
-            <canvas id="expensesChart" width="900" height="260" aria-label="Gráfico de despesas por mês"></canvas>
+            <div class="chart-box"><canvas id="expensesCategoryChart" aria-label="Gráfico de despesas por categoria" role="img"></canvas></div>
           </article>
 
           <article class="card">
@@ -140,7 +161,31 @@
               </div>
               <span class="mini-tag">Visitas</span>
             </div>
-            <canvas id="teamVisitsChart" width="520" height="260" aria-label="Gráfico de visitas às equipes"></canvas>
+            <div class="chart-box"><canvas id="teamVisitsChart" aria-label="Gráfico de visitas às equipes" role="img"></canvas></div>
+          </article>
+        </div>
+
+        <div class="dashboard-grid dashboard-grid-side">
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h3>Gastos por mês</h3>
+                <p>Despesas gerais + veículo nos últimos 6 meses.</p>
+              </div>
+              <span class="mini-tag">Tendência</span>
+            </div>
+            <div class="chart-box"><canvas id="expensesChart" aria-label="Gráfico de despesas por mês" role="img"></canvas></div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h3>Pareto de não conformidades</h3>
+                <p>NCs por frente com percentual acumulado.</p>
+              </div>
+              <button class="small-btn" data-open-tab="ncs">Ver NCs</button>
+            </div>
+            <div class="chart-box"><canvas id="ncParetoChart" aria-label="Gráfico de Pareto de não conformidades por frente" role="img"></canvas></div>
           </article>
         </div>
 
@@ -214,7 +259,12 @@
               </select>
             </label>
             <label>Frente / Obra
-              <input type="text" id="rdoProject" placeholder="Ex.: Revitalização, manutenção, via permanente" required />
+              <div class="select-with-action">
+                <select id="rdoProject" required>
+                  <option value="">Selecione a frente...</option>
+                </select>
+                <button type="button" class="small-btn" id="addProjectQuick" title="Cadastrar nova frente">+ Nova</button>
+              </div>
             </label>
             <label>Local
               <input type="text" id="rdoLocation" placeholder="Cidade, pátio, trecho, km" />
@@ -259,6 +309,20 @@
         <article class="card">
           <div class="card-header">
             <div>
+              <h3>Frentes / Obras cadastradas</h3>
+              <p>Cadastro fixo usado nos RDOs, nas NCs e nos filtros do dashboard — evita nomes duplicados nos gráficos.</p>
+            </div>
+          </div>
+          <form id="projectForm" class="inline-form">
+            <input type="text" id="projectName" placeholder="Ex.: Via Permanente - Trecho Norte" required />
+            <button type="submit" class="primary-btn">Adicionar frente</button>
+          </form>
+          <div id="projectList" class="chip-list"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
               <h3>Registros de RDO</h3>
               <p>Edite, exclua ou consulte os registros lançados.</p>
             </div>
@@ -277,6 +341,112 @@
                 </tr>
               </thead>
               <tbody id="rdoTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="ncs" aria-labelledby="Não conformidades">
+        <div class="metrics-grid metrics-grid-4" id="ncMetricsGrid"></div>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Registro de não conformidade</h3>
+              <p>Registre desvios de qualidade, segurança, material ou documentação com responsável e prazo de tratativa.</p>
+            </div>
+            <button class="small-btn" id="clearNcForm">Limpar formulário</button>
+          </div>
+
+          <form id="ncForm" class="form-grid">
+            <input type="hidden" id="ncId" />
+            <label>Data da ocorrência
+              <input type="date" id="ncDate" required />
+            </label>
+            <label>Frente / Obra
+              <select id="ncProject" required>
+                <option value="">Selecione a frente...</option>
+              </select>
+            </label>
+            <label>Tipo
+              <select id="ncType">
+                <option>Execução</option>
+                <option>Segurança</option>
+                <option>Material</option>
+                <option>Documentação</option>
+                <option>Meio ambiente</option>
+                <option>Outros</option>
+              </select>
+            </label>
+            <label>Severidade
+              <select id="ncSeverity">
+                <option>Leve</option>
+                <option>Média</option>
+                <option>Crítica</option>
+              </select>
+            </label>
+            <label>Responsável pela tratativa
+              <input type="text" id="ncResponsible" placeholder="Nome do responsável" />
+            </label>
+            <label>Prazo da tratativa
+              <input type="date" id="ncDeadline" />
+            </label>
+            <label>Status
+              <select id="ncStatus">
+                <option>Aberta</option>
+                <option>Em tratativa</option>
+                <option>Fechada</option>
+              </select>
+            </label>
+            <label class="full-span">Descrição da não conformidade
+              <textarea id="ncDescription" rows="3" placeholder="O que foi identificado, onde e em qual condição." required></textarea>
+            </label>
+            <label class="full-span">Ação corretiva / tratativa
+              <textarea id="ncAction" rows="2" placeholder="Ação definida para corrigir e evitar reincidência."></textarea>
+            </label>
+            <label class="full-span">Evidências (fotos / documentos)
+              <input type="file" id="ncAttachment" multiple accept="image/*,.pdf,.doc,.docx" />
+              <small>Arquivos pequenos podem ser salvos no navegador. Para produção, use Supabase Storage.</small>
+            </label>
+            <div class="form-actions full-span">
+              <button type="submit" class="primary-btn">Salvar não conformidade</button>
+              <button type="button" class="ghost-btn" id="exportNcCsv">Exportar CSV</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Não conformidades registradas</h3>
+              <p>Acompanhe as tratativas, prazos e fechamentos.</p>
+            </div>
+            <div class="header-filters">
+              <select id="ncFilter" class="search-input">
+                <option value="all">Todas</option>
+                <option value="open">Abertas</option>
+                <option value="progress">Em tratativa</option>
+                <option value="closed">Fechadas</option>
+                <option value="late">Prazo vencido</option>
+              </select>
+              <input class="search-input" id="ncSearch" placeholder="Buscar NC..." />
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Frente/Obra</th>
+                  <th>Tipo</th>
+                  <th>Severidade</th>
+                  <th>Responsável</th>
+                  <th>Prazo</th>
+                  <th>Status</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="ncTable"></tbody>
             </table>
           </div>
         </article>
@@ -729,6 +899,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="js/app.js"></script>
