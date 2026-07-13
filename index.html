@@ -592,6 +592,20 @@
         <article class="card">
           <div class="card-header">
             <div>
+              <h3>Encarregados cadastrados</h3>
+              <p>Cadastro fixo de encarregados — os nomes aparecem como sugestão ao cadastrar colaboradores.</p>
+            </div>
+          </div>
+          <form id="leaderForm" class="inline-form">
+            <input type="text" id="leaderName" placeholder="Ex.: João da Silva" required />
+            <button type="submit" class="primary-btn">Adicionar encarregado</button>
+          </form>
+          <div id="leaderList" class="chip-list"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
               <h3>Colaboradores das equipes de encarregados</h3>
               <p>Cadastre nomes, funções, encarregados, contatos e status de cada equipe.</p>
             </div>
@@ -605,7 +619,8 @@
               <input type="text" id="teamRole" placeholder="Ex.: Inspetor, ajudante, operador" />
             </label>
             <label>Encarregado
-              <input type="text" id="teamLeader" placeholder="Nome do encarregado" />
+              <input type="text" id="teamLeader" list="leaderOptions" placeholder="Nome do encarregado" />
+              <datalist id="leaderOptions"></datalist>
             </label>
             <label>Equipe / Frente
               <input type="text" id="teamGroup" placeholder="Ex.: Equipe A, Via Permanente" />

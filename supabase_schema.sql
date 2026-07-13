@@ -434,3 +434,39 @@ grant select, insert, update, delete on public.visit_logs to authenticated;
 
 create index if not exists visit_logs_date_idx on public.visit_logs(date desc);
 create index if not exists visit_logs_team_member_idx on public.visit_logs(team_member_id);
+
+-- =========================
+-- ATUALIZAÇÃO: Cadastro de encarregados
+-- (seguro para rodar mais de uma vez)
+-- =========================
+
+create table if not exists public.leaders (
+  id text primary key,
+  name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists leaders_name_lower_idx on public.leaders (lower(trim(name)));
+
+alter table public.leaders enable row level security;
+
+do $$
+begin
+  execute format('drop policy if exists %I on public.%I', 'leaders_select_active', 'leaders');
+  execute format('create policy %I on public.%I for select to authenticated using (public.is_active_user())', 'leaders_select_active', 'leaders');
+
+  execute format('drop policy if exists %I on public.%I', 'leaders_insert_writer', 'leaders');
+  execute format('create policy %I on public.%I for insert to authenticated with check (public.can_write_app_data())', 'leaders_insert_writer', 'leaders');
+
+  execute format('drop policy if exists %I on public.%I', 'leaders_update_writer', 'leaders');
+  execute format('create policy %I on public.%I for update to authenticated using (public.can_write_app_data()) with check (public.can_write_app_data())', 'leaders_update_writer', 'leaders');
+
+  execute format('drop policy if exists %I on public.%I', 'leaders_delete_writer', 'leaders');
+  execute format('create policy %I on public.%I for delete to authenticated using (public.can_write_app_data())', 'leaders_delete_writer', 'leaders');
+end;
+$$;
+
+grant select, insert, update, delete on public.leaders to authenticated;
+
+create index if not exists leaders_name_idx on public.leaders(name);

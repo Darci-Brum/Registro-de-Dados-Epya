@@ -30,6 +30,7 @@
     rdos: [],
     ncs: [],
     projects: [],
+    leaders: [],
     expenses: [],
     teamMembers: [],
     visitLogs: [],
@@ -50,6 +51,7 @@
     if (!Array.isArray(state.projects)) state.projects = [];
     if (!Array.isArray(state.ncs)) state.ncs = [];
     if (!Array.isArray(state.visitLogs)) state.visitLogs = [];
+    if (!Array.isArray(state.leaders)) state.leaders = [];
     const known = new Set(state.projects.map((project) => normalizeText(project.name)));
     [...state.rdos, ...state.ncs].forEach((item) => {
       const name = String(item.project || '').trim();
@@ -58,6 +60,15 @@
       state.projects.push({ id: uid('prj'), name, createdAt: new Date().toISOString() });
     });
     state.projects.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+
+    const knownLeaders = new Set(state.leaders.map((leader) => normalizeText(leader.name)));
+    state.teamMembers.forEach((member) => {
+      const name = String(member.leader || '').trim();
+      if (!name || knownLeaders.has(normalizeText(name))) return;
+      knownLeaders.add(normalizeText(name));
+      state.leaders.push({ id: uid('ldr'), name, createdAt: new Date().toISOString() });
+    });
+    state.leaders.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   }
 
   const $ = (selector) => document.querySelector(selector);
@@ -391,7 +402,7 @@
 
   async function loadRemoteData() {
     if (!supabaseClient || !currentSession) return;
-    const [profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems, ncs, projects, visitLogs] = await Promise.all([
+    const [profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems, ncs, projects, visitLogs, leaders] = await Promise.all([
       supabaseClient.from('profiles').select('*').order('name', { ascending: true }),
       supabaseClient.from('rdos').select('*').order('date', { ascending: false }),
       supabaseClient.from('expenses').select('*').order('date', { ascending: false }),
@@ -402,6 +413,7 @@
       supabaseClient.from('ncs').select('*').order('date', { ascending: false }),
       supabaseClient.from('projects').select('*').order('name', { ascending: true }),
       supabaseClient.from('visit_logs').select('*').order('date', { ascending: false }),
+      supabaseClient.from('leaders').select('*').order('name', { ascending: true }),
     ]);
 
     const responses = { profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems };
@@ -409,10 +421,10 @@
       if (response.error) throw new Error(`${name}: ${response.error.message}`);
     });
 
-    const newTablesMissing = Boolean(ncs.error || projects.error || visitLogs.error);
+    const newTablesMissing = Boolean(ncs.error || projects.error || visitLogs.error || leaders.error);
     if (newTablesMissing) {
-      console.warn('Tabelas ncs/projects/visit_logs ainda não existem no Supabase. Rode o supabase_schema.sql atualizado.', ncs.error || projects.error || visitLogs.error);
-      toast('Aviso: rode o supabase_schema.sql atualizado para sincronizar NCs, frentes e visitas.');
+      console.warn('Tabelas ncs/projects/visit_logs/leaders ainda não existem no Supabase. Rode o supabase_schema.sql atualizado.', ncs.error || projects.error || visitLogs.error || leaders.error);
+      toast('Aviso: rode o supabase_schema.sql atualizado para sincronizar NCs, frentes, visitas e encarregados.');
     }
 
     state = {
@@ -422,6 +434,7 @@
       rdos: rdos.data.map(rdoFromDb),
       ncs: ncs.error ? state.ncs : ncs.data.map(ncFromDb),
       projects: projects.error ? state.projects : projects.data.map(projectFromDb),
+      leaders: leaders.error ? state.leaders : leaders.data.map(leaderFromDb),
       visitLogs: visitLogs.error ? state.visitLogs : visitLogs.data.map(visitLogFromDb),
       expenses: expenses.data.map(expenseFromDb),
       teamMembers: teamMembers.data.map(teamMemberFromDb),
@@ -597,6 +610,14 @@
     return { id: item.id, name: item.name, created_at: item.createdAt || new Date().toISOString(), updated_at: new Date().toISOString() };
   }
 
+  function leaderFromDb(row) {
+    return { id: row.id, name: row.name, createdAt: row.created_at };
+  }
+
+  function leaderToDb(item) {
+    return { id: item.id, name: item.name, created_at: item.createdAt || new Date().toISOString(), updated_at: new Date().toISOString() };
+  }
+
   function visitLogFromDb(row) {
     return {
       id: row.id, teamMemberId: row.team_member_id, project: row.project, date: row.date,
@@ -617,6 +638,7 @@
       rdos: ['rdos', rdoToDb],
       ncs: ['ncs', ncToDb],
       projects: ['projects', projectToDb],
+      leaders: ['leaders', leaderToDb],
       visitLogs: ['visit_logs', visitLogToDb],
       expenses: ['expenses', expenseToDb],
       teamMembers: ['team_members', teamMemberToDb],
@@ -673,7 +695,7 @@
     const confirmed = confirm('Enviar os dados locais deste navegador para o Supabase? Registros com mesmo ID serão atualizados.');
     if (!confirmed) return;
 
-    const collections = ['rdos', 'ncs', 'projects', 'visitLogs', 'expenses', 'teamMembers', 'vehicleCosts', 'agendaItems'];
+    const collections = ['rdos', 'ncs', 'projects', 'leaders', 'visitLogs', 'expenses', 'teamMembers', 'vehicleCosts', 'agendaItems'];
     for (const collection of collections) {
       for (const item of local[collection] || []) await saveRemote(collection, item);
     }
@@ -921,12 +943,25 @@
     const totalVisits = state.teamMembers.reduce((sum, item) => sum + Number(item.visitCount || 0), 0);
     const pendingReminders = state.agendaItems.filter((item) => item.status !== 'Concluído' && new Date(item.dateTime) >= now).length;
 
+    const staleLimit = new Date(now);
+    staleLimit.setDate(staleLimit.getDate() - 15);
+    const activeGroups = new Map();
+    state.teamMembers.filter((member) => member.status === 'Ativo').forEach((member) => {
+      const group = member.group || member.name;
+      const visitDate = member.lastVisitDate ? new Date(`${member.lastVisitDate}T00:00:00`) : null;
+      const current = activeGroups.get(group);
+      if (!current || (visitDate && (!current.visitDate || visitDate > current.visitDate))) {
+        activeGroups.set(group, { visitDate });
+      }
+    });
+    const staleTeams = [...activeGroups.values()].filter((entry) => !entry.visitDate || entry.visitDate < staleLimit).length;
+
     const metrics = [
       { label: 'RDOs no mês', value: monthRdos, icon: 'RDO', delta: rdoDelta, deltaKind: rdoDeltaKind },
       { label: 'NCs abertas', value: openNcs.length, icon: 'NC', delta: ncDetail, deltaKind: lateNcs || criticalNcs ? 'down' : 'neutral', alert: openNcs.length > 0 },
       { label: 'Gastos do mês', value: currency(expensesThisMonth), icon: 'R$', delta: spendDelta, deltaKind: spendKind },
       { label: 'Dias concluídos', value: `${donePercent}%`, icon: '%', delta: interrupted ? `${interrupted} dia${interrupted === 1 ? '' : 's'} interrompido${interrupted === 1 ? '' : 's'}` : 'Nenhuma interrupção no período', deltaKind: interrupted ? 'warn' : 'up' },
-      { label: 'Visitas às equipes', value: totalVisits, icon: 'VS', delta: '', deltaKind: '' },
+      { label: 'Visitas às equipes', value: totalVisits, icon: 'VS', delta: staleTeams ? `${staleTeams} equipe${staleTeams === 1 ? '' : 's'} sem visita há 15+ dias` : 'Todas visitadas recentemente', deltaKind: staleTeams ? 'warn' : 'up', alert: staleTeams > 0 },
       { label: 'Lembretes pendentes', value: pendingReminders, icon: 'AG', delta: '', deltaKind: '' },
     ];
 
@@ -1080,10 +1115,10 @@
   function drawRdoChart(scopedRdos = state.rdos) {
     const theme = chartTheme();
     const statuses = [
-      { name: 'Concluído', color: '#21bf73' },
+      { name: 'Concluído', color: '#06d6a0' },
       { name: 'Em andamento', color: '#3a86ff' },
       { name: 'Pendente', color: '#ffbe0b' },
-      { name: 'Interrompido', color: '#ef476f' },
+      { name: 'Interrompido', color: '#ff006e' },
     ];
 
     const weeks = new Map();
@@ -1124,35 +1159,64 @@
   function drawExpensesChart() {
     const theme = chartTheme();
     const months = lastMonths(6);
-    const values = months.map((month) => monthlySpendTotal(month));
     const labels = months.map((month) => month.split('-').reverse().join('/'));
+    const generalValues = months.map((month) => state.expenses.filter((item) => item.date?.startsWith(month)).reduce((sum, item) => sum + Number(item.value || 0), 0));
+    const vehicleValues = months.map((month) => state.vehicleCosts.filter((item) => item.date?.startsWith(month)).reduce((sum, item) => sum + Number(item.value || 0), 0));
+    const totals = months.map((month, index) => generalValues[index] + vehicleValues[index]);
 
     upsertChart('expenses', '#expensesChart', {
-      type: 'line',
       data: {
         labels,
-        datasets: [{
-          label: 'Gastos totais',
-          data: values,
-          borderColor: '#3a86ff',
-          backgroundColor: 'rgba(58, 134, 255, 0.14)',
-          borderWidth: 2,
-          fill: true,
-          tension: 0.3,
-          pointRadius: 4,
-          pointBackgroundColor: '#3a86ff',
-        }],
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Despesas gerais',
+            data: generalValues,
+            backgroundColor: 'rgba(131, 56, 236, 0.85)',
+            hoverBackgroundColor: '#8338ec',
+            borderRadius: 6,
+            maxBarThickness: 40,
+            stack: 'gastos',
+            order: 2,
+          },
+          {
+            type: 'bar',
+            label: 'Veículo',
+            data: vehicleValues,
+            backgroundColor: 'rgba(255, 0, 110, 0.85)',
+            hoverBackgroundColor: '#ff006e',
+            borderRadius: 6,
+            maxBarThickness: 40,
+            stack: 'gastos',
+            order: 2,
+          },
+          {
+            type: 'line',
+            label: 'Total do mês',
+            data: totals,
+            borderColor: '#f3c229',
+            backgroundColor: '#f3c229',
+            borderWidth: 3,
+            tension: 0.35,
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            pointBackgroundColor: '#f3c229',
+            pointBorderColor: theme.surface,
+            pointBorderWidth: 2,
+            order: 1,
+          },
+        ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: (context) => currency(context.parsed.y) } },
+          legend: { position: 'bottom', labels: { color: theme.text, boxWidth: 12, font: { size: 11 } } },
+          tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${currency(context.parsed.y)}` } },
         },
         scales: {
-          x: { grid: { display: false }, ticks: { color: theme.text } },
-          y: { grid: { color: theme.grid }, ticks: { color: theme.text, callback: (value) => currency(value) } },
+          x: { stacked: true, grid: { display: false }, ticks: { color: theme.text } },
+          y: { stacked: true, grid: { color: theme.grid }, ticks: { color: theme.text, callback: (value) => currency(value) } },
         },
       },
     });
@@ -1181,7 +1245,7 @@
     const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 7);
     const labels = entries.length ? entries.map(([label]) => label) : ['Sem dados'];
     const values = entries.length ? entries.map(([, value]) => value) : [1];
-    const colors = ['#3a86ff', '#21bf73', '#ffbe0b', '#8338ec', '#ef476f', '#06d6a0', '#fb8500'];
+    const colors = ['#ff006e', '#3a86ff', '#ffbe0b', '#8338ec', '#06d6a0', '#fb5607', '#00b4d8'];
 
     upsertChart('expensesCategory', '#expensesCategoryChart', {
       type: 'doughnut',
@@ -1216,7 +1280,7 @@
       type: 'bar',
       data: {
         labels,
-        datasets: [{ label: 'Visitas', data: values, backgroundColor: '#8338ec', borderRadius: 4, maxBarThickness: 30 }],
+        datasets: [{ label: 'Visitas', data: values, backgroundColor: ['#8338ec', '#ff006e', '#3a86ff', '#06d6a0', '#ffbe0b', '#fb5607'], borderRadius: 6, maxBarThickness: 30 }],
       },
       options: {
         indexAxis: 'y',
@@ -1252,8 +1316,8 @@
       data: {
         labels,
         datasets: [
-          { type: 'bar', label: 'NCs', data: values, backgroundColor: '#ef476f', borderRadius: 4, maxBarThickness: 34, order: 2 },
-          { type: 'line', label: '% acumulado', data: cumulative, borderColor: '#3a86ff', backgroundColor: '#3a86ff', borderWidth: 2, pointRadius: 4, order: 1, yAxisID: 'percent' },
+          { type: 'bar', label: 'NCs', data: values, backgroundColor: '#ff006e', borderRadius: 6, maxBarThickness: 34, order: 2 },
+          { type: 'line', label: '% acumulado', data: cumulative, borderColor: '#ffbe0b', backgroundColor: '#ffbe0b', borderWidth: 3, pointRadius: 5, order: 1, yAxisID: 'percent' },
         ],
       },
       options: {
@@ -1287,8 +1351,8 @@
       data: {
         labels: labels.length ? labels : ['Sem dados'],
         datasets: [
-          { label: 'Total de dias', data: labels.length ? labels.map((label) => totals[label] || 0) : [0], backgroundColor: '#3a86ff', borderRadius: 4, maxBarThickness: 28 },
-          { label: 'Dias interrompidos', data: labels.length ? labels.map((label) => interrupted[label] || 0) : [0], backgroundColor: '#ef476f', borderRadius: 4, maxBarThickness: 28 },
+          { label: 'Total de dias', data: labels.length ? labels.map((label) => totals[label] || 0) : [0], backgroundColor: '#00b4d8', borderRadius: 6, maxBarThickness: 28 },
+          { label: 'Dias interrompidos', data: labels.length ? labels.map((label) => interrupted[label] || 0) : [0], backgroundColor: '#ff006e', borderRadius: 6, maxBarThickness: 28 },
         ],
       },
       options: {
@@ -1817,6 +1881,7 @@
         createdAt: existing?.createdAt || new Date().toISOString(),
       };
       upsert('teamMembers', member);
+      if (member.leader) addLeader(member.leader, { silent: true });
       event.target.reset();
       $('#teamId').value = '';
       renderAll();
@@ -1838,6 +1903,79 @@
     });
 
     $('#heatmapGroupFilter')?.addEventListener('change', renderVisitHeatmap);
+  }
+
+  function addLeader(name, options = {}) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) return false;
+    if (state.leaders.some((leader) => normalizeText(leader.name) === normalizeText(trimmed))) {
+      if (!options.silent) toast('Esse encarregado já está cadastrado.');
+      return false;
+    }
+    const leader = { id: uid('ldr'), name: trimmed, createdAt: new Date().toISOString() };
+    state.leaders.push(leader);
+    state.leaders.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    saveState();
+    saveRemote('leaders', leader);
+    renderLeaderList();
+    renderLeaderOptions();
+    if (!options.silent) toast(`Encarregado "${trimmed}" cadastrado.`);
+    return true;
+  }
+
+  function renderLeaderList() {
+    const container = $('#leaderList');
+    if (!container) return;
+    if (!state.leaders.length) {
+      container.innerHTML = '<p class="empty-state">Nenhum encarregado cadastrado ainda. Os nomes usados nos colaboradores são importados automaticamente.</p>';
+      return;
+    }
+    container.innerHTML = state.leaders.map((leader) => {
+      const usage = state.teamMembers.filter((member) => normalizeText(member.leader) === normalizeText(leader.name)).length;
+      return `
+        <span class="chip">
+          ${escapeHtml(leader.name)}
+          <small>${usage} colaborador${usage === 1 ? '' : 'es'}</small>
+          <button type="button" class="chip-remove" data-leader-id="${leader.id}" title="Remover encarregado">×</button>
+        </span>
+      `;
+    }).join('');
+  }
+
+  function renderLeaderOptions() {
+    const datalist = $('#leaderOptions');
+    if (!datalist) return;
+    datalist.innerHTML = state.leaders.map((leader) => `<option value="${escapeHtml(leader.name)}"></option>`).join('');
+  }
+
+  function setupLeaders() {
+    $('#leaderForm')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!assertCanEdit()) return;
+      if (addLeader($('#leaderName').value)) $('#leaderName').value = '';
+    });
+
+    $('#leaderList')?.addEventListener('click', (event) => {
+      const button = event.target.closest('.chip-remove');
+      if (!button) return;
+      if (!assertCanEdit()) return;
+      const leader = state.leaders.find((item) => item.id === button.dataset.leaderId);
+      if (!leader) return;
+      const usage = state.teamMembers.filter((member) => normalizeText(member.leader) === normalizeText(leader.name)).length;
+      const message = usage
+        ? `O encarregado "${leader.name}" está vinculado a ${usage} colaborador(es). Os registros existentes não serão alterados. Remover mesmo assim?`
+        : `Remover o encarregado "${leader.name}"?`;
+      if (!confirm(message)) return;
+      state.leaders = state.leaders.filter((item) => item.id !== leader.id);
+      saveState();
+      deleteRemote('leaders', leader.id);
+      renderLeaderList();
+      renderLeaderOptions();
+      toast('Encarregado removido.');
+    });
+
+    renderLeaderList();
+    renderLeaderOptions();
   }
 
   function logVisit(member) {
@@ -2477,6 +2615,10 @@
         RDOs: state.rdos.filter((rdo) => normalizeText(rdo.project) === normalizeText(item.name)).length,
         NCs: state.ncs.filter((nc) => normalizeText(nc.project) === normalizeText(item.name)).length,
       })),
+      Encarregados: state.leaders.map((item) => ({
+        Nome: item.name,
+        Colaboradores: state.teamMembers.filter((member) => normalizeText(member.leader) === normalizeText(item.name)).length,
+      })),
       Despesas: state.expenses.map((item) => ({
         Data: formatDate(item.date),
         Mes_Referencia: item.month,
@@ -2753,6 +2895,8 @@
     renderUsersSelect();
     renderProjectSelects();
     renderProjectList();
+    renderLeaderList();
+    renderLeaderOptions();
     renderDashboard();
     renderRdoTable();
     renderNcTable();
@@ -2771,6 +2915,7 @@
     setupRdo();
     setupNcs();
     setupExpenses();
+    setupLeaders();
     setupTeams();
     setupVehicle();
     setupAgenda();
