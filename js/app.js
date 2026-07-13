@@ -32,6 +32,7 @@
     projects: [],
     expenses: [],
     teamMembers: [],
+    visitLogs: [],
     vehicle: {
       model: '',
       plate: '',
@@ -48,6 +49,7 @@
   function migrateProjectsFromRdos() {
     if (!Array.isArray(state.projects)) state.projects = [];
     if (!Array.isArray(state.ncs)) state.ncs = [];
+    if (!Array.isArray(state.visitLogs)) state.visitLogs = [];
     const known = new Set(state.projects.map((project) => normalizeText(project.name)));
     [...state.rdos, ...state.ncs].forEach((item) => {
       const name = String(item.project || '').trim();
@@ -389,7 +391,7 @@
 
   async function loadRemoteData() {
     if (!supabaseClient || !currentSession) return;
-    const [profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems, ncs, projects] = await Promise.all([
+    const [profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems, ncs, projects, visitLogs] = await Promise.all([
       supabaseClient.from('profiles').select('*').order('name', { ascending: true }),
       supabaseClient.from('rdos').select('*').order('date', { ascending: false }),
       supabaseClient.from('expenses').select('*').order('date', { ascending: false }),
@@ -399,6 +401,7 @@
       supabaseClient.from('agenda_items').select('*').order('date_time', { ascending: true }),
       supabaseClient.from('ncs').select('*').order('date', { ascending: false }),
       supabaseClient.from('projects').select('*').order('name', { ascending: true }),
+      supabaseClient.from('visit_logs').select('*').order('date', { ascending: false }),
     ]);
 
     const responses = { profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems };
@@ -406,10 +409,10 @@
       if (response.error) throw new Error(`${name}: ${response.error.message}`);
     });
 
-    const newTablesMissing = Boolean(ncs.error || projects.error);
+    const newTablesMissing = Boolean(ncs.error || projects.error || visitLogs.error);
     if (newTablesMissing) {
-      console.warn('Tabelas ncs/projects ainda não existem no Supabase. Rode o supabase_schema.sql atualizado.', ncs.error || projects.error);
-      toast('Aviso: rode o supabase_schema.sql atualizado para sincronizar NCs e frentes.');
+      console.warn('Tabelas ncs/projects/visit_logs ainda não existem no Supabase. Rode o supabase_schema.sql atualizado.', ncs.error || projects.error || visitLogs.error);
+      toast('Aviso: rode o supabase_schema.sql atualizado para sincronizar NCs, frentes e visitas.');
     }
 
     state = {
@@ -419,6 +422,7 @@
       rdos: rdos.data.map(rdoFromDb),
       ncs: ncs.error ? state.ncs : ncs.data.map(ncFromDb),
       projects: projects.error ? state.projects : projects.data.map(projectFromDb),
+      visitLogs: visitLogs.error ? state.visitLogs : visitLogs.data.map(visitLogFromDb),
       expenses: expenses.data.map(expenseFromDb),
       teamMembers: teamMembers.data.map(teamMemberFromDb),
       vehicle: vehicleFromDb(vehicles.data?.[0]),
@@ -593,12 +597,27 @@
     return { id: item.id, name: item.name, created_at: item.createdAt || new Date().toISOString(), updated_at: new Date().toISOString() };
   }
 
+  function visitLogFromDb(row) {
+    return {
+      id: row.id, teamMemberId: row.team_member_id, project: row.project, date: row.date,
+      notes: row.notes, createdBy: row.created_by, createdAt: row.created_at,
+    };
+  }
+
+  function visitLogToDb(item) {
+    return {
+      id: item.id, team_member_id: item.teamMemberId || null, project: item.project || null, date: item.date,
+      notes: item.notes || '', created_by: item.createdBy, created_at: item.createdAt || new Date().toISOString(),
+    };
+  }
+
   function remoteMapping(collection, item) {
     const map = {
       users: ['profiles', profileToDb],
       rdos: ['rdos', rdoToDb],
       ncs: ['ncs', ncToDb],
       projects: ['projects', projectToDb],
+      visitLogs: ['visit_logs', visitLogToDb],
       expenses: ['expenses', expenseToDb],
       teamMembers: ['team_members', teamMemberToDb],
       vehicleCosts: ['vehicle_costs', vehicleCostToDb],
@@ -654,7 +673,7 @@
     const confirmed = confirm('Enviar os dados locais deste navegador para o Supabase? Registros com mesmo ID serão atualizados.');
     if (!confirmed) return;
 
-    const collections = ['rdos', 'ncs', 'projects', 'expenses', 'teamMembers', 'vehicleCosts', 'agendaItems'];
+    const collections = ['rdos', 'ncs', 'projects', 'visitLogs', 'expenses', 'teamMembers', 'vehicleCosts', 'agendaItems'];
     for (const collection of collections) {
       for (const item of local[collection] || []) await saveRemote(collection, item);
     }
@@ -937,20 +956,58 @@
 
     elements.recentRdoTable.innerHTML = sortByDateDesc(state.rdos).slice(0, 6).map((rdo) => `
       <tr>
-        <td>${formatDate(rdo.date)}</td>
-        <td>${escapeHtml(rdo.project)}</td>
-        <td>${escapeHtml(rdo.location || '-')}</td>
-        <td>${statusBadge(rdo.status)}</td>
-        <td>${escapeHtml(rdo.createdBy || '-')}</td>
+        <td data-label="Data">${formatDate(rdo.date)}</td>
+        <td data-label="Frente/Obra">${escapeHtml(rdo.project)}</td>
+        <td data-label="Local">${escapeHtml(rdo.location || '-')}</td>
+        <td data-label="Status">${statusBadge(rdo.status)}</td>
+        <td data-label="Responsável">${escapeHtml(rdo.createdBy || '-')}</td>
       </tr>
     `).join('') || '<tr><td colspan="5" class="empty-state">Nenhum RDO lançado ainda.</td></tr>';
 
     updateNcNavBadge();
+    renderQualitySemaphore();
     drawRdoChart(scopedRdos);
     drawExpensesChart();
     drawExpensesCategoryChart();
     drawTeamVisitsChart();
     drawNcParetoChart(scopedNcs);
+    drawWeatherChart(scopedRdos);
+  }
+
+  function renderQualitySemaphore() {
+    const container = $('#qualitySemaphore');
+    if (!container) return;
+    if (!state.projects.length) {
+      container.innerHTML = '<p class="empty-state">Cadastre frentes/obras (na aba RDO) para acompanhar o semáforo de qualidade.</p>';
+      return;
+    }
+    container.innerHTML = state.projects.map((project) => {
+      const ncsForProject = state.ncs.filter((nc) => normalizeText(nc.project) === normalizeText(project.name));
+      const openNcs = ncsForProject.filter((nc) => normalizeText(nc.status) !== 'fechada');
+      const criticalOpen = openNcs.filter((nc) => normalizeText(nc.severity) === 'critica').length;
+      const lateOpen = openNcs.filter(ncIsLate).length;
+      let level = 'ok';
+      let label = 'Em dia';
+      if (criticalOpen > 0 || lateOpen > 0) {
+        level = 'danger';
+        label = 'Atenção urgente';
+      } else if (openNcs.length > 0) {
+        level = 'warn';
+        label = 'Acompanhar';
+      }
+      const detailParts = [`${openNcs.length} NC${openNcs.length === 1 ? '' : 's'} aberta${openNcs.length === 1 ? '' : 's'}`];
+      if (criticalOpen) detailParts.push(`${criticalOpen} crítica${criticalOpen === 1 ? '' : 's'}`);
+      if (lateOpen) detailParts.push(`${lateOpen} vencida${lateOpen === 1 ? '' : 's'}`);
+      return `
+        <div class="semaphore-item semaphore-${level}">
+          <span class="semaphore-dot"></span>
+          <div>
+            <strong>${escapeHtml(project.name)}</strong>
+            <small>${label} • ${detailParts.join(' • ')}</small>
+          </div>
+        </div>
+      `;
+    }).join('');
   }
 
   function renderDashboardProjectFilter() {
@@ -1212,8 +1269,52 @@
     });
   }
 
+  const WEATHER_ORDER = ['Sol', 'Nublado', 'Chuva', 'Frio', 'Calor intenso'];
+
+  function drawWeatherChart(scopedRdos = state.rdos) {
+    const theme = chartTheme();
+    const totals = {};
+    const interrupted = {};
+    scopedRdos.forEach((rdo) => {
+      const weather = rdo.weather || 'Não informado';
+      totals[weather] = (totals[weather] || 0) + 1;
+      if (normalizeText(rdo.status) === 'interrompido') interrupted[weather] = (interrupted[weather] || 0) + 1;
+    });
+    const labels = Object.keys(totals).sort((a, b) => WEATHER_ORDER.indexOf(a) - WEATHER_ORDER.indexOf(b));
+
+    upsertChart('weather', '#weatherChart', {
+      type: 'bar',
+      data: {
+        labels: labels.length ? labels : ['Sem dados'],
+        datasets: [
+          { label: 'Total de dias', data: labels.length ? labels.map((label) => totals[label] || 0) : [0], backgroundColor: '#3a86ff', borderRadius: 4, maxBarThickness: 28 },
+          { label: 'Dias interrompidos', data: labels.length ? labels.map((label) => interrupted[label] || 0) : [0], backgroundColor: '#ef476f', borderRadius: 4, maxBarThickness: 28 },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: theme.text, boxWidth: 12, font: { size: 11 } } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: theme.text } },
+          y: { grid: { color: theme.grid }, ticks: { color: theme.text, precision: 0 } },
+        },
+      },
+    });
+  }
+
+  function prefillNewRdo() {
+    const last = sortByDateDesc(state.rdos)[0];
+    if (!last) return;
+    const projectField = $('#rdoProject');
+    const locationField = $('#rdoLocation');
+    if (projectField && last.project) projectField.value = last.project;
+    if (locationField && last.location) locationField.value = last.location;
+  }
+
   function setupRdo() {
     $('#rdoDate').value = todayInput();
+    prefillNewRdo();
 
     $('#rdoForm').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -1242,6 +1343,7 @@
       event.target.reset();
       $('#rdoId').value = '';
       $('#rdoDate').value = todayInput();
+      prefillNewRdo();
       renderAll();
       toast('RDO salvo com sucesso.');
     });
@@ -1250,6 +1352,7 @@
       $('#rdoForm').reset();
       $('#rdoId').value = '';
       $('#rdoDate').value = todayInput();
+      prefillNewRdo();
     });
 
     $('#rdoSearch').addEventListener('input', renderRdoTable);
@@ -1276,12 +1379,12 @@
 
     $('#rdoTable').innerHTML = list.map((rdo) => `
       <tr>
-        <td>${formatDate(rdo.date)}<br><small>${escapeHtml(rdo.shift)}</small></td>
-        <td>${escapeHtml(rdo.project)}</td>
-        <td>${escapeHtml(rdo.location || '-')}</td>
-        <td>${statusBadge(rdo.status)}</td>
-        <td>${attachmentBadge(rdo.attachments)}</td>
-        <td>
+        <td data-label="Data">${formatDate(rdo.date)}<br><small>${escapeHtml(rdo.shift)}</small></td>
+        <td data-label="Frente/Obra">${escapeHtml(rdo.project)}</td>
+        <td data-label="Local">${escapeHtml(rdo.location || '-')}</td>
+        <td data-label="Status">${statusBadge(rdo.status)}</td>
+        <td data-label="Anexos">${attachmentBadge(rdo.attachments)}</td>
+        <td data-label="Ações">
           <div class="row-actions">
             <button class="icon-btn" data-action="view-rdo" data-id="${rdo.id}">Ver</button>
             <button class="icon-btn" data-action="edit-rdo" data-id="${rdo.id}">Editar</button>
@@ -1532,14 +1635,14 @@
 
     table.innerHTML = list.map((nc) => `
       <tr>
-        <td>${formatDate(nc.date)}</td>
-        <td>${escapeHtml(nc.project || '-')}</td>
-        <td>${escapeHtml(nc.type || '-')}</td>
-        <td>${severityBadge(nc.severity)}</td>
-        <td>${escapeHtml(nc.responsible || '-')}</td>
-        <td>${nc.deadline ? `${formatDate(nc.deadline)}${ncIsLate(nc) ? ' <span class="badge danger">Vencido</span>' : ''}` : '-'}</td>
-        <td>${statusBadge(nc.status)}</td>
-        <td>
+        <td data-label="Data">${formatDate(nc.date)}</td>
+        <td data-label="Frente/Obra">${escapeHtml(nc.project || '-')}</td>
+        <td data-label="Tipo">${escapeHtml(nc.type || '-')}</td>
+        <td data-label="Severidade">${severityBadge(nc.severity)}</td>
+        <td data-label="Responsável">${escapeHtml(nc.responsible || '-')}</td>
+        <td data-label="Prazo">${nc.deadline ? `${formatDate(nc.deadline)}${ncIsLate(nc) ? ' <span class="badge danger">Vencido</span>' : ''}` : '-'}</td>
+        <td data-label="Status">${statusBadge(nc.status)}</td>
+        <td data-label="Ações">
           <div class="row-actions">
             <button class="icon-btn" data-action="view-nc" data-id="${nc.id}">Ver</button>
             <button class="icon-btn" data-action="edit-nc" data-id="${nc.id}">Editar</button>
@@ -1650,12 +1753,12 @@
     $('#expenseMonthTotal').textContent = currency(total);
     $('#expenseTable').innerHTML = list.map((expense) => `
       <tr>
-        <td>${formatDate(expense.date)}</td>
-        <td>${escapeHtml(expense.category)}</td>
-        <td>${escapeHtml(expense.supplier || '-')}</td>
-        <td><strong>${currency(expense.value)}</strong></td>
-        <td>${attachmentBadge(expense.attachments)}</td>
-        <td>
+        <td data-label="Data">${formatDate(expense.date)}</td>
+        <td data-label="Categoria">${escapeHtml(expense.category)}</td>
+        <td data-label="Fornecedor">${escapeHtml(expense.supplier || '-')}</td>
+        <td data-label="Valor"><strong>${currency(expense.value)}</strong></td>
+        <td data-label="Comprovante">${attachmentBadge(expense.attachments)}</td>
+        <td data-label="Ações">
           <div class="row-actions">
             <button class="icon-btn" data-action="view-expense" data-id="${expense.id}">Ver</button>
             <button class="icon-btn" data-action="edit-expense" data-id="${expense.id}">Editar</button>
@@ -1731,10 +1834,121 @@
       if (button.dataset.action === 'edit-team') editTeamMember(member);
       if (button.dataset.action === 'delete-team') removeItem('teamMembers', member.id, 'Colaborador excluído.');
       if (button.dataset.action === 'view-team') viewTeamMember(member);
+      if (button.dataset.action === 'log-visit') logVisit(member);
     });
+
+    $('#heatmapGroupFilter')?.addEventListener('change', renderVisitHeatmap);
+  }
+
+  function logVisit(member) {
+    if (!assertCanEdit()) return;
+    const today = todayInput();
+    const visit = {
+      id: uid('visit'),
+      teamMemberId: member.id,
+      project: member.group || '',
+      date: today,
+      notes: '',
+      createdBy: currentUserStamp(),
+      createdAt: new Date().toISOString(),
+    };
+    state.visitLogs.push(visit);
+    const updatedMember = {
+      ...member,
+      visitCount: Number(member.visitCount || 0) + 1,
+      lastVisitDate: today,
+      updatedBy: currentUserStamp(),
+      updatedAt: new Date().toISOString(),
+    };
+    saveState();
+    saveRemote('visitLogs', visit);
+    upsert('teamMembers', updatedMember);
+    renderAll();
+    toast(`Visita registrada para ${member.name}.`);
+  }
+
+  function renderVisitHeatmapFilterOptions() {
+    const select = $('#heatmapGroupFilter');
+    if (!select) return;
+    const current = select.value || 'all';
+    const groups = [...new Set(state.teamMembers.map((member) => member.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    select.innerHTML = ['<option value="all">Todas as equipes</option>', ...groups.map((group) => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`)].join('');
+    select.value = [...select.options].some((option) => option.value === current) ? current : 'all';
+  }
+
+  function renderVisitHeatmap() {
+    renderVisitHeatmapFilterOptions();
+    const container = $('#visitHeatmap');
+    if (!container) return;
+    const groupFilter = $('#heatmapGroupFilter')?.value || 'all';
+
+    const memberGroup = new Map(state.teamMembers.map((member) => [member.id, member.group || '']));
+    const relevantLogs = state.visitLogs.filter((log) => {
+      if (groupFilter === 'all') return true;
+      const group = memberGroup.get(log.teamMemberId) || log.project || '';
+      return normalizeText(group) === normalizeText(groupFilter);
+    });
+
+    const counts = {};
+    relevantLogs.forEach((log) => {
+      if (!log.date) return;
+      counts[log.date] = (counts[log.date] || 0) + 1;
+    });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(today);
+    start.setDate(start.getDate() - 90);
+    start.setDate(start.getDate() - start.getDay());
+    const end = new Date(today);
+    end.setDate(end.getDate() + (6 - end.getDay()));
+
+    const days = [];
+    for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+      days.push(new Date(cursor));
+    }
+    const weeks = [];
+    for (let index = 0; index < days.length; index += 7) weeks.push(days.slice(index, index + 7));
+    const maxCount = Math.max(1, ...Object.values(counts));
+
+    const weeksHtml = weeks.map((week, weekIndex) => {
+      const firstDay = week[0];
+      const prevWeek = weeks[weekIndex - 1];
+      const monthLabel = (!prevWeek || firstDay.getMonth() !== prevWeek[0].getMonth())
+        ? firstDay.toLocaleDateString('pt-BR', { month: 'short' })
+        : '';
+      const cells = week.map((day) => {
+        if (day > today) return '<span class="heatmap-cell level-future"></span>';
+        const key = todayInput(day);
+        const count = counts[key] || 0;
+        const level = count === 0 ? 0 : Math.min(4, Math.ceil((count / maxCount) * 4));
+        return `<span class="heatmap-cell level-${level}" title="${day.toLocaleDateString('pt-BR')}: ${count} visita${count === 1 ? '' : 's'}"></span>`;
+      }).join('');
+      return `
+        <div class="heatmap-week">
+          <small class="heatmap-month">${escapeHtml(monthLabel)}</small>
+          <div class="heatmap-days">${cells}</div>
+        </div>
+      `;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="heatmap-grid">${weeksHtml}</div>
+      <div class="heatmap-legend">
+        <span>Menos</span>
+        <span class="heatmap-cell level-0"></span>
+        <span class="heatmap-cell level-1"></span>
+        <span class="heatmap-cell level-2"></span>
+        <span class="heatmap-cell level-3"></span>
+        <span class="heatmap-cell level-4"></span>
+        <span>Mais</span>
+      </div>
+      ${relevantLogs.length ? '' : '<p class="empty-state">Nenhuma visita registrada ainda. Use o botão "Visitar" na lista de colaboradores.</p>'}
+    `;
   }
 
   function renderTeamTable() {
+    renderVisitHeatmap();
     const query = normalizeText($('#teamSearch')?.value);
     const list = [...state.teamMembers]
       .sort((a, b) => String(a.name).localeCompare(String(b.name)))
@@ -1742,15 +1956,16 @@
 
     $('#teamTable').innerHTML = list.map((member) => `
       <tr>
-        <td>${escapeHtml(member.name)}</td>
-        <td>${escapeHtml(member.role || '-')}</td>
-        <td>${escapeHtml(member.leader || '-')}</td>
-        <td>${escapeHtml(member.group || '-')}</td>
-        <td>${statusBadge(member.status)}</td>
-        <td>${escapeHtml(member.visitCount || 0)}</td>
-        <td>${formatDate(member.lastVisitDate)}</td>
-        <td>
+        <td data-label="Nome">${escapeHtml(member.name)}</td>
+        <td data-label="Função">${escapeHtml(member.role || '-')}</td>
+        <td data-label="Encarregado">${escapeHtml(member.leader || '-')}</td>
+        <td data-label="Equipe">${escapeHtml(member.group || '-')}</td>
+        <td data-label="Status">${statusBadge(member.status)}</td>
+        <td data-label="Visitas">${escapeHtml(member.visitCount || 0)}</td>
+        <td data-label="Última visita">${formatDate(member.lastVisitDate)}</td>
+        <td data-label="Ações">
           <div class="row-actions">
+            <button class="icon-btn" data-action="log-visit" data-id="${member.id}" title="Registrar visita de hoje">Visitar</button>
             <button class="icon-btn" data-action="view-team" data-id="${member.id}">Ver</button>
             <button class="icon-btn" data-action="edit-team" data-id="${member.id}">Editar</button>
             <button class="icon-btn danger" data-action="delete-team" data-id="${member.id}">Excluir</button>
@@ -1864,12 +2079,12 @@
 
     $('#vehicleCostTable').innerHTML = sortByDateDesc(state.vehicleCosts).map((item) => `
       <tr>
-        <td>${formatDate(item.date)}</td>
-        <td>${escapeHtml(item.type)}</td>
-        <td><strong>${currency(item.value)}</strong></td>
-        <td>${escapeHtml(item.km || '-')}</td>
-        <td>${attachmentBadge(item.attachments)}</td>
-        <td>
+        <td data-label="Data">${formatDate(item.date)}</td>
+        <td data-label="Tipo">${escapeHtml(item.type)}</td>
+        <td data-label="Valor"><strong>${currency(item.value)}</strong></td>
+        <td data-label="Km">${escapeHtml(item.km || '-')}</td>
+        <td data-label="Comprovante">${attachmentBadge(item.attachments)}</td>
+        <td data-label="Ações">
           <div class="row-actions">
             <button class="icon-btn" data-action="view-car" data-id="${item.id}">Ver</button>
             <button class="icon-btn" data-action="edit-car" data-id="${item.id}">Editar</button>
@@ -2099,11 +2314,11 @@
   function renderUserTable() {
     $('#userTable').innerHTML = state.users.map((user) => `
       <tr>
-        <td>${escapeHtml(user.name)}</td>
-        <td>${escapeHtml(user.email || '-')}</td>
-        <td>${escapeHtml(roleLabel(user.role))}</td>
-        <td>${statusBadge(user.status)}</td>
-        <td>
+        <td data-label="Nome">${escapeHtml(user.name)}</td>
+        <td data-label="E-mail">${escapeHtml(user.email || '-')}</td>
+        <td data-label="Perfil">${escapeHtml(roleLabel(user.role))}</td>
+        <td data-label="Status">${statusBadge(user.status)}</td>
+        <td data-label="Ações">
           <div class="row-actions">
             <button class="icon-btn" data-action="edit-user" data-id="${user.id}">Editar</button>
             <button class="icon-btn danger" data-action="delete-user" data-id="${user.id}">Excluir</button>
@@ -2563,6 +2778,7 @@
     setupBackup();
 
     $('#closeModal').addEventListener('click', closeModal);
+    $('#printModal').addEventListener('click', () => window.print());
     elements.modal.addEventListener('click', (event) => {
       if (event.target === elements.modal) closeModal();
     });

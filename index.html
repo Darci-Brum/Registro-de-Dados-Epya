@@ -24,6 +24,11 @@
         </div>
       </div>
 
+      <div class="login-tabs">
+        <button type="button" class="login-tab active" data-login-mode="signin">Entrar</button>
+        <button type="button" class="login-tab" data-login-mode="signup">Primeiro acesso</button>
+      </div>
+
       <form id="loginForm" class="login-form">
         <h1>Acesso ao sistema</h1>
         <label>E-mail
@@ -33,6 +38,20 @@
           <input type="password" id="loginPassword" autocomplete="current-password" required placeholder="Digite sua senha" />
         </label>
         <button type="submit" class="primary-btn full-btn">Entrar</button>
+      </form>
+
+      <form id="signupForm" class="login-form" hidden>
+        <h1>Primeiro acesso</h1>
+        <label>Nome
+          <input type="text" id="signupName" autocomplete="name" required placeholder="Seu nome completo" />
+        </label>
+        <label>E-mail
+          <input type="email" id="signupEmail" autocomplete="email" required placeholder="seuemail@empresa.com" />
+        </label>
+        <label>Criar senha
+          <input type="password" id="signupPassword" autocomplete="new-password" required minlength="6" placeholder="Mínimo de 6 caracteres" />
+        </label>
+        <button type="submit" class="primary-btn full-btn">Criar acesso</button>
       </form>
 
       <p class="login-note" id="loginMessage">Acesso restrito a usuários cadastrados.</p>
@@ -130,6 +149,17 @@
 
         <div class="metrics-grid" id="metricsGrid"></div>
 
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Semáforo de qualidade por frente</h3>
+              <p>Situação de cada frente com base em não conformidades abertas, críticas e com prazo vencido.</p>
+            </div>
+            <span class="mini-tag">Qualidade</span>
+          </div>
+          <div id="qualitySemaphore" class="semaphore-grid"></div>
+        </article>
+
         <div class="dashboard-grid dashboard-grid-3">
           <article class="card">
             <div class="card-header">
@@ -189,7 +219,18 @@
           </article>
         </div>
 
-        <div class="dashboard-grid dashboard-grid-side">
+        <div class="dashboard-grid dashboard-grid-3">
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h3>Clima x Produtividade</h3>
+                <p>Dias por condição climática e quantos foram interrompidos.</p>
+              </div>
+              <span class="mini-tag">Clima</span>
+            </div>
+            <div class="chart-box"><canvas id="weatherChart" aria-label="Gráfico de clima e produtividade" role="img"></canvas></div>
+          </article>
+
           <article class="card">
             <div class="card-header">
               <div>
@@ -535,6 +576,19 @@
       </section>
 
       <section class="tab-panel" id="equipes" aria-labelledby="Equipes">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Heatmap de visitas</h3>
+              <p>Frequência de visitas registradas por dia nas últimas semanas.</p>
+            </div>
+            <select id="heatmapGroupFilter" class="search-input">
+              <option value="all">Todas as equipes</option>
+            </select>
+          </div>
+          <div id="visitHeatmap" class="heatmap-wrap"></div>
+        </article>
+
         <article class="card">
           <div class="card-header">
             <div>
@@ -892,6 +946,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <div id="modal" class="modal" hidden>
     <div class="modal-card">
+      <button id="printModal" class="modal-print" type="button">Imprimir</button>
       <button id="closeModal" class="modal-close" aria-label="Fechar">×</button>
       <h3 id="modalTitle">Detalhes</h3>
       <div id="modalBody"></div>

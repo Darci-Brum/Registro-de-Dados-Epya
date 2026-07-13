@@ -396,3 +396,41 @@ grant select, insert, update, delete on public.projects to authenticated;
 create index if not exists ncs_date_idx on public.ncs(date desc);
 create index if not exists ncs_status_idx on public.ncs(status);
 create index if not exists projects_name_idx on public.projects(name);
+
+-- =========================
+-- ATUALIZAÇÃO: Log de visitas (heatmap de visitas por equipe)
+-- (seguro para rodar mais de uma vez)
+-- =========================
+
+create table if not exists public.visit_logs (
+  id text primary key,
+  team_member_id text references public.team_members(id) on delete cascade,
+  project text,
+  date date not null,
+  notes text,
+  created_by text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.visit_logs enable row level security;
+
+do $$
+begin
+  execute format('drop policy if exists %I on public.%I', 'visit_logs_select_active', 'visit_logs');
+  execute format('create policy %I on public.%I for select to authenticated using (public.is_active_user())', 'visit_logs_select_active', 'visit_logs');
+
+  execute format('drop policy if exists %I on public.%I', 'visit_logs_insert_writer', 'visit_logs');
+  execute format('create policy %I on public.%I for insert to authenticated with check (public.can_write_app_data())', 'visit_logs_insert_writer', 'visit_logs');
+
+  execute format('drop policy if exists %I on public.%I', 'visit_logs_update_writer', 'visit_logs');
+  execute format('create policy %I on public.%I for update to authenticated using (public.can_write_app_data()) with check (public.can_write_app_data())', 'visit_logs_update_writer', 'visit_logs');
+
+  execute format('drop policy if exists %I on public.%I', 'visit_logs_delete_writer', 'visit_logs');
+  execute format('create policy %I on public.%I for delete to authenticated using (public.can_write_app_data())', 'visit_logs_delete_writer', 'visit_logs');
+end;
+$$;
+
+grant select, insert, update, delete on public.visit_logs to authenticated;
+
+create index if not exists visit_logs_date_idx on public.visit_logs(date desc);
+create index if not exists visit_logs_team_member_idx on public.visit_logs(team_member_id);
