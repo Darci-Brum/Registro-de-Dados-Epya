@@ -470,3 +470,43 @@ $$;
 grant select, insert, update, delete on public.leaders to authenticated;
 
 create index if not exists leaders_name_idx on public.leaders(name);
+
+-- =========================
+-- ATUALIZAÇÃO: Checklist diário/mensal do veículo
+-- (seguro para rodar mais de uma vez)
+-- =========================
+
+create table if not exists public.vehicle_checklists (
+  id text primary key,
+  date date not null,
+  check_type text not null default 'Diário',
+  km numeric(12,0),
+  items jsonb not null default '{}'::jsonb,
+  notes text,
+  attachments jsonb not null default '[]'::jsonb,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.vehicle_checklists enable row level security;
+
+do $$
+begin
+  execute format('drop policy if exists %I on public.%I', 'vehicle_checklists_select_active', 'vehicle_checklists');
+  execute format('create policy %I on public.%I for select to authenticated using (public.is_active_user())', 'vehicle_checklists_select_active', 'vehicle_checklists');
+
+  execute format('drop policy if exists %I on public.%I', 'vehicle_checklists_insert_writer', 'vehicle_checklists');
+  execute format('create policy %I on public.%I for insert to authenticated with check (public.can_write_app_data())', 'vehicle_checklists_insert_writer', 'vehicle_checklists');
+
+  execute format('drop policy if exists %I on public.%I', 'vehicle_checklists_update_writer', 'vehicle_checklists');
+  execute format('create policy %I on public.%I for update to authenticated using (public.can_write_app_data()) with check (public.can_write_app_data())', 'vehicle_checklists_update_writer', 'vehicle_checklists');
+
+  execute format('drop policy if exists %I on public.%I', 'vehicle_checklists_delete_writer', 'vehicle_checklists');
+  execute format('create policy %I on public.%I for delete to authenticated using (public.can_write_app_data())', 'vehicle_checklists_delete_writer', 'vehicle_checklists');
+end;
+$$;
+
+grant select, insert, update, delete on public.vehicle_checklists to authenticated;
+
+create index if not exists vehicle_checklists_date_idx on public.vehicle_checklists(date desc);

@@ -60,13 +60,9 @@
 
   <div class="app-shell" id="appShell" hidden>
     <aside class="sidebar" aria-label="Menu principal">
-      <div class="brand-block">
-        <img src="assets/epya-logo-original.png" alt="Emblema EPYA" class="brand-logo" />
-        <div>
-          <span class="brand-eyebrow">EPYA</span>
-          <strong>EPYA Infraestrutura</strong>
-          <small>Controle de Qualidade</small>
-        </div>
+      <div class="brand-block brand-block-centered">
+        <img src="assets/epya-logo-original.png" alt="Logo EPYA" class="brand-logo" />
+        <small>Controle de Qualidade</small>
       </div>
 
       <nav class="nav-list" id="navList">
@@ -705,6 +701,72 @@
               <button type="submit" class="primary-btn">Salvar dados do carro</button>
             </div>
           </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Checklist do veículo</h3>
+              <p>Inspeção diária ou mensal com fotos: pneus, óleo, freios, luzes, documentos e mais.</p>
+            </div>
+            <button class="small-btn" id="clearChecklistForm" type="button">Limpar formulário</button>
+          </div>
+          <form id="vehicleChecklistForm" class="form-grid compact-form">
+            <input type="hidden" id="checklistId" />
+            <label>Data
+              <input type="date" id="checklistDate" required />
+            </label>
+            <label>Tipo de checklist
+              <select id="checklistType">
+                <option>Diário</option>
+                <option>Mensal</option>
+              </select>
+            </label>
+            <label>Km / Odômetro
+              <input type="number" id="checklistKm" min="0" />
+            </label>
+            <div class="full-span checklist-grid" id="checklistItems"></div>
+            <label class="full-span">Observações
+              <textarea id="checklistNotes" rows="2" placeholder="Avarias, pendências e itens a corrigir."></textarea>
+            </label>
+            <label class="full-span">Fotos / evidências
+              <input type="file" id="checklistAttachment" multiple accept="image/*,.pdf" />
+              <small>Anexe fotos do veículo, painel, pneus ou avarias (até 2,5MB por arquivo).</small>
+            </label>
+            <div class="form-actions full-span">
+              <button type="submit" class="primary-btn">Salvar checklist</button>
+              <button type="button" class="ghost-btn" id="exportChecklistCsv">Exportar CSV</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Checklists registrados</h3>
+              <p>Histórico das inspeções diárias e mensais do veículo.</p>
+            </div>
+            <select id="checklistFilter" class="search-input">
+              <option value="all">Todos</option>
+              <option value="Diário">Diários</option>
+              <option value="Mensal">Mensais</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Tipo</th>
+                  <th>Km</th>
+                  <th>Conformidade</th>
+                  <th>Anexos</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="checklistTable"></tbody>
+            </table>
+          </div>
         </article>
 
         <article class="card">

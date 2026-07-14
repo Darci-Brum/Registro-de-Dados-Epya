@@ -41,6 +41,7 @@
       odometer: '',
     },
     vehicleCosts: [],
+    vehicleChecklists: [],
     agendaItems: [],
   };
 
@@ -52,6 +53,7 @@
     if (!Array.isArray(state.ncs)) state.ncs = [];
     if (!Array.isArray(state.visitLogs)) state.visitLogs = [];
     if (!Array.isArray(state.leaders)) state.leaders = [];
+    if (!Array.isArray(state.vehicleChecklists)) state.vehicleChecklists = [];
     const known = new Set(state.projects.map((project) => normalizeText(project.name)));
     [...state.rdos, ...state.ncs].forEach((item) => {
       const name = String(item.project || '').trim();
@@ -214,6 +216,11 @@
 
   function closeModal() {
     elements.modal.hidden = true;
+    elements.modal.querySelector('.modal-card')?.classList.remove('modal-card-wide');
+    if (expandedChart) {
+      expandedChart.destroy();
+      expandedChart = null;
+    }
   }
 
   function setLoginMessage(message) {
@@ -402,7 +409,7 @@
 
   async function loadRemoteData() {
     if (!supabaseClient || !currentSession) return;
-    const [profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems, ncs, projects, visitLogs, leaders] = await Promise.all([
+    const [profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems, ncs, projects, visitLogs, leaders, vehicleChecklists] = await Promise.all([
       supabaseClient.from('profiles').select('*').order('name', { ascending: true }),
       supabaseClient.from('rdos').select('*').order('date', { ascending: false }),
       supabaseClient.from('expenses').select('*').order('date', { ascending: false }),
@@ -414,6 +421,7 @@
       supabaseClient.from('projects').select('*').order('name', { ascending: true }),
       supabaseClient.from('visit_logs').select('*').order('date', { ascending: false }),
       supabaseClient.from('leaders').select('*').order('name', { ascending: true }),
+      supabaseClient.from('vehicle_checklists').select('*').order('date', { ascending: false }),
     ]);
 
     const responses = { profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems };
@@ -440,6 +448,7 @@
       teamMembers: teamMembers.data.map(teamMemberFromDb),
       vehicle: vehicleFromDb(vehicles.data?.[0]),
       vehicleCosts: vehicleCosts.data.map(vehicleCostFromDb),
+      vehicleChecklists: vehicleChecklists.error ? state.vehicleChecklists : vehicleChecklists.data.map(vehicleChecklistFromDb),
       agendaItems: agendaItems.data.map(agendaFromDb),
     };
     migrateProjectsFromRdos();
@@ -610,6 +619,22 @@
     return { id: item.id, name: item.name, created_at: item.createdAt || new Date().toISOString(), updated_at: new Date().toISOString() };
   }
 
+  function vehicleChecklistFromDb(row) {
+    return {
+      id: row.id, date: row.date, type: row.check_type || 'Diário', km: row.km,
+      items: row.items || {}, notes: row.notes || '', attachments: row.attachments || [],
+      createdBy: row.created_by, createdAt: row.created_at, updatedAt: row.updated_at,
+    };
+  }
+
+  function vehicleChecklistToDb(item) {
+    return {
+      id: item.id, date: item.date, check_type: item.type || 'Diário', km: item.km ? Number(item.km) : null,
+      items: item.items || {}, notes: item.notes || '', attachments: item.attachments || [],
+      created_by: item.createdBy, created_at: item.createdAt || new Date().toISOString(), updated_at: new Date().toISOString(),
+    };
+  }
+
   function leaderFromDb(row) {
     return { id: row.id, name: row.name, createdAt: row.created_at };
   }
@@ -643,6 +668,7 @@
       expenses: ['expenses', expenseToDb],
       teamMembers: ['team_members', teamMemberToDb],
       vehicleCosts: ['vehicle_costs', vehicleCostToDb],
+      vehicleChecklists: ['vehicle_checklists', vehicleChecklistToDb],
       agendaItems: ['agenda_items', agendaToDb],
     };
     const found = map[collection];
@@ -695,7 +721,7 @@
     const confirmed = confirm('Enviar os dados locais deste navegador para o Supabase? Registros com mesmo ID serão atualizados.');
     if (!confirmed) return;
 
-    const collections = ['rdos', 'ncs', 'projects', 'leaders', 'visitLogs', 'expenses', 'teamMembers', 'vehicleCosts', 'agendaItems'];
+    const collections = ['rdos', 'ncs', 'projects', 'leaders', 'visitLogs', 'expenses', 'teamMembers', 'vehicleCosts', 'vehicleChecklists', 'agendaItems'];
     for (const collection of collections) {
       for (const item of local[collection] || []) await saveRemote(collection, item);
     }
@@ -857,6 +883,9 @@
     };
   }
 
+  const chartKeysByCanvas = {};
+  let expandedChart = null;
+
   function upsertChart(key, canvasId, config) {
     const canvas = $(canvasId);
     if (!canvas || !window.Chart) return;
@@ -864,7 +893,32 @@
       dashboardCharts[key].destroy();
       delete dashboardCharts[key];
     }
+    chartKeysByCanvas[canvasId.replace('#', '')] = key;
     dashboardCharts[key] = new Chart(canvas, config);
+  }
+
+  function expandChart(canvasEl, title) {
+    const key = chartKeysByCanvas[canvasEl.id];
+    const source = key ? dashboardCharts[key] : null;
+    if (!source || !window.Chart) return;
+    elements.modal.querySelector('.modal-card')?.classList.add('modal-card-wide');
+    openModal(title || 'Gráfico ampliado', '<div class="chart-box chart-box-expanded"><canvas id="expandedChartCanvas"></canvas></div>');
+    expandedChart = new Chart($('#expandedChartCanvas'), {
+      type: source.config.type,
+      data: source.config.data,
+      options: source.config.options,
+    });
+  }
+
+  function setupChartExpand() {
+    document.body.addEventListener('click', (event) => {
+      const box = event.target.closest('.chart-box');
+      if (!box || box.closest('.modal')) return;
+      const canvas = box.querySelector('canvas');
+      if (!canvas) return;
+      const title = box.closest('.card')?.querySelector('h3')?.textContent || 'Gráfico';
+      expandChart(canvas, `${title} — ampliado`);
+    });
   }
 
   function metricCard(metric) {
@@ -2143,6 +2197,172 @@
     `);
   }
 
+  const VEHICLE_CHECKLIST_ITEMS = [
+    'Pneus e calibragem',
+    'Nível de óleo',
+    'Água / arrefecimento',
+    'Freios',
+    'Luzes e setas',
+    'Para-brisa e palhetas',
+    'Buzina',
+    'Limpeza interna e externa',
+    'Documentos e CNH',
+    'Estepe, macaco e triângulo',
+  ];
+  const CHECKLIST_STATUS = ['OK', 'Atenção', 'Não OK', 'N.A.'];
+
+  function renderChecklistItemsForm(values = {}) {
+    const container = $('#checklistItems');
+    if (!container) return;
+    container.innerHTML = VEHICLE_CHECKLIST_ITEMS.map((item) => `
+      <label>${escapeHtml(item)}
+        <select data-check-item="${escapeHtml(item)}">
+          ${CHECKLIST_STATUS.map((status) => `<option ${values[item] === status ? 'selected' : ''}>${status}</option>`).join('')}
+        </select>
+      </label>
+    `).join('');
+  }
+
+  function checklistCompliance(items = {}) {
+    const answers = Object.values(items).filter((value) => value && value !== 'N.A.');
+    if (!answers.length) return null;
+    const ok = answers.filter((value) => value === 'OK').length;
+    return Math.round((ok / answers.length) * 100);
+  }
+
+  function checklistItemBadge(value) {
+    let kind = 'warn';
+    if (value === 'OK') kind = 'ok';
+    if (value === 'Não OK') kind = 'danger';
+    if (value === 'N.A.') kind = 'info';
+    return `<span class="badge ${kind}">${escapeHtml(value || '-')}</span>`;
+  }
+
+  function complianceBadge(percent) {
+    if (percent === null) return '<span class="badge warn">Sem itens</span>';
+    let kind = 'danger';
+    if (percent >= 90) kind = 'ok';
+    else if (percent >= 70) kind = 'warn';
+    return `<span class="badge ${kind}">${percent}% OK</span>`;
+  }
+
+  function renderAttachmentPreviews(attachments = []) {
+    if (!attachments.length) return '<span class="empty-state">Nenhum anexo salvo.</span>';
+    const images = attachments.filter((file) => String(file.type || '').startsWith('image/'));
+    const others = attachments.filter((file) => !String(file.type || '').startsWith('image/'));
+    const thumbs = images.length
+      ? `<div class="evidence-grid">${images.map((file) => `<a href="${file.dataUrl}" download="${escapeHtml(file.name)}" title="${escapeHtml(file.name)}"><img src="${file.dataUrl}" alt="${escapeHtml(file.name)}" /></a>`).join('')}</div>`
+      : '';
+    return thumbs + (others.length ? renderAttachmentLinks(others) : '');
+  }
+
+  function setupVehicleChecklist() {
+    $('#checklistDate').value = todayInput();
+    renderChecklistItemsForm();
+
+    $('#vehicleChecklistForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!assertCanEdit()) return;
+      const id = $('#checklistId').value || uid('chk');
+      const existing = state.vehicleChecklists.find((item) => item.id === id);
+      const attachments = await readAttachments($('#checklistAttachment'), existing?.attachments || [], true);
+      const items = {};
+      $$('#checklistItems select').forEach((select) => {
+        items[select.dataset.checkItem] = select.value;
+      });
+      const checklist = {
+        id,
+        date: $('#checklistDate').value,
+        type: $('#checklistType').value,
+        km: $('#checklistKm').value,
+        items,
+        notes: $('#checklistNotes').value.trim(),
+        attachments,
+        createdBy: existing?.createdBy || currentUserStamp(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      upsert('vehicleChecklists', checklist);
+      event.target.reset();
+      $('#checklistId').value = '';
+      $('#checklistDate').value = todayInput();
+      renderChecklistItemsForm();
+      renderChecklistTable();
+      toast('Checklist do veículo salvo.');
+    });
+
+    $('#clearChecklistForm').addEventListener('click', () => {
+      $('#vehicleChecklistForm').reset();
+      $('#checklistId').value = '';
+      $('#checklistDate').value = todayInput();
+      renderChecklistItemsForm();
+    });
+
+    $('#checklistFilter').addEventListener('change', renderChecklistTable);
+    $('#exportChecklistCsv').addEventListener('click', () => exportCsv('checklists-veiculo.csv', state.vehicleChecklists));
+
+    $('#checklistTable').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const checklist = state.vehicleChecklists.find((item) => item.id === button.dataset.id);
+      if (!checklist) return;
+      if (button.dataset.action === 'view-checklist') viewChecklist(checklist);
+      if (button.dataset.action === 'edit-checklist') editChecklist(checklist);
+      if (button.dataset.action === 'delete-checklist') removeItem('vehicleChecklists', checklist.id, 'Checklist excluído.');
+    });
+  }
+
+  function renderChecklistTable() {
+    const table = $('#checklistTable');
+    if (!table) return;
+    const filter = $('#checklistFilter')?.value || 'all';
+    const list = sortByDateDesc(state.vehicleChecklists).filter((item) => filter === 'all' || item.type === filter);
+
+    table.innerHTML = list.map((item) => `
+      <tr>
+        <td data-label="Data">${formatDate(item.date)}</td>
+        <td data-label="Tipo">${escapeHtml(item.type)}</td>
+        <td data-label="Km">${escapeHtml(item.km || '-')}</td>
+        <td data-label="Conformidade">${complianceBadge(checklistCompliance(item.items))}</td>
+        <td data-label="Anexos">${attachmentBadge(item.attachments)}</td>
+        <td data-label="Ações">
+          <div class="row-actions">
+            <button class="icon-btn" data-action="view-checklist" data-id="${item.id}">Ver</button>
+            <button class="icon-btn" data-action="edit-checklist" data-id="${item.id}">Editar</button>
+            <button class="icon-btn danger" data-action="delete-checklist" data-id="${item.id}">Excluir</button>
+          </div>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" class="empty-state">Nenhum checklist registrado ainda.</td></tr>';
+  }
+
+  function viewChecklist(checklist) {
+    const itemsHtml = VEHICLE_CHECKLIST_ITEMS
+      .filter((item) => checklist.items?.[item])
+      .map((item) => `<p><strong>${escapeHtml(item)}</strong>${checklistItemBadge(checklist.items[item])}</p>`)
+      .join('');
+    openModal(`Checklist ${checklist.type} - ${formatDate(checklist.date)}`, `
+      <div class="detail-grid">
+        <p><strong>Km / Odômetro</strong>${escapeHtml(checklist.km || '-')}</p>
+        <p><strong>Conformidade</strong>${complianceBadge(checklistCompliance(checklist.items))}</p>
+        ${itemsHtml}
+        <p><strong>Observações</strong>${escapeHtml(checklist.notes || '-')}</p>
+        <p><strong>Fotos / evidências</strong>${renderAttachmentPreviews(checklist.attachments)}</p>
+        <p><strong>Registrado por</strong>${escapeHtml(checklist.createdBy || '-')}</p>
+      </div>
+    `);
+  }
+
+  function editChecklist(checklist) {
+    $('#checklistId').value = checklist.id;
+    $('#checklistDate').value = checklist.date || todayInput();
+    $('#checklistType').value = checklist.type || 'Diário';
+    $('#checklistKm').value = checklist.km || '';
+    $('#checklistNotes').value = checklist.notes || '';
+    renderChecklistItemsForm(checklist.items || {});
+    toast('Checklist carregado para edição. Novos anexos serão somados aos atuais.');
+  }
+
   function setupVehicle() {
     $('#vehicleProfileForm').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -2654,6 +2874,15 @@
         Descricao: item.description,
         Anexos: attachmentNames(item.attachments),
       })),
+      Checklists_Veiculo: state.vehicleChecklists.map((item) => ({
+        Data: formatDate(item.date),
+        Tipo: item.type,
+        KM: item.km,
+        Conformidade: (() => { const percent = checklistCompliance(item.items); return percent === null ? '-' : `${percent}%`; })(),
+        Itens: Object.entries(item.items || {}).map(([name, value]) => `${name}: ${value}`).join(' | '),
+        Observacoes: item.notes,
+        Anexos: attachmentNames(item.attachments),
+      })),
       Agenda: state.agendaItems.map((item) => ({
         Data_Hora: formatDateTime(item.dateTime),
         Titulo: item.title,
@@ -2903,6 +3132,7 @@
     renderExpenseTable();
     renderTeamTable();
     renderVehicle();
+    renderChecklistTable();
     renderAgendaList();
     renderUserTable();
   }
@@ -2918,6 +3148,8 @@
     setupLeaders();
     setupTeams();
     setupVehicle();
+    setupVehicleChecklist();
+    setupChartExpand();
     setupAgenda();
     setupUsers();
     setupBackup();
