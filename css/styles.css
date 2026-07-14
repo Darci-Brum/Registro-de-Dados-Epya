@@ -1388,9 +1388,8 @@ body[data-theme="dark"] .metric-card .metric-icon {
 /* ===== Atualizações v7 ===== */
 .login-screen {
   background:
-    linear-gradient(100deg, rgba(8, 12, 18, 0.55) 0%, rgba(10, 12, 16, 0.32) 34%, rgba(10, 12, 16, 0.04) 100%),
-    url("../assets/login-rail-montage.svg") 70% center / cover no-repeat,
-    #0b0f16;
+    linear-gradient(100deg, rgba(8, 12, 18, 0.52) 0%, rgba(10, 12, 16, 0.34) 34%, rgba(10, 12, 16, 0.06) 100%),
+    url("../assets/login-bg.png") 74% center / cover no-repeat;
 }
 
 .login-screen-backdrop {
