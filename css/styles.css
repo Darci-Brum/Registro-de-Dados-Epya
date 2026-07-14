@@ -1976,30 +1976,3 @@ body.presentation-mode .chart-box {
   opacity: 1;
 }
 
-.login-tagline {
-  margin: 0 0 16px;
-  color: var(--epya-gray);
-  font-size: 0.92rem;
-  line-height: 1.5;
-}
-
-.login-highlights {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 14px;
-}
-
-.login-highlights span {
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: rgba(243, 194, 41, 0.16);
-  color: #7a5200;
-  font-size: 0.74rem;
-  font-weight: 800;
-}
-
-body[data-theme="dark"] .login-highlights span {
-  background: rgba(243, 194, 41, 0.14);
-  color: #ffdc68;
-}
