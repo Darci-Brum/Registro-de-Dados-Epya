@@ -105,6 +105,7 @@
         <div class="topbar-actions">
           <button class="ghost-btn" id="themeToggle" type="button" aria-label="Alternar tema claro e escuro">Tema escuro</button>
           <button class="ghost-btn" id="notificationButton">Ativar notificações</button>
+          <button class="ghost-btn" id="presentationToggle" type="button" title="Tela cheia só com indicadores, para TV ou apresentação">Modo TV</button>
           <button class="primary-btn" id="quickRdoButton">Novo RDO</button>
           <button class="danger-btn" id="topLogoutButton" type="button">Sair</button>
         </div>
@@ -123,7 +124,7 @@
           </div>
         </div>
 
-        <div class="dashboard-filters">
+        <div class="dashboard-filters presentation-hide">
           <div class="filter-field">
             <label for="dashPeriodFilter">Período</label>
             <select id="dashPeriodFilter">
@@ -248,7 +249,7 @@
           </article>
         </div>
 
-        <article class="card">
+        <article class="card presentation-hide">
           <div class="card-header">
             <div>
               <h3>Últimos RDOs lançados</h3>
@@ -1020,6 +1021,7 @@
     </main>
   </div>
 
+  <button id="exitPresentation" class="presentation-exit" type="button" hidden>Sair do modo TV</button>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <div id="modal" class="modal" hidden>
     <div class="modal-card">

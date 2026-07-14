@@ -921,6 +921,54 @@
     });
   }
 
+  let presentationTimer = null;
+
+  function presentationActive() {
+    return document.body.classList.contains('presentation-mode');
+  }
+
+  function setPresentationMode(active) {
+    document.body.classList.toggle('presentation-mode', active);
+    const exitButton = $('#exitPresentation');
+    if (exitButton) exitButton.hidden = !active;
+
+    clearInterval(presentationTimer);
+    presentationTimer = null;
+
+    if (active) {
+      openTab('dashboard');
+      const request = document.documentElement.requestFullscreen?.();
+      if (request?.catch) request.catch(() => {});
+      presentationTimer = setInterval(async () => {
+        if (!presentationActive()) return;
+        if (remoteReady) {
+          try {
+            await loadRemoteData();
+          } catch (error) {
+            console.warn('Falha ao atualizar dados no modo TV:', error);
+          }
+        }
+        renderAll();
+      }, 120000);
+      toast('Modo TV ativado. Os indicadores atualizam sozinhos a cada 2 minutos.');
+    } else if (document.fullscreenElement) {
+      const exit = document.exitFullscreen?.();
+      if (exit?.catch) exit.catch(() => {});
+    }
+    renderDashboard();
+  }
+
+  function setupPresentation() {
+    $('#presentationToggle')?.addEventListener('click', () => setPresentationMode(true));
+    $('#exitPresentation')?.addEventListener('click', () => setPresentationMode(false));
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement && presentationActive()) setPresentationMode(false);
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && presentationActive()) setPresentationMode(false);
+    });
+  }
+
   function metricCard(metric) {
     const deltaClass = metric.deltaKind ? ` metric-delta-${metric.deltaKind}` : '';
     const delta = metric.delta ? `<span class="metric-delta${deltaClass}">${escapeHtml(metric.delta)}</span>` : '';
@@ -2947,6 +2995,49 @@
     toast('PDF baixado. O WhatsApp Web foi aberto para você anexar o arquivo.');
   }
 
+  const PDF_CHART_TITLES = {
+    rdo: 'RDOs por status (semana a semana)',
+    expensesCategory: 'Despesas por categoria',
+    teamVisits: 'Visitas às equipes',
+    expenses: 'Gastos por mês (gerais + veículo)',
+    ncPareto: 'Pareto de não conformidades',
+    weather: 'Clima x produtividade',
+  };
+
+  function captureChartImages() {
+    const images = {};
+    if (!window.Chart) return images;
+    const panel = $('#dashboard');
+    const wasActive = panel?.classList.contains('active');
+    const wasDark = document.body.dataset.theme === 'dark';
+
+    if (panel && !wasActive) panel.classList.add('active');
+    if (wasDark) {
+      document.body.dataset.theme = 'light';
+      renderDashboard();
+    } else if (panel && !wasActive) {
+      Object.values(dashboardCharts).forEach((chart) => chart.resize());
+    }
+
+    Object.keys(PDF_CHART_TITLES).forEach((key) => {
+      const chart = dashboardCharts[key];
+      if (!chart?.canvas || chart.canvas.width < 10 || chart.canvas.height < 10) return;
+      const offscreen = document.createElement('canvas');
+      offscreen.width = chart.canvas.width;
+      offscreen.height = chart.canvas.height;
+      const context = offscreen.getContext('2d');
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, offscreen.width, offscreen.height);
+      context.drawImage(chart.canvas, 0, 0);
+      images[key] = { src: offscreen.toDataURL('image/png'), width: offscreen.width, height: offscreen.height };
+    });
+
+    if (wasDark) document.body.dataset.theme = 'dark';
+    if (panel && !wasActive) panel.classList.remove('active');
+    if (wasDark) renderDashboard();
+    return images;
+  }
+
   function createReportPdfBlob() {
     const jsPDFCtor = window.jspdf?.jsPDF;
     if (!jsPDFCtor) {
@@ -3032,6 +3123,30 @@
     row('Gastos do veiculo', currency(state.vehicleCosts.reduce((sum, item) => sum + Number(item.value || 0), 0)));
     row('Colaboradores', state.teamMembers.length);
     row('Lembretes ativos', state.agendaItems.filter((item) => item.status !== 'Concluído').length);
+
+    const chartImages = captureChartImages();
+    const chartKeys = Object.keys(PDF_CHART_TITLES).filter((key) => chartImages[key]);
+    if (chartKeys.length) {
+      section('Indicadores do dashboard');
+      const gapX = 16;
+      const columnWidth = (pageWidth - margin * 2 - gapX) / 2;
+      for (let index = 0; index < chartKeys.length; index += 2) {
+        const pair = chartKeys.slice(index, index + 2);
+        const rowHeight = Math.max(...pair.map((key) => columnWidth * (chartImages[key].height / chartImages[key].width)));
+        addPageIfNeeded(rowHeight + 36);
+        pair.forEach((key, position) => {
+          const image = chartImages[key];
+          const x = margin + position * (columnWidth + gapX);
+          const imageHeight = columnWidth * (image.height / image.width);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(70);
+          doc.text(PDF_CHART_TITLES[key], x, y);
+          doc.addImage(image.src, 'PNG', x, y + 6, columnWidth, imageHeight);
+        });
+        y += rowHeight + 34;
+      }
+    }
 
     section('Ultimos RDOs');
     if (!state.rdos.length) text('Sem RDOs cadastrados.', margin);
@@ -3150,6 +3265,7 @@
     setupVehicle();
     setupVehicleChecklist();
     setupChartExpand();
+    setupPresentation();
     setupAgenda();
     setupUsers();
     setupBackup();
