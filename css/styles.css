@@ -1388,8 +1388,9 @@ body[data-theme="dark"] .metric-card .metric-icon {
 /* ===== Atualizações v7 ===== */
 .login-screen {
   background:
-    linear-gradient(100deg, rgba(8, 12, 18, 0.52) 0%, rgba(10, 12, 16, 0.34) 34%, rgba(10, 12, 16, 0.06) 100%),
-    url("../assets/login-bg.png") 74% center / cover no-repeat;
+    linear-gradient(100deg, rgba(8, 12, 18, 0.55) 0%, rgba(10, 12, 16, 0.32) 34%, rgba(10, 12, 16, 0.04) 100%),
+    url("../assets/login-rail-montage.svg") 70% center / cover no-repeat,
+    #0b0f16;
 }
 
 .login-screen-backdrop {
@@ -1974,4 +1975,32 @@ body.presentation-mode .chart-box {
 
 .presentation-exit:hover {
   opacity: 1;
+}
+
+.login-tagline {
+  margin: 0 0 16px;
+  color: var(--epya-gray);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.login-highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.login-highlights span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(243, 194, 41, 0.16);
+  color: #7a5200;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+body[data-theme="dark"] .login-highlights span {
+  background: rgba(243, 194, 41, 0.14);
+  color: #ffdc68;
 }
