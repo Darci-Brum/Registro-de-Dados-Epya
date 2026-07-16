@@ -2014,6 +2014,14 @@ body.presentation-mode .chart-box {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.time-config-grid #workScheduleForm {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#ponto .table-wrap table {
+  min-width: 1180px;
+}
+
 .schedule-summary,
 .overtime-preview {
   display: flex;
@@ -2095,7 +2103,8 @@ body[data-theme="dark"] .overtime-preview.has-overtime {
 
 @media (max-width: 900px) {
   .time-config-grid,
-  .overtime-examples {
+  .overtime-examples,
+  .time-config-grid #workScheduleForm {
     grid-template-columns: 1fr;
   }
 

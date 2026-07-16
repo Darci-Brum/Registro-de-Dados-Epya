@@ -445,9 +445,12 @@ create table if not exists public.work_schedules (
   user_id uuid not null unique references auth.users(id) on delete cascade,
   scheduled_entry time not null default '07:00',
   scheduled_exit time not null default '17:00',
+  before_overtime_rate numeric(12,2) not null default 0,
+  after_overtime_rate numeric(12,2) not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint work_schedules_valid_range check (scheduled_exit > scheduled_entry)
+  constraint work_schedules_valid_range check (scheduled_exit > scheduled_entry),
+  constraint work_schedules_valid_rates check (before_overtime_rate >= 0 and after_overtime_rate >= 0)
 );
 
 create table if not exists public.time_entries (
@@ -458,13 +461,32 @@ create table if not exists public.time_entries (
   actual_exit time not null,
   scheduled_entry time not null,
   scheduled_exit time not null,
+  before_overtime_rate numeric(12,2) not null default 0,
+  after_overtime_rate numeric(12,2) not null default 0,
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint time_entries_valid_actual_range check (actual_exit > actual_entry),
   constraint time_entries_valid_schedule_range check (scheduled_exit > scheduled_entry),
+  constraint time_entries_valid_rates check (before_overtime_rate >= 0 and after_overtime_rate >= 0),
   constraint time_entries_user_date_unique unique (user_id, work_date)
 );
+
+alter table public.work_schedules add column if not exists before_overtime_rate numeric(12,2) not null default 0;
+alter table public.work_schedules add column if not exists after_overtime_rate numeric(12,2) not null default 0;
+alter table public.time_entries add column if not exists before_overtime_rate numeric(12,2) not null default 0;
+alter table public.time_entries add column if not exists after_overtime_rate numeric(12,2) not null default 0;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'work_schedules_valid_rates' and conrelid = 'public.work_schedules'::regclass) then
+    alter table public.work_schedules add constraint work_schedules_valid_rates check (before_overtime_rate >= 0 and after_overtime_rate >= 0);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'time_entries_valid_rates' and conrelid = 'public.time_entries'::regclass) then
+    alter table public.time_entries add constraint time_entries_valid_rates check (before_overtime_rate >= 0 and after_overtime_rate >= 0);
+  end if;
+end;
+$$;
 
 alter table public.work_schedules enable row level security;
 alter table public.time_entries enable row level security;

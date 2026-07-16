@@ -47,6 +47,8 @@
       id: 'schedule-local',
       entryTime: '07:00',
       exitTime: '17:00',
+      beforeRate: 0,
+      afterRate: 0,
     },
     timeEntries: [],
   };
@@ -681,6 +683,8 @@
       userId: row.user_id,
       entryTime: String(row.scheduled_entry || '07:00').slice(0, 5),
       exitTime: String(row.scheduled_exit || '17:00').slice(0, 5),
+      beforeRate: Number(row.before_overtime_rate || 0),
+      afterRate: Number(row.after_overtime_rate || 0),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -693,6 +697,8 @@
       user_id: userId,
       scheduled_entry: item.entryTime,
       scheduled_exit: item.exitTime,
+      before_overtime_rate: Number(item.beforeRate || 0),
+      after_overtime_rate: Number(item.afterRate || 0),
       created_at: item.createdAt || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -707,6 +713,8 @@
       exitTime: String(row.actual_exit || '').slice(0, 5),
       scheduledEntry: String(row.scheduled_entry || '07:00').slice(0, 5),
       scheduledExit: String(row.scheduled_exit || '17:00').slice(0, 5),
+      beforeRate: Number(row.before_overtime_rate || 0),
+      afterRate: Number(row.after_overtime_rate || 0),
       notes: row.notes || '',
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -722,6 +730,8 @@
       actual_exit: item.exitTime,
       scheduled_entry: item.scheduledEntry,
       scheduled_exit: item.scheduledExit,
+      before_overtime_rate: Number(item.beforeRate || 0),
+      after_overtime_rate: Number(item.afterRate || 0),
       notes: item.notes || '',
       created_at: item.createdAt || new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -1014,7 +1024,6 @@
     presentationTimer = null;
 
     if (active) {
-      openTab('dashboard');
       const request = document.documentElement.requestFullscreen?.();
       if (request?.catch) request.catch(() => {});
       presentationTimer = setInterval(async () => {
@@ -1028,12 +1037,13 @@
         }
         renderAll();
       }, 120000);
-      toast('Modo TV ativado. Os indicadores atualizam sozinhos a cada 2 minutos.');
+      const activeTab = $('.tab-panel.active')?.getAttribute('aria-labelledby') || 'aba atual';
+      toast(`Modo TV ativado em ${activeTab}. Os dados atualizam sozinhos a cada 2 minutos.`);
     } else if (document.fullscreenElement) {
       const exit = document.exitFullscreen?.();
       if (exit?.catch) exit.catch(() => {});
     }
-    renderDashboard();
+    renderAll();
   }
 
   function setupPresentation() {
@@ -2854,6 +2864,16 @@
     return { before, after, total: before + after };
   }
 
+  function calculateOvertimeValue(item, overtime = calculateOvertime(item)) {
+    const parsedBeforeRate = Number(item.beforeRate || 0);
+    const parsedAfterRate = Number(item.afterRate || 0);
+    const beforeRate = Number.isFinite(parsedBeforeRate) ? Math.max(0, parsedBeforeRate) : 0;
+    const afterRate = Number.isFinite(parsedAfterRate) ? Math.max(0, parsedAfterRate) : 0;
+    const beforeValue = (overtime.before / 60) * beforeRate;
+    const afterValue = (overtime.after / 60) * afterRate;
+    return { beforeRate, afterRate, beforeValue, afterValue, totalValue: beforeValue + afterValue };
+  }
+
   function startOfWeek(date = new Date()) {
     const result = new Date(date);
     result.setHours(0, 0, 0, 0);
@@ -2865,11 +2885,15 @@
   function overtimeTotals(entries) {
     return entries.reduce((totals, item) => {
       const overtime = calculateOvertime(item);
+      const values = calculateOvertimeValue(item, overtime);
       totals.before += overtime.before;
       totals.after += overtime.after;
       totals.total += overtime.total;
+      totals.beforeValue += values.beforeValue;
+      totals.afterValue += values.afterValue;
+      totals.totalValue += values.totalValue;
       return totals;
-    }, { before: 0, after: 0, total: 0 });
+    }, { before: 0, after: 0, total: 0, beforeValue: 0, afterValue: 0, totalValue: 0 });
   }
 
   function resetTimeEntryForm() {
@@ -2880,6 +2904,8 @@
     $('#workDate').value = todayInput();
     $('#actualEntry').value = state.workSchedule.entryTime || '07:00';
     $('#actualExit').value = state.workSchedule.exitTime || '17:00';
+    $('#timeBeforeOvertimeRate').value = Number(state.workSchedule.beforeRate || 0).toFixed(2);
+    $('#timeAfterOvertimeRate').value = Number(state.workSchedule.afterRate || 0).toFixed(2);
     renderOvertimePreview();
   }
 
@@ -2898,14 +2924,19 @@
       preview.classList.remove('has-overtime');
       return;
     }
+    const editingItem = state.timeEntries.find((item) => item.id === $('#timeEntryId')?.value);
     const overtime = calculateOvertime({
       entryTime,
       exitTime,
-      scheduledEntry: state.workSchedule.entryTime,
-      scheduledExit: state.workSchedule.exitTime,
+      scheduledEntry: editingItem?.scheduledEntry || state.workSchedule.entryTime,
+      scheduledExit: editingItem?.scheduledExit || state.workSchedule.exitTime,
     });
+    const values = calculateOvertimeValue({
+      beforeRate: Number($('#timeBeforeOvertimeRate')?.value || 0),
+      afterRate: Number($('#timeAfterOvertimeRate')?.value || 0),
+    }, overtime);
     preview.textContent = overtime.total
-      ? `Hora extra prevista: ${formatDuration(overtime.total)} (${formatDuration(overtime.before)} antes + ${formatDuration(overtime.after)} depois).`
+      ? `Hora extra prevista: ${formatDuration(overtime.total)} (${formatDuration(overtime.before)} antes + ${formatDuration(overtime.after)} depois). Valor estimado: ${currency(values.totalValue)} (${currency(values.beforeValue)} antes + ${currency(values.afterValue)} depois).`
       : 'Este ponto está dentro do horário fixo e não gera hora extra.';
     preview.classList.toggle('has-overtime', overtime.total > 0);
   }
@@ -2920,15 +2951,14 @@
     const todayEntries = state.timeEntries.filter((item) => item.date === today);
     const weekEntries = state.timeEntries.filter((item) => item.date >= weekStart && item.date <= today);
     const monthEntries = state.timeEntries.filter((item) => item.date?.startsWith(currentMonth));
-    const todayTotal = overtimeTotals(todayEntries).total;
-    const weekTotal = overtimeTotals(weekEntries).total;
-    const monthTotal = overtimeTotals(monthEntries).total;
-    const average = monthEntries.length ? monthTotal / monthEntries.length : 0;
+    const todayTotals = overtimeTotals(todayEntries);
+    const weekTotals = overtimeTotals(weekEntries);
+    const monthTotals = overtimeTotals(monthEntries);
     container.innerHTML = [
-      { label: 'Extra hoje', value: formatDuration(todayTotal), icon: 'D', delta: todayEntries.length ? `${todayEntries.length} ponto registrado` : 'Sem ponto hoje' },
-      { label: 'Esta semana', value: formatDuration(weekTotal), icon: 'S', delta: `${weekEntries.length} dia${weekEntries.length === 1 ? '' : 's'} com registro` },
-      { label: 'Este mês', value: formatDuration(monthTotal), icon: 'M', delta: `${monthEntries.length} dia${monthEntries.length === 1 ? '' : 's'} com registro` },
-      { label: 'Média por dia', value: formatDuration(average), icon: 'Ø', delta: 'Considera os dias lançados no mês' },
+      { label: 'Extra hoje', value: formatDuration(todayTotals.total), icon: 'D', delta: todayEntries.length ? currency(todayTotals.totalValue) : 'Sem ponto hoje' },
+      { label: 'Esta semana', value: formatDuration(weekTotals.total), icon: 'S', delta: `${currency(weekTotals.totalValue)} em ${weekEntries.length} dia${weekEntries.length === 1 ? '' : 's'}` },
+      { label: 'Este mês', value: formatDuration(monthTotals.total), icon: 'M', delta: `${currency(monthTotals.totalValue)} em ${monthEntries.length} dia${monthEntries.length === 1 ? '' : 's'}` },
+      { label: 'Valor no mês', value: currency(monthTotals.totalValue), icon: 'R$', delta: `${currency(monthTotals.beforeValue)} antes + ${currency(monthTotals.afterValue)} depois` },
     ].map(metricCard).join('');
   }
 
@@ -2942,8 +2972,15 @@
         legend: { position: 'bottom', labels: { color: theme.text, usePointStyle: true } },
         tooltip: {
           callbacks: {
-            label: (context) => `${context.dataset.label}: ${formatDuration(Number(context.raw || 0) * 60)}`,
-            footer: (items) => `Total: ${formatDuration(items.reduce((sum, item) => sum + Number(item.raw || 0), 0) * 60)}`,
+            label: (context) => {
+              const value = context.dataset.moneyData?.[context.dataIndex] || 0;
+              return `${context.dataset.label}: ${formatDuration(Number(context.raw || 0) * 60)} • ${currency(value)}`;
+            },
+            footer: (items) => {
+              const duration = items.reduce((sum, item) => sum + Number(item.raw || 0), 0) * 60;
+              const value = items.reduce((sum, item) => sum + Number(item.dataset.moneyData?.[item.dataIndex] || 0), 0);
+              return `Total: ${formatDuration(duration)} • ${currency(value)}`;
+            },
           },
         },
       },
@@ -2963,13 +3000,15 @@
   function drawOvertimeChart(key, canvasId, labels, groups) {
     const before = groups.map((group) => Number((group.before / 60).toFixed(2)));
     const after = groups.map((group) => Number((group.after / 60).toFixed(2)));
+    const beforeValues = groups.map((group) => Number(group.beforeValue.toFixed(2)));
+    const afterValues = groups.map((group) => Number(group.afterValue.toFixed(2)));
     upsertChart(key, canvasId, {
       type: 'bar',
       data: {
         labels,
         datasets: [
-          { label: 'Antes da entrada', data: before, backgroundColor: '#f3c229', borderRadius: 7, borderSkipped: false },
-          { label: 'Depois da saída', data: after, backgroundColor: '#3a86ff', borderRadius: 7, borderSkipped: false },
+          { label: 'Antes da entrada', data: before, moneyData: beforeValues, backgroundColor: '#f3c229', borderRadius: 7, borderSkipped: false },
+          { label: 'Depois da saída', data: after, moneyData: afterValues, backgroundColor: '#3a86ff', borderRadius: 7, borderSkipped: false },
         ],
       },
       options: overtimeChartOptions(),
@@ -3015,19 +3054,23 @@
     if (!table) return;
     const entries = sortByDateDesc(state.timeEntries);
     if (!entries.length) {
-      table.innerHTML = '<tr><td colspan="8"><span class="empty-state">Nenhum ponto registrado. Use o formulário acima ou adicione os exemplos.</span></td></tr>';
+      table.innerHTML = '<tr><td colspan="11"><span class="empty-state">Nenhum ponto registrado. Use o formulário acima ou adicione os exemplos.</span></td></tr>';
       return;
     }
     table.innerHTML = entries.map((item) => {
       const overtime = calculateOvertime(item);
+      const values = calculateOvertimeValue(item, overtime);
       return `
         <tr>
           <td data-label="Data"><strong>${formatDate(item.date)}</strong></td>
           <td data-label="Entrada">${escapeHtml(item.entryTime || '-')}</td>
           <td data-label="Saída">${escapeHtml(item.exitTime || '-')}</td>
           <td data-label="Antes">${formatDuration(overtime.before)}</td>
+          <td data-label="R$ antes">${currency(values.beforeValue)}</td>
           <td data-label="Depois">${formatDuration(overtime.after)}</td>
+          <td data-label="R$ depois">${currency(values.afterValue)}</td>
           <td data-label="Total extra"><span class="badge ${overtime.total ? 'info' : 'ok'}">${formatDuration(overtime.total)}</span></td>
+          <td data-label="Total em R$"><strong>${currency(values.totalValue)}</strong></td>
           <td data-label="Observação">${escapeHtml(item.notes || '-')}</td>
           <td data-label="Ações">
             <div class="row-actions">
@@ -3046,7 +3089,7 @@
     if (!caption || !list) return;
     const entry = timeToMinutes(state.workSchedule.entryTime);
     const exit = timeToMinutes(state.workSchedule.exitTime);
-    caption.textContent = `Considerando sua jornada fixa de ${state.workSchedule.entryTime} até ${state.workSchedule.exitTime}.`;
+    caption.textContent = `Jornada ${state.workSchedule.entryTime}–${state.workSchedule.exitTime}, com ${currency(state.workSchedule.beforeRate)}/h antes e ${currency(state.workSchedule.afterRate)}/h depois.`;
     const examples = [
       { before: 20, after: 0 },
       { before: 0, after: 75 },
@@ -3056,7 +3099,8 @@
       const actualEntry = minutesToTime(entry - example.before);
       const actualExit = minutesToTime(exit + example.after);
       const total = example.before + example.after;
-      return `<div><strong>${actualEntry} → ${actualExit}</strong><span>${formatDuration(example.before)} antes + ${formatDuration(example.after)} depois = ${formatDuration(total)} extra</span></div>`;
+      const values = calculateOvertimeValue({ beforeRate: state.workSchedule.beforeRate, afterRate: state.workSchedule.afterRate }, { before: example.before, after: example.after, total });
+      return `<div><strong>${actualEntry} → ${actualExit}</strong><span>${formatDuration(example.before)} antes + ${formatDuration(example.after)} depois = ${formatDuration(total)} • ${currency(values.totalValue)}</span></div>`;
     }).join('');
   }
 
@@ -3067,7 +3111,9 @@
     $('#workScheduleId').value = schedule.id || '';
     $('#scheduledEntry').value = schedule.entryTime;
     $('#scheduledExit').value = schedule.exitTime;
-    $('#workScheduleSummary').textContent = `Base atual: ${schedule.entryTime} até ${schedule.exitTime}. Horas extras serão contadas fora deste intervalo.`;
+    $('#defaultBeforeOvertimeRate').value = Number(schedule.beforeRate || 0).toFixed(2);
+    $('#defaultAfterOvertimeRate').value = Number(schedule.afterRate || 0).toFixed(2);
+    $('#workScheduleSummary').textContent = `Base atual: ${schedule.entryTime} até ${schedule.exitTime}. Valores padrão: ${currency(schedule.beforeRate)}/h antes e ${currency(schedule.afterRate)}/h depois.`;
     $('#timeScheduleBadge').textContent = `${schedule.entryTime} → ${schedule.exitTime}`;
     renderOvertimePreview();
     renderOvertimeMetrics();
@@ -3081,6 +3127,8 @@
     $('#workDate').value = item.date;
     $('#actualEntry').value = item.entryTime;
     $('#actualExit').value = item.exitTime;
+    $('#timeBeforeOvertimeRate').value = Number(item.beforeRate || 0).toFixed(2);
+    $('#timeAfterOvertimeRate').value = Number(item.afterRate || 0).toFixed(2);
     $('#timeEntryNotes').value = item.notes || '';
     renderOvertimePreview();
     toast('Ponto carregado para edição.');
@@ -3114,6 +3162,8 @@
       exitTime: minutesToTime(scheduleExit + offsets[index].after),
       scheduledEntry: state.workSchedule.entryTime,
       scheduledExit: state.workSchedule.exitTime,
+      beforeRate: Number(state.workSchedule.beforeRate || 0),
+      afterRate: Number(state.workSchedule.afterRate || 0),
       notes: 'Exemplo automático para visualizar os comparativos.',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -3139,8 +3189,14 @@
       event.preventDefault();
       const entryTime = $('#scheduledEntry').value;
       const exitTime = $('#scheduledExit').value;
+      const beforeRate = Number($('#defaultBeforeOvertimeRate').value || 0);
+      const afterRate = Number($('#defaultAfterOvertimeRate').value || 0);
       if (timeToMinutes(exitTime) <= timeToMinutes(entryTime)) {
         toast('A saída fixa precisa ser posterior à entrada fixa.');
+        return;
+      }
+      if (beforeRate < 0 || afterRate < 0) {
+        toast('Os valores das horas extras não podem ser negativos.');
         return;
       }
       const existing = state.workSchedule || {};
@@ -3151,6 +3207,8 @@
         userId: authId,
         entryTime,
         exitTime,
+        beforeRate,
+        afterRate,
         createdAt: existing.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -3158,7 +3216,7 @@
       saveRemote('workSchedule', state.workSchedule);
       resetTimeEntryForm();
       renderTimeTracking();
-      toast('Horário fixo salvo. Os próximos pontos usarão esta jornada.');
+      toast('Jornada e valores padrão salvos. Os próximos pontos usarão esta configuração.');
     });
 
     timeForm.addEventListener('submit', (event) => {
@@ -3166,8 +3224,14 @@
       const date = $('#workDate').value;
       const entryTime = $('#actualEntry').value;
       const exitTime = $('#actualExit').value;
+      const beforeRate = Number($('#timeBeforeOvertimeRate').value || 0);
+      const afterRate = Number($('#timeAfterOvertimeRate').value || 0);
       if (timeToMinutes(exitTime) <= timeToMinutes(entryTime)) {
         toast('A saída realizada precisa ser posterior à entrada.');
+        return;
+      }
+      if (beforeRate < 0 || afterRate < 0) {
+        toast('Os valores das horas extras não podem ser negativos.');
         return;
       }
       const requestedId = $('#timeEntryId').value;
@@ -3181,6 +3245,8 @@
         exitTime,
         scheduledEntry: existing?.scheduledEntry || state.workSchedule.entryTime,
         scheduledExit: existing?.scheduledExit || state.workSchedule.exitTime,
+        beforeRate,
+        afterRate,
         notes: $('#timeEntryNotes').value.trim(),
         createdAt: existing?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -3191,14 +3257,16 @@
       toast(existing ? 'Ponto do dia atualizado.' : 'Ponto salvo e horas extras calculadas.');
     });
 
-    ['scheduledEntry', 'scheduledExit'].forEach((id) => {
+    ['scheduledEntry', 'scheduledExit', 'defaultBeforeOvertimeRate', 'defaultAfterOvertimeRate'].forEach((id) => {
       $(`#${id}`).addEventListener('input', () => {
         const entry = $('#scheduledEntry').value;
         const exit = $('#scheduledExit').value;
-        $('#workScheduleSummary').textContent = entry && exit ? `Nova base: ${entry} até ${exit}.` : 'Informe os dois horários.';
+        const before = currency(Number($('#defaultBeforeOvertimeRate').value || 0));
+        const after = currency(Number($('#defaultAfterOvertimeRate').value || 0));
+        $('#workScheduleSummary').textContent = entry && exit ? `Nova base: ${entry} até ${exit}. Padrões: ${before}/h antes e ${after}/h depois.` : 'Informe os dois horários.';
       });
     });
-    ['actualEntry', 'actualExit'].forEach((id) => $(`#${id}`).addEventListener('input', renderOvertimePreview));
+    ['actualEntry', 'actualExit', 'timeBeforeOvertimeRate', 'timeAfterOvertimeRate'].forEach((id) => $(`#${id}`).addEventListener('input', renderOvertimePreview));
     $('#clearTimeEntry').addEventListener('click', resetTimeEntryForm);
     $('#addTimeExamples').addEventListener('click', addTimeExamples);
     $('#timeEntryTable').addEventListener('click', (event) => {
@@ -3421,6 +3489,7 @@
       })),
       Ponto_Horas_Extras: state.timeEntries.map((item) => {
         const overtime = calculateOvertime(item);
+        const values = calculateOvertimeValue(item, overtime);
         return {
           Data: formatDate(item.date),
           Entrada_Prevista: item.scheduledEntry,
@@ -3430,6 +3499,11 @@
           Extra_Antes: formatDuration(overtime.before),
           Extra_Depois: formatDuration(overtime.after),
           Total_Extra: formatDuration(overtime.total),
+          Valor_Hora_Antes: values.beforeRate,
+          Valor_Hora_Depois: values.afterRate,
+          Valor_Extra_Antes: Number(values.beforeValue.toFixed(2)),
+          Valor_Extra_Depois: Number(values.afterValue.toFixed(2)),
+          Valor_Total: Number(values.totalValue.toFixed(2)),
           Observacoes: item.notes,
         };
       }),

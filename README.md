@@ -10,6 +10,8 @@ Sistema web para controle de qualidade, RDO, despesas, equipes, veículo, agenda
 - Administrador principal: `DarciBrum3010@gmail.com`.
 - Botão de tema claro/escuro na parte superior.
 - Aba **Ponto e horas extras** com jornada fixa, lançamentos diários e gráficos por dia, semana e mês.
+- Valores por hora separados para trabalho antes da entrada e após a saída, com totais financeiros por dia, semana e mês.
+- Modo TV disponível na aba que estiver aberta, com atualização automática dos dados a cada dois minutos.
 - Sincronização dos dados do site com tabelas do Supabase.
 - Botões para atualizar dados do Supabase e enviar backup local para o banco.
 - SQL completo com tabelas, RLS e funções de segurança.
@@ -85,8 +87,9 @@ Na aba **Ponto e horas extras**, cada usuário configura a própria entrada e sa
 - tempo trabalhado depois da saída prevista;
 - total de horas extras no dia, na semana e no mês;
 - comparativos gráficos diários, semanais e mensais.
+- valor por hora e total financeiro de cada tipo de hora extra.
 
-O horário fixo usado em cada lançamento fica salvo junto ao ponto, então uma alteração futura na jornada não muda cálculos antigos. A tela também possui exemplos explicativos e um botão para preencher sete dias úteis de demonstração.
+O horário fixo e os valores por hora usados em cada lançamento ficam salvos junto ao ponto, então alterações futuras na jornada ou nas tarifas não mudam cálculos antigos. Os valores padrão podem ser ajustados em cada lançamento para representar exceções. A tela também possui exemplos explicativos e um botão para preencher sete dias úteis de demonstração.
 
 
 ## Atualização v6
