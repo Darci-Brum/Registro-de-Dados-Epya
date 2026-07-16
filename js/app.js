@@ -43,6 +43,12 @@
     vehicleCosts: [],
     vehicleChecklists: [],
     agendaItems: [],
+    workSchedule: {
+      id: 'schedule-local',
+      entryTime: '07:00',
+      exitTime: '17:00',
+    },
+    timeEntries: [],
   };
 
   let state = loadState();
@@ -54,6 +60,8 @@
     if (!Array.isArray(state.visitLogs)) state.visitLogs = [];
     if (!Array.isArray(state.leaders)) state.leaders = [];
     if (!Array.isArray(state.vehicleChecklists)) state.vehicleChecklists = [];
+    if (!Array.isArray(state.timeEntries)) state.timeEntries = [];
+    state.workSchedule = { ...defaultState.workSchedule, ...(state.workSchedule || {}) };
     const known = new Set(state.projects.map((project) => normalizeText(project.name)));
     [...state.rdos, ...state.ncs].forEach((item) => {
       const name = String(item.project || '').trim();
@@ -109,6 +117,7 @@
         ...structuredClone(defaultState),
         ...parsed,
         vehicle: { ...defaultState.vehicle, ...(parsed.vehicle || {}) },
+        workSchedule: { ...defaultState.workSchedule, ...(parsed.workSchedule || {}) },
       };
     } catch (error) {
       console.error('Erro ao carregar dados locais:', error);
@@ -409,7 +418,8 @@
 
   async function loadRemoteData() {
     if (!supabaseClient || !currentSession) return;
-    const [profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems, ncs, projects, visitLogs, leaders, vehicleChecklists] = await Promise.all([
+    const authUserId = currentSession.user.id;
+    const [profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems, ncs, projects, visitLogs, leaders, vehicleChecklists, workSchedule, timeEntries] = await Promise.all([
       supabaseClient.from('profiles').select('*').order('name', { ascending: true }),
       supabaseClient.from('rdos').select('*').order('date', { ascending: false }),
       supabaseClient.from('expenses').select('*').order('date', { ascending: false }),
@@ -422,6 +432,8 @@
       supabaseClient.from('visit_logs').select('*').order('date', { ascending: false }),
       supabaseClient.from('leaders').select('*').order('name', { ascending: true }),
       supabaseClient.from('vehicle_checklists').select('*').order('date', { ascending: false }),
+      supabaseClient.from('work_schedules').select('*').eq('user_id', authUserId).maybeSingle(),
+      supabaseClient.from('time_entries').select('*').eq('user_id', authUserId).order('work_date', { ascending: false }),
     ]);
 
     const responses = { profiles, rdos, expenses, teamMembers, vehicles, vehicleCosts, agendaItems };
@@ -433,6 +445,10 @@
     if (newTablesMissing) {
       console.warn('Tabelas ncs/projects/visit_logs/leaders ainda não existem no Supabase. Rode o supabase_schema.sql atualizado.', ncs.error || projects.error || visitLogs.error || leaders.error);
       toast('Aviso: rode o supabase_schema.sql atualizado para sincronizar NCs, frentes, visitas e encarregados.');
+    }
+
+    if (workSchedule.error || timeEntries.error) {
+      console.warn('Tabelas work_schedules/time_entries ainda não existem no Supabase. Rode o supabase_schema.sql atualizado.', workSchedule.error || timeEntries.error);
     }
 
     state = {
@@ -450,6 +466,8 @@
       vehicleCosts: vehicleCosts.data.map(vehicleCostFromDb),
       vehicleChecklists: vehicleChecklists.error ? state.vehicleChecklists : vehicleChecklists.data.map(vehicleChecklistFromDb),
       agendaItems: agendaItems.data.map(agendaFromDb),
+      workSchedule: workSchedule.error || !workSchedule.data ? state.workSchedule : workScheduleFromDb(workSchedule.data),
+      timeEntries: timeEntries.error ? state.timeEntries : (timeEntries.data || []).map(timeEntryFromDb),
     };
     migrateProjectsFromRdos();
     remoteReady = true;
@@ -657,6 +675,59 @@
     };
   }
 
+  function workScheduleFromDb(row) {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      entryTime: String(row.scheduled_entry || '07:00').slice(0, 5),
+      exitTime: String(row.scheduled_exit || '17:00').slice(0, 5),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function workScheduleToDb(item) {
+    const userId = currentSession?.user?.id || item.userId;
+    return {
+      id: item.id && item.id !== 'schedule-local' ? item.id : `schedule-${userId}`,
+      user_id: userId,
+      scheduled_entry: item.entryTime,
+      scheduled_exit: item.exitTime,
+      created_at: item.createdAt || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  function timeEntryFromDb(row) {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      date: row.work_date,
+      entryTime: String(row.actual_entry || '').slice(0, 5),
+      exitTime: String(row.actual_exit || '').slice(0, 5),
+      scheduledEntry: String(row.scheduled_entry || '07:00').slice(0, 5),
+      scheduledExit: String(row.scheduled_exit || '17:00').slice(0, 5),
+      notes: row.notes || '',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function timeEntryToDb(item) {
+    return {
+      id: item.id,
+      user_id: currentSession?.user?.id || item.userId,
+      work_date: item.date,
+      actual_entry: item.entryTime,
+      actual_exit: item.exitTime,
+      scheduled_entry: item.scheduledEntry,
+      scheduled_exit: item.scheduledExit,
+      notes: item.notes || '',
+      created_at: item.createdAt || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+  }
+
   function remoteMapping(collection, item) {
     const map = {
       users: ['profiles', profileToDb],
@@ -670,6 +741,8 @@
       vehicleCosts: ['vehicle_costs', vehicleCostToDb],
       vehicleChecklists: ['vehicle_checklists', vehicleChecklistToDb],
       agendaItems: ['agenda_items', agendaToDb],
+      workSchedule: ['work_schedules', workScheduleToDb],
+      timeEntries: ['time_entries', timeEntryToDb],
     };
     const found = map[collection];
     return found ? { table: found[0], row: found[1](item) } : null;
@@ -721,13 +794,17 @@
     const confirmed = confirm('Enviar os dados locais deste navegador para o Supabase? Registros com mesmo ID serão atualizados.');
     if (!confirmed) return;
 
-    const collections = ['rdos', 'ncs', 'projects', 'leaders', 'visitLogs', 'expenses', 'teamMembers', 'vehicleCosts', 'vehicleChecklists', 'agendaItems'];
+    const collections = ['rdos', 'ncs', 'projects', 'leaders', 'visitLogs', 'expenses', 'teamMembers', 'vehicleCosts', 'vehicleChecklists', 'agendaItems', 'timeEntries'];
     for (const collection of collections) {
       for (const item of local[collection] || []) await saveRemote(collection, item);
     }
     if (local.vehicle) {
       state.vehicle = { ...state.vehicle, ...local.vehicle };
       await saveVehicleRemote();
+    }
+    if (local.workSchedule) {
+      state.workSchedule = { ...defaultState.workSchedule, ...local.workSchedule };
+      await saveRemote('workSchedule', state.workSchedule);
     }
     await loadRemoteData();
     renderAll();
@@ -799,6 +876,7 @@
     $$('.tab-panel').forEach((panel) => panel.classList.toggle('active', panel.id === tabId));
     const nav = $(`.nav-item[data-tab="${tabId}"]`);
     elements.pageTitle.textContent = nav?.querySelector('span')?.textContent || nav?.textContent || 'Dashboard';
+    if (tabId === 'ponto') requestAnimationFrame(renderTimeTracking);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -2744,6 +2822,404 @@
     toast('Usuário carregado para edição.');
   }
 
+  function timeToMinutes(value) {
+    const match = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return hours * 60 + minutes;
+  }
+
+  function minutesToTime(value) {
+    const normalized = ((Number(value || 0) % 1440) + 1440) % 1440;
+    return `${pad(Math.floor(normalized / 60))}:${pad(normalized % 60)}`;
+  }
+
+  function formatDuration(value) {
+    const total = Math.max(0, Math.round(Number(value || 0)));
+    return `${pad(Math.floor(total / 60))}h${pad(total % 60)}`;
+  }
+
+  function calculateOvertime(item) {
+    const actualEntry = timeToMinutes(item.entryTime);
+    const actualExit = timeToMinutes(item.exitTime);
+    const scheduledEntry = timeToMinutes(item.scheduledEntry || state.workSchedule.entryTime);
+    const scheduledExit = timeToMinutes(item.scheduledExit || state.workSchedule.exitTime);
+    if ([actualEntry, actualExit, scheduledEntry, scheduledExit].some((value) => value == null)) {
+      return { before: 0, after: 0, total: 0 };
+    }
+    const before = Math.max(0, scheduledEntry - actualEntry);
+    const after = Math.max(0, actualExit - scheduledExit);
+    return { before, after, total: before + after };
+  }
+
+  function startOfWeek(date = new Date()) {
+    const result = new Date(date);
+    result.setHours(0, 0, 0, 0);
+    const distanceFromMonday = (result.getDay() + 6) % 7;
+    result.setDate(result.getDate() - distanceFromMonday);
+    return result;
+  }
+
+  function overtimeTotals(entries) {
+    return entries.reduce((totals, item) => {
+      const overtime = calculateOvertime(item);
+      totals.before += overtime.before;
+      totals.after += overtime.after;
+      totals.total += overtime.total;
+      return totals;
+    }, { before: 0, after: 0, total: 0 });
+  }
+
+  function resetTimeEntryForm() {
+    const form = $('#timeEntryForm');
+    if (!form) return;
+    form.reset();
+    $('#timeEntryId').value = '';
+    $('#workDate').value = todayInput();
+    $('#actualEntry').value = state.workSchedule.entryTime || '07:00';
+    $('#actualExit').value = state.workSchedule.exitTime || '17:00';
+    renderOvertimePreview();
+  }
+
+  function renderOvertimePreview() {
+    const preview = $('#overtimePreview');
+    if (!preview) return;
+    const entryTime = $('#actualEntry')?.value;
+    const exitTime = $('#actualExit')?.value;
+    if (!entryTime || !exitTime) {
+      preview.textContent = 'Preencha a entrada e a saída para ver a hora extra calculada.';
+      preview.classList.remove('has-overtime');
+      return;
+    }
+    if (timeToMinutes(exitTime) <= timeToMinutes(entryTime)) {
+      preview.textContent = 'A saída precisa ser posterior à entrada.';
+      preview.classList.remove('has-overtime');
+      return;
+    }
+    const overtime = calculateOvertime({
+      entryTime,
+      exitTime,
+      scheduledEntry: state.workSchedule.entryTime,
+      scheduledExit: state.workSchedule.exitTime,
+    });
+    preview.textContent = overtime.total
+      ? `Hora extra prevista: ${formatDuration(overtime.total)} (${formatDuration(overtime.before)} antes + ${formatDuration(overtime.after)} depois).`
+      : 'Este ponto está dentro do horário fixo e não gera hora extra.';
+    preview.classList.toggle('has-overtime', overtime.total > 0);
+  }
+
+  function renderOvertimeMetrics() {
+    const container = $('#overtimeMetrics');
+    if (!container) return;
+    const now = new Date();
+    const today = todayInput(now);
+    const weekStart = todayInput(startOfWeek(now));
+    const currentMonth = monthInput(now);
+    const todayEntries = state.timeEntries.filter((item) => item.date === today);
+    const weekEntries = state.timeEntries.filter((item) => item.date >= weekStart && item.date <= today);
+    const monthEntries = state.timeEntries.filter((item) => item.date?.startsWith(currentMonth));
+    const todayTotal = overtimeTotals(todayEntries).total;
+    const weekTotal = overtimeTotals(weekEntries).total;
+    const monthTotal = overtimeTotals(monthEntries).total;
+    const average = monthEntries.length ? monthTotal / monthEntries.length : 0;
+    container.innerHTML = [
+      { label: 'Extra hoje', value: formatDuration(todayTotal), icon: 'D', delta: todayEntries.length ? `${todayEntries.length} ponto registrado` : 'Sem ponto hoje' },
+      { label: 'Esta semana', value: formatDuration(weekTotal), icon: 'S', delta: `${weekEntries.length} dia${weekEntries.length === 1 ? '' : 's'} com registro` },
+      { label: 'Este mês', value: formatDuration(monthTotal), icon: 'M', delta: `${monthEntries.length} dia${monthEntries.length === 1 ? '' : 's'} com registro` },
+      { label: 'Média por dia', value: formatDuration(average), icon: 'Ø', delta: 'Considera os dias lançados no mês' },
+    ].map(metricCard).join('');
+  }
+
+  function overtimeChartOptions() {
+    const theme = chartTheme();
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { color: theme.text, usePointStyle: true } },
+        tooltip: {
+          callbacks: {
+            label: (context) => `${context.dataset.label}: ${formatDuration(Number(context.raw || 0) * 60)}`,
+            footer: (items) => `Total: ${formatDuration(items.reduce((sum, item) => sum + Number(item.raw || 0), 0) * 60)}`,
+          },
+        },
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: theme.text }, grid: { display: false } },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: { color: theme.text, callback: (value) => `${value}h` },
+          grid: { color: theme.grid },
+          title: { display: true, text: 'Horas extras', color: theme.text },
+        },
+      },
+    };
+  }
+
+  function drawOvertimeChart(key, canvasId, labels, groups) {
+    const before = groups.map((group) => Number((group.before / 60).toFixed(2)));
+    const after = groups.map((group) => Number((group.after / 60).toFixed(2)));
+    upsertChart(key, canvasId, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Antes da entrada', data: before, backgroundColor: '#f3c229', borderRadius: 7, borderSkipped: false },
+          { label: 'Depois da saída', data: after, backgroundColor: '#3a86ff', borderRadius: 7, borderSkipped: false },
+        ],
+      },
+      options: overtimeChartOptions(),
+    });
+  }
+
+  function drawOvertimeCharts() {
+    if (!$('#ponto')?.classList.contains('active')) return;
+
+    const dailyDates = [];
+    const dailyBase = new Date();
+    for (let offset = 13; offset >= 0; offset -= 1) {
+      const date = new Date(dailyBase);
+      date.setDate(date.getDate() - offset);
+      dailyDates.push(todayInput(date));
+    }
+    const dailyGroups = dailyDates.map((date) => overtimeTotals(state.timeEntries.filter((item) => item.date === date)));
+    drawOvertimeChart('overtimeDaily', '#dailyOvertimeChart', dailyDates.map((date) => formatDate(date).slice(0, 5)), dailyGroups);
+
+    const weeklyStarts = [];
+    const currentWeek = startOfWeek();
+    for (let offset = 7; offset >= 0; offset -= 1) {
+      const date = new Date(currentWeek);
+      date.setDate(date.getDate() - offset * 7);
+      weeklyStarts.push(todayInput(date));
+    }
+    const weeklyGroups = weeklyStarts.map((weekStart, index) => {
+      const nextWeek = new Date(`${weekStart}T12:00:00`);
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      const next = index < weeklyStarts.length - 1 ? weeklyStarts[index + 1] : todayInput(nextWeek);
+      return overtimeTotals(state.timeEntries.filter((item) => item.date >= weekStart && item.date < next));
+    });
+    drawOvertimeChart('overtimeWeekly', '#weeklyOvertimeChart', weeklyStarts.map((date) => `Sem. ${formatDate(date).slice(0, 5)}`), weeklyGroups);
+
+    const months = lastMonths(6);
+    const monthlyGroups = months.map((month) => overtimeTotals(state.timeEntries.filter((item) => item.date?.startsWith(month))));
+    const monthLabels = months.map((month) => new Date(`${month}-01T12:00:00`).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }));
+    drawOvertimeChart('overtimeMonthly', '#monthlyOvertimeChart', monthLabels, monthlyGroups);
+  }
+
+  function renderTimeEntryTable() {
+    const table = $('#timeEntryTable');
+    if (!table) return;
+    const entries = sortByDateDesc(state.timeEntries);
+    if (!entries.length) {
+      table.innerHTML = '<tr><td colspan="8"><span class="empty-state">Nenhum ponto registrado. Use o formulário acima ou adicione os exemplos.</span></td></tr>';
+      return;
+    }
+    table.innerHTML = entries.map((item) => {
+      const overtime = calculateOvertime(item);
+      return `
+        <tr>
+          <td data-label="Data"><strong>${formatDate(item.date)}</strong></td>
+          <td data-label="Entrada">${escapeHtml(item.entryTime || '-')}</td>
+          <td data-label="Saída">${escapeHtml(item.exitTime || '-')}</td>
+          <td data-label="Antes">${formatDuration(overtime.before)}</td>
+          <td data-label="Depois">${formatDuration(overtime.after)}</td>
+          <td data-label="Total extra"><span class="badge ${overtime.total ? 'info' : 'ok'}">${formatDuration(overtime.total)}</span></td>
+          <td data-label="Observação">${escapeHtml(item.notes || '-')}</td>
+          <td data-label="Ações">
+            <div class="row-actions">
+              <button class="icon-btn" data-action="edit-time-entry" data-id="${escapeHtml(item.id)}">Editar</button>
+              <button class="icon-btn danger" data-action="delete-time-entry" data-id="${escapeHtml(item.id)}">Excluir</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function renderTimeExamples() {
+    const caption = $('#timeExampleCaption');
+    const list = $('#timeExampleList');
+    if (!caption || !list) return;
+    const entry = timeToMinutes(state.workSchedule.entryTime);
+    const exit = timeToMinutes(state.workSchedule.exitTime);
+    caption.textContent = `Considerando sua jornada fixa de ${state.workSchedule.entryTime} até ${state.workSchedule.exitTime}.`;
+    const examples = [
+      { before: 20, after: 0 },
+      { before: 0, after: 75 },
+      { before: 15, after: 60 },
+    ];
+    list.innerHTML = examples.map((example) => {
+      const actualEntry = minutesToTime(entry - example.before);
+      const actualExit = minutesToTime(exit + example.after);
+      const total = example.before + example.after;
+      return `<div><strong>${actualEntry} → ${actualExit}</strong><span>${formatDuration(example.before)} antes + ${formatDuration(example.after)} depois = ${formatDuration(total)} extra</span></div>`;
+    }).join('');
+  }
+
+  function renderTimeTracking() {
+    if (!$('#ponto')) return;
+    const schedule = { ...defaultState.workSchedule, ...(state.workSchedule || {}) };
+    state.workSchedule = schedule;
+    $('#workScheduleId').value = schedule.id || '';
+    $('#scheduledEntry').value = schedule.entryTime;
+    $('#scheduledExit').value = schedule.exitTime;
+    $('#workScheduleSummary').textContent = `Base atual: ${schedule.entryTime} até ${schedule.exitTime}. Horas extras serão contadas fora deste intervalo.`;
+    $('#timeScheduleBadge').textContent = `${schedule.entryTime} → ${schedule.exitTime}`;
+    renderOvertimePreview();
+    renderOvertimeMetrics();
+    renderTimeExamples();
+    renderTimeEntryTable();
+    drawOvertimeCharts();
+  }
+
+  function editTimeEntry(item) {
+    $('#timeEntryId').value = item.id;
+    $('#workDate').value = item.date;
+    $('#actualEntry').value = item.entryTime;
+    $('#actualExit').value = item.exitTime;
+    $('#timeEntryNotes').value = item.notes || '';
+    renderOvertimePreview();
+    toast('Ponto carregado para edição.');
+  }
+
+  async function addTimeExamples() {
+    const dates = [];
+    const cursor = new Date();
+    while (dates.length < 7) {
+      if (cursor.getDay() !== 0 && cursor.getDay() !== 6) dates.unshift(todayInput(cursor));
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    const offsets = [
+      { before: 20, after: 30 },
+      { before: 0, after: 70 },
+      { before: 10, after: 0 },
+      { before: 25, after: 45 },
+      { before: 0, after: 20 },
+      { before: 15, after: 60 },
+      { before: 10, after: 30 },
+    ];
+    const existingDates = new Set(state.timeEntries.map((item) => item.date));
+    const scheduleEntry = timeToMinutes(state.workSchedule.entryTime);
+    const scheduleExit = timeToMinutes(state.workSchedule.exitTime);
+    const userId = currentSession?.user?.id || state.activeUserId;
+    const examples = dates.map((date, index) => ({
+      id: `time-example-${userId}-${date}`,
+      userId,
+      date,
+      entryTime: minutesToTime(scheduleEntry - offsets[index].before),
+      exitTime: minutesToTime(scheduleExit + offsets[index].after),
+      scheduledEntry: state.workSchedule.entryTime,
+      scheduledExit: state.workSchedule.exitTime,
+      notes: 'Exemplo automático para visualizar os comparativos.',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })).filter((item) => !existingDates.has(item.date));
+
+    if (!examples.length) {
+      toast('Os dias usados nos exemplos já possuem pontos registrados.');
+      return;
+    }
+    state.timeEntries.push(...examples);
+    saveState();
+    await Promise.all(examples.map((item) => saveRemote('timeEntries', item)));
+    renderTimeTracking();
+    toast(`${examples.length} exemplos adicionados aos gráficos.`);
+  }
+
+  function setupTimeTracking() {
+    const scheduleForm = $('#workScheduleForm');
+    const timeForm = $('#timeEntryForm');
+    if (!scheduleForm || !timeForm) return;
+
+    scheduleForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const entryTime = $('#scheduledEntry').value;
+      const exitTime = $('#scheduledExit').value;
+      if (timeToMinutes(exitTime) <= timeToMinutes(entryTime)) {
+        toast('A saída fixa precisa ser posterior à entrada fixa.');
+        return;
+      }
+      const existing = state.workSchedule || {};
+      const authId = currentSession?.user?.id || state.activeUserId;
+      state.workSchedule = {
+        ...existing,
+        id: existing.id && existing.id !== 'schedule-local' ? existing.id : `schedule-${authId}`,
+        userId: authId,
+        entryTime,
+        exitTime,
+        createdAt: existing.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      saveState();
+      saveRemote('workSchedule', state.workSchedule);
+      resetTimeEntryForm();
+      renderTimeTracking();
+      toast('Horário fixo salvo. Os próximos pontos usarão esta jornada.');
+    });
+
+    timeForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const date = $('#workDate').value;
+      const entryTime = $('#actualEntry').value;
+      const exitTime = $('#actualExit').value;
+      if (timeToMinutes(exitTime) <= timeToMinutes(entryTime)) {
+        toast('A saída realizada precisa ser posterior à entrada.');
+        return;
+      }
+      const requestedId = $('#timeEntryId').value;
+      const sameDate = state.timeEntries.find((item) => item.date === date && item.id !== requestedId);
+      const existing = state.timeEntries.find((item) => item.id === requestedId) || sameDate;
+      const item = {
+        id: existing?.id || uid('time'),
+        userId: currentSession?.user?.id || state.activeUserId,
+        date,
+        entryTime,
+        exitTime,
+        scheduledEntry: existing?.scheduledEntry || state.workSchedule.entryTime,
+        scheduledExit: existing?.scheduledExit || state.workSchedule.exitTime,
+        notes: $('#timeEntryNotes').value.trim(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      upsert('timeEntries', item);
+      resetTimeEntryForm();
+      renderTimeTracking();
+      toast(existing ? 'Ponto do dia atualizado.' : 'Ponto salvo e horas extras calculadas.');
+    });
+
+    ['scheduledEntry', 'scheduledExit'].forEach((id) => {
+      $(`#${id}`).addEventListener('input', () => {
+        const entry = $('#scheduledEntry').value;
+        const exit = $('#scheduledExit').value;
+        $('#workScheduleSummary').textContent = entry && exit ? `Nova base: ${entry} até ${exit}.` : 'Informe os dois horários.';
+      });
+    });
+    ['actualEntry', 'actualExit'].forEach((id) => $(`#${id}`).addEventListener('input', renderOvertimePreview));
+    $('#clearTimeEntry').addEventListener('click', resetTimeEntryForm);
+    $('#addTimeExamples').addEventListener('click', addTimeExamples);
+    $('#timeEntryTable').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const item = state.timeEntries.find((entry) => entry.id === button.dataset.id);
+      if (!item) return;
+      if (button.dataset.action === 'edit-time-entry') editTimeEntry(item);
+      if (button.dataset.action === 'delete-time-entry') {
+        if (!confirm('Excluir este registro de ponto?')) return;
+        state.timeEntries = state.timeEntries.filter((entry) => entry.id !== item.id);
+        saveState();
+        deleteRemote('timeEntries', item.id);
+        renderTimeTracking();
+        toast('Registro de ponto excluído.');
+      }
+    });
+
+    resetTimeEntryForm();
+  }
+
   function setupBackup() {
     $('#exportBackup').addEventListener('click', () => {
       const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json;charset=utf-8;' });
@@ -2757,7 +3233,12 @@
       reader.onload = () => {
         try {
           const imported = JSON.parse(reader.result);
-          state = { ...structuredClone(defaultState), ...imported, vehicle: { ...defaultState.vehicle, ...(imported.vehicle || {}) } };
+          state = {
+            ...structuredClone(defaultState),
+            ...imported,
+            vehicle: { ...defaultState.vehicle, ...(imported.vehicle || {}) },
+            workSchedule: { ...defaultState.workSchedule, ...(imported.workSchedule || {}) },
+          };
           if (!state.users?.length) state.users = structuredClone(defaultState.users);
           if (!state.activeUserId) state.activeUserId = state.users[0].id;
           saveState();
@@ -2938,6 +3419,20 @@
         Status: item.status,
         Observacoes: item.notes,
       })),
+      Ponto_Horas_Extras: state.timeEntries.map((item) => {
+        const overtime = calculateOvertime(item);
+        return {
+          Data: formatDate(item.date),
+          Entrada_Prevista: item.scheduledEntry,
+          Saida_Prevista: item.scheduledExit,
+          Entrada_Realizada: item.entryTime,
+          Saida_Realizada: item.exitTime,
+          Extra_Antes: formatDuration(overtime.before),
+          Extra_Depois: formatDuration(overtime.after),
+          Total_Extra: formatDuration(overtime.total),
+          Observacoes: item.notes,
+        };
+      }),
       Usuarios: state.users.map((item) => ({
         Nome: item.name,
         Email: item.email,
@@ -3248,6 +3743,7 @@
     renderTeamTable();
     renderVehicle();
     renderChecklistTable();
+    renderTimeTracking();
     renderAgendaList();
     renderUserTable();
   }
@@ -3264,6 +3760,7 @@
     setupTeams();
     setupVehicle();
     setupVehicleChecklist();
+    setupTimeTracking();
     setupChartExpand();
     setupPresentation();
     setupAgenda();

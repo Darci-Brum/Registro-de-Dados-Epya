@@ -71,6 +71,7 @@
         <button class="nav-item" data-tab="despesas" data-nav-icon="R$"><span>Despesas mensais</span></button>
         <button class="nav-item" data-tab="equipes" data-nav-icon="◎"><span>Equipes</span></button>
         <button class="nav-item" data-tab="veiculo" data-nav-icon="◇"><span>Meu carro</span></button>
+        <button class="nav-item" data-tab="ponto" data-nav-icon="◷"><span>Ponto e horas extras</span></button>
         <button class="nav-item" data-tab="agenda" data-nav-icon="◷"><span>Agenda e lembretes</span></button>
         <button class="nav-item" data-tab="usuarios" data-admin-only="true" data-nav-icon="◉"><span>Usuários e perfis</span></button>
         <button class="nav-item" data-tab="backup" data-nav-icon="⇅"><span>Backup / Supabase</span></button>
@@ -833,6 +834,153 @@
                 </tr>
               </thead>
               <tbody id="vehicleCostTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="ponto" aria-labelledby="Ponto e horas extras">
+        <article class="hero-card time-hero">
+          <div>
+            <span class="status-pill">Jornada pessoal</span>
+            <h2>Controle seu ponto e veja as horas extras automaticamente.</h2>
+            <p>Defina uma entrada e uma saída fixas. Tudo o que for trabalhado antes da entrada ou depois da saída será somado como hora extra.</p>
+          </div>
+          <div class="hero-badge time-hero-badge">
+            <span>Jornada fixa</span>
+            <strong id="timeScheduleBadge">07:00 → 17:00</strong>
+          </div>
+        </article>
+
+        <div class="dashboard-grid time-config-grid">
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h3>Horário fixo de trabalho</h3>
+                <p>Este horário será usado como base em todos os comparativos.</p>
+              </div>
+              <span class="mini-tag">Configuração</span>
+            </div>
+            <form id="workScheduleForm" class="form-grid compact-form">
+              <input type="hidden" id="workScheduleId" />
+              <label>Entrada prevista
+                <input type="time" id="scheduledEntry" value="07:00" required />
+              </label>
+              <label>Saída prevista
+                <input type="time" id="scheduledExit" value="17:00" required />
+              </label>
+              <div class="schedule-summary" id="workScheduleSummary" aria-live="polite">Base atual: 07:00 até 17:00.</div>
+              <div class="form-actions full-span">
+                <button class="primary-btn" type="submit">Salvar horário fixo</button>
+              </div>
+            </form>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h3>Registrar ponto do dia</h3>
+                <p>Informe os horários reais de entrada e saída.</p>
+              </div>
+              <span class="mini-tag">Lançamento</span>
+            </div>
+            <form id="timeEntryForm" class="form-grid compact-form">
+              <input type="hidden" id="timeEntryId" />
+              <label>Data
+                <input type="date" id="workDate" required />
+              </label>
+              <label>Entrada realizada
+                <input type="time" id="actualEntry" required />
+              </label>
+              <label>Saída realizada
+                <input type="time" id="actualExit" required />
+              </label>
+              <label class="full-span">Observação
+                <input type="text" id="timeEntryNotes" placeholder="Ex.: inspeção antecipada ou fechamento de relatório" />
+              </label>
+              <div class="overtime-preview full-span" id="overtimePreview" aria-live="polite">Preencha a entrada e a saída para ver a hora extra calculada.</div>
+              <div class="form-actions full-span">
+                <button class="primary-btn" type="submit">Salvar ponto</button>
+                <button class="ghost-btn" id="clearTimeEntry" type="button">Limpar</button>
+              </div>
+            </form>
+          </article>
+        </div>
+
+        <div class="metrics-grid metrics-grid-4" id="overtimeMetrics"></div>
+
+        <div class="overtime-chart-grid">
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h3>Horas extras por dia</h3>
+                <p>Comparativo dos últimos 14 dias com registros.</p>
+              </div>
+              <span class="mini-tag">Dia</span>
+            </div>
+            <div class="chart-box"><canvas id="dailyOvertimeChart" aria-label="Gráfico de horas extras por dia" role="img"></canvas></div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h3>Horas extras por semana</h3>
+                <p>Soma das horas extras nas últimas 8 semanas.</p>
+              </div>
+              <span class="mini-tag">Semana</span>
+            </div>
+            <div class="chart-box"><canvas id="weeklyOvertimeChart" aria-label="Gráfico de horas extras por semana" role="img"></canvas></div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <div>
+                <h3>Horas extras por mês</h3>
+                <p>Evolução acumulada dos últimos 6 meses.</p>
+              </div>
+              <span class="mini-tag">Mês</span>
+            </div>
+            <div class="chart-box"><canvas id="monthlyOvertimeChart" aria-label="Gráfico de horas extras por mês" role="img"></canvas></div>
+          </article>
+        </div>
+
+        <article class="card overtime-examples-card">
+          <div class="card-header">
+            <div>
+              <h3>Exemplos de cálculo</h3>
+              <p id="timeExampleCaption">Considerando uma jornada fixa de 07:00 até 17:00.</p>
+            </div>
+            <button class="small-btn" id="addTimeExamples" type="button">Adicionar exemplos aos gráficos</button>
+          </div>
+          <div class="overtime-examples" id="timeExampleList">
+            <div><strong>Entrada 06:40</strong><span>20 min antes = 00h20 extra</span></div>
+            <div><strong>Saída 18:15</strong><span>1h15 depois = 01h15 extra</span></div>
+            <div><strong>06:45 → 18:00</strong><span>15 min antes + 1h depois = 01h15 extra</span></div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h3>Histórico de pontos</h3>
+              <p>Detalhamento do tempo extra antes e depois da jornada fixa.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Entrada</th>
+                  <th>Saída</th>
+                  <th>Antes</th>
+                  <th>Depois</th>
+                  <th>Total extra</th>
+                  <th>Observação</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="timeEntryTable"></tbody>
             </table>
           </div>
         </article>

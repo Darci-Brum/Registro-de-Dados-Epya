@@ -436,77 +436,84 @@ create index if not exists visit_logs_date_idx on public.visit_logs(date desc);
 create index if not exists visit_logs_team_member_idx on public.visit_logs(team_member_id);
 
 -- =========================
--- ATUALIZAÇÃO: Cadastro de encarregados
+-- ATUALIZAÇÃO: Ponto e horas extras por usuário
 -- (seguro para rodar mais de uma vez)
 -- =========================
 
-create table if not exists public.leaders (
+create table if not exists public.work_schedules (
   id text primary key,
-  name text not null,
+  user_id uuid not null unique references auth.users(id) on delete cascade,
+  scheduled_entry time not null default '07:00',
+  scheduled_exit time not null default '17:00',
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint work_schedules_valid_range check (scheduled_exit > scheduled_entry)
 );
 
-create unique index if not exists leaders_name_lower_idx on public.leaders (lower(trim(name)));
-
-alter table public.leaders enable row level security;
-
-do $$
-begin
-  execute format('drop policy if exists %I on public.%I', 'leaders_select_active', 'leaders');
-  execute format('create policy %I on public.%I for select to authenticated using (public.is_active_user())', 'leaders_select_active', 'leaders');
-
-  execute format('drop policy if exists %I on public.%I', 'leaders_insert_writer', 'leaders');
-  execute format('create policy %I on public.%I for insert to authenticated with check (public.can_write_app_data())', 'leaders_insert_writer', 'leaders');
-
-  execute format('drop policy if exists %I on public.%I', 'leaders_update_writer', 'leaders');
-  execute format('create policy %I on public.%I for update to authenticated using (public.can_write_app_data()) with check (public.can_write_app_data())', 'leaders_update_writer', 'leaders');
-
-  execute format('drop policy if exists %I on public.%I', 'leaders_delete_writer', 'leaders');
-  execute format('create policy %I on public.%I for delete to authenticated using (public.can_write_app_data())', 'leaders_delete_writer', 'leaders');
-end;
-$$;
-
-grant select, insert, update, delete on public.leaders to authenticated;
-
-create index if not exists leaders_name_idx on public.leaders(name);
-
--- =========================
--- ATUALIZAÇÃO: Checklist diário/mensal do veículo
--- (seguro para rodar mais de uma vez)
--- =========================
-
-create table if not exists public.vehicle_checklists (
+create table if not exists public.time_entries (
   id text primary key,
-  date date not null,
-  check_type text not null default 'Diário',
-  km numeric(12,0),
-  items jsonb not null default '{}'::jsonb,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  work_date date not null,
+  actual_entry time not null,
+  actual_exit time not null,
+  scheduled_entry time not null,
+  scheduled_exit time not null,
   notes text,
-  attachments jsonb not null default '[]'::jsonb,
-  created_by text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint time_entries_valid_actual_range check (actual_exit > actual_entry),
+  constraint time_entries_valid_schedule_range check (scheduled_exit > scheduled_entry),
+  constraint time_entries_user_date_unique unique (user_id, work_date)
 );
 
-alter table public.vehicle_checklists enable row level security;
+alter table public.work_schedules enable row level security;
+alter table public.time_entries enable row level security;
 
-do $$
-begin
-  execute format('drop policy if exists %I on public.%I', 'vehicle_checklists_select_active', 'vehicle_checklists');
-  execute format('create policy %I on public.%I for select to authenticated using (public.is_active_user())', 'vehicle_checklists_select_active', 'vehicle_checklists');
+drop policy if exists "work_schedules_select_own" on public.work_schedules;
+create policy "work_schedules_select_own"
+on public.work_schedules for select to authenticated
+using ((select auth.uid()) = user_id and public.is_active_user());
 
-  execute format('drop policy if exists %I on public.%I', 'vehicle_checklists_insert_writer', 'vehicle_checklists');
-  execute format('create policy %I on public.%I for insert to authenticated with check (public.can_write_app_data())', 'vehicle_checklists_insert_writer', 'vehicle_checklists');
+drop policy if exists "work_schedules_insert_own" on public.work_schedules;
+create policy "work_schedules_insert_own"
+on public.work_schedules for insert to authenticated
+with check ((select auth.uid()) = user_id and public.is_active_user());
 
-  execute format('drop policy if exists %I on public.%I', 'vehicle_checklists_update_writer', 'vehicle_checklists');
-  execute format('create policy %I on public.%I for update to authenticated using (public.can_write_app_data()) with check (public.can_write_app_data())', 'vehicle_checklists_update_writer', 'vehicle_checklists');
+drop policy if exists "work_schedules_update_own" on public.work_schedules;
+create policy "work_schedules_update_own"
+on public.work_schedules for update to authenticated
+using ((select auth.uid()) = user_id and public.is_active_user())
+with check ((select auth.uid()) = user_id and public.is_active_user());
 
-  execute format('drop policy if exists %I on public.%I', 'vehicle_checklists_delete_writer', 'vehicle_checklists');
-  execute format('create policy %I on public.%I for delete to authenticated using (public.can_write_app_data())', 'vehicle_checklists_delete_writer', 'vehicle_checklists');
-end;
-$$;
+drop policy if exists "work_schedules_delete_own" on public.work_schedules;
+create policy "work_schedules_delete_own"
+on public.work_schedules for delete to authenticated
+using ((select auth.uid()) = user_id and public.is_active_user());
 
-grant select, insert, update, delete on public.vehicle_checklists to authenticated;
+drop policy if exists "time_entries_select_own" on public.time_entries;
+create policy "time_entries_select_own"
+on public.time_entries for select to authenticated
+using ((select auth.uid()) = user_id and public.is_active_user());
 
-create index if not exists vehicle_checklists_date_idx on public.vehicle_checklists(date desc);
+drop policy if exists "time_entries_insert_own" on public.time_entries;
+create policy "time_entries_insert_own"
+on public.time_entries for insert to authenticated
+with check ((select auth.uid()) = user_id and public.is_active_user());
+
+drop policy if exists "time_entries_update_own" on public.time_entries;
+create policy "time_entries_update_own"
+on public.time_entries for update to authenticated
+using ((select auth.uid()) = user_id and public.is_active_user())
+with check ((select auth.uid()) = user_id and public.is_active_user());
+
+drop policy if exists "time_entries_delete_own" on public.time_entries;
+create policy "time_entries_delete_own"
+on public.time_entries for delete to authenticated
+using ((select auth.uid()) = user_id and public.is_active_user());
+
+revoke all on public.work_schedules from anon, authenticated;
+revoke all on public.time_entries from anon, authenticated;
+grant select, insert, update, delete on public.work_schedules to authenticated;
+grant select, insert, update, delete on public.time_entries to authenticated;
+
+create index if not exists time_entries_user_date_idx on public.time_entries(user_id, work_date desc);

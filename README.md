@@ -9,6 +9,7 @@ Sistema web para controle de qualidade, RDO, despesas, equipes, veículo, agenda
 - Perfis de acesso: `admin`, `analista` e `consulta`.
 - Administrador principal: `DarciBrum3010@gmail.com`.
 - Botão de tema claro/escuro na parte superior.
+- Aba **Ponto e horas extras** com jornada fixa, lançamentos diários e gráficos por dia, semana e mês.
 - Sincronização dos dados do site com tabelas do Supabase.
 - Botões para atualizar dados do Supabase e enviar backup local para o banco.
 - SQL completo com tabelas, RLS e funções de segurança.
@@ -70,11 +71,22 @@ Você pode subir a pasta em qualquer hospedagem estática, como Netlify, Vercel,
 
 A versão atualizada inclui, na aba **Backup / Supabase**, três ações novas:
 
-- **Baixar Excel completo**: gera um arquivo `.xlsx` com abas separadas para Dashboard, RDO, Despesas, Equipes, Veículo, Gastos do Veículo, Agenda e Usuários.
+- **Baixar Excel completo**: gera um arquivo `.xlsx` com abas separadas para Dashboard, RDO, Despesas, Equipes, Veículo, Gastos do Veículo, Ponto/Horas Extras, Agenda e Usuários.
 - **Baixar PDF do relatório**: gera um relatório PDF direto no navegador.
 - **Enviar PDF pelo WhatsApp**: no celular, tenta abrir o compartilhamento nativo já com o PDF anexado. Em computadores, por segurança do navegador, o sistema baixa o PDF e abre o WhatsApp Web com uma mensagem pronta para você anexar o arquivo manualmente.
 
 Essas funções usam bibliotecas públicas via CDN no final do `index.html`: SheetJS para Excel e jsPDF para PDF. Se o navegador estiver sem internet ou bloqueando CDN, os botões avisam que a biblioteca não carregou.
+
+## Ponto e horas extras
+
+Na aba **Ponto e horas extras**, cada usuário configura a própria entrada e saída fixas. O sistema calcula separadamente:
+
+- tempo trabalhado antes da entrada prevista;
+- tempo trabalhado depois da saída prevista;
+- total de horas extras no dia, na semana e no mês;
+- comparativos gráficos diários, semanais e mensais.
+
+O horário fixo usado em cada lançamento fica salvo junto ao ponto, então uma alteração futura na jornada não muda cálculos antigos. A tela também possui exemplos explicativos e um botão para preencher sete dias úteis de demonstração.
 
 
 ## Atualização v6

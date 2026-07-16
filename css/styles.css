@@ -1976,3 +1976,137 @@ body.presentation-mode .chart-box {
   opacity: 1;
 }
 
+/* ===== Ponto e horas extras ===== */
+.time-hero {
+  color: #fff;
+  background:
+    linear-gradient(135deg, rgba(20, 22, 26, 0.98), rgba(42, 46, 54, 0.94)),
+    radial-gradient(circle at right top, rgba(243, 194, 41, 0.32), transparent 38%);
+  border-color: rgba(243, 194, 41, 0.24);
+}
+
+.time-hero p {
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.time-hero .status-pill {
+  color: #ffdf74;
+  background: rgba(243, 194, 41, 0.14);
+  border: 1px solid rgba(243, 194, 41, 0.26);
+}
+
+.time-hero-badge {
+  min-width: 220px;
+  color: #15171b;
+  background: linear-gradient(135deg, #f3c229, #ffe58e);
+}
+
+.time-hero-badge span {
+  color: #15171b;
+}
+
+.time-hero-badge strong {
+  font-size: clamp(1.35rem, 2vw, 1.9rem);
+  white-space: nowrap;
+}
+
+.time-config-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.schedule-summary,
+.overtime-preview {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--epya-gray);
+  background: var(--epya-light);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.overtime-preview.has-overtime {
+  color: #765200;
+  background: rgba(243, 194, 41, 0.17);
+  border-color: rgba(201, 154, 14, 0.36);
+}
+
+.overtime-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.overtime-chart-grid .card {
+  min-width: 0;
+  margin-bottom: 0;
+  border-top: 5px solid rgba(243, 194, 41, 0.78);
+}
+
+.overtime-examples {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.overtime-examples > div {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--epya-light);
+}
+
+.overtime-examples strong {
+  font-size: 1rem;
+}
+
+.overtime-examples span {
+  color: var(--epya-gray);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+body[data-theme="dark"] .schedule-summary,
+body[data-theme="dark"] .overtime-preview,
+body[data-theme="dark"] .overtime-examples > div {
+  color: #c8cbd3;
+  background: #26282e;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+body[data-theme="dark"] .overtime-preview.has-overtime {
+  color: #ffdf74;
+  background: rgba(243, 194, 41, 0.12);
+  border-color: rgba(243, 194, 41, 0.24);
+}
+
+@media (max-width: 1180px) {
+  .overtime-chart-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .time-config-grid,
+  .overtime-examples {
+    grid-template-columns: 1fr;
+  }
+
+  .time-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .time-hero-badge {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
