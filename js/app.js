@@ -3049,12 +3049,96 @@
     drawOvertimeChart('overtimeMonthly', '#monthlyOvertimeChart', monthLabels, monthlyGroups);
   }
 
+  function populateTimeEntryYearFilter() {
+    const select = $('#timeEntryYearFilter');
+    if (!select) return;
+    const selectedYear = select.value;
+    const years = [...new Set(state.timeEntries
+      .map((item) => String(item.date || '').slice(0, 4))
+      .filter((year) => /^\d{4}$/.test(year)))]
+      .sort((a, b) => b.localeCompare(a));
+    if (!years.length) years.push(String(new Date().getFullYear()));
+    select.innerHTML = years.map((year) => `<option value="${year}">${year}</option>`).join('');
+    select.value = years.includes(selectedYear) ? selectedYear : years[0];
+  }
+
+  function timeEntryFilterState() {
+    const type = $('#timeEntryPeriodFilter')?.value || 'all';
+    const values = {
+      day: $('#timeEntryDayFilter')?.value || '',
+      month: $('#timeEntryMonthFilter')?.value || '',
+      year: $('#timeEntryYearFilter')?.value || '',
+    };
+    return { type, value: values[type] || '' };
+  }
+
+  function filteredTimeEntries() {
+    const entries = sortByDateDesc(state.timeEntries);
+    const { type, value } = timeEntryFilterState();
+    if (type === 'all') return entries;
+    if (!value) return [];
+    if (type === 'day') return entries.filter((item) => item.date === value);
+    if (type === 'month') return entries.filter((item) => item.date?.startsWith(value));
+    if (type === 'year') return entries.filter((item) => item.date?.startsWith(`${value}-`));
+    return entries;
+  }
+
+  function timeEntryFilterDescription() {
+    const { type, value } = timeEntryFilterState();
+    if (type === 'all') return 'todo o histórico';
+    if (!value) return '';
+    if (type === 'day') return `o dia ${formatDate(value)}`;
+    if (type === 'month') {
+      return new Date(`${value}-01T12:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    }
+    return `o ano de ${value}`;
+  }
+
+  function syncTimeEntryFilterControls(setDefaultValue = false) {
+    const type = $('#timeEntryPeriodFilter')?.value || 'all';
+    const latestDate = sortByDateDesc(state.timeEntries)[0]?.date || todayInput();
+    const fields = {
+      day: $('#timeEntryDayField'),
+      month: $('#timeEntryMonthField'),
+      year: $('#timeEntryYearField'),
+    };
+    Object.entries(fields).forEach(([fieldType, field]) => {
+      if (field) field.hidden = type !== fieldType;
+    });
+    if (!setDefaultValue) return;
+    if (type === 'day' && !$('#timeEntryDayFilter').value) $('#timeEntryDayFilter').value = latestDate;
+    if (type === 'month' && !$('#timeEntryMonthFilter').value) $('#timeEntryMonthFilter').value = latestDate.slice(0, 7);
+    if (type === 'year') {
+      const latestYear = latestDate.slice(0, 4);
+      if ([...$('#timeEntryYearFilter').options].some((option) => option.value === latestYear)) {
+        $('#timeEntryYearFilter').value = latestYear;
+      }
+    }
+  }
+
   function renderTimeEntryTable() {
     const table = $('#timeEntryTable');
     if (!table) return;
-    const entries = sortByDateDesc(state.timeEntries);
+    const entries = filteredTimeEntries();
+    const totalEntries = state.timeEntries.length;
+    const description = timeEntryFilterDescription();
+    const summary = $('#timeEntryFilterSummary');
+    const exportButton = $('#exportTimeEntriesCsv');
+    if (summary) {
+      if (!description) {
+        summary.textContent = 'Escolha um período para consultar os registros antigos.';
+      } else if (timeEntryFilterState().type === 'all') {
+        summary.textContent = `${entries.length} registro${entries.length === 1 ? '' : 's'} em todo o histórico.`;
+      } else {
+        summary.textContent = `${entries.length} de ${totalEntries} registro${totalEntries === 1 ? '' : 's'} encontrado${entries.length === 1 ? '' : 's'} para ${description}.`;
+      }
+    }
+    if (exportButton) exportButton.disabled = !entries.length;
     if (!entries.length) {
-      table.innerHTML = '<tr><td colspan="11"><span class="empty-state">Nenhum ponto registrado. Use o formulário acima ou adicione os exemplos.</span></td></tr>';
+      const emptyMessage = totalEntries
+        ? 'Nenhum ponto encontrado para o período selecionado.'
+        : 'Nenhum ponto registrado. Use o formulário acima ou adicione os exemplos.';
+      table.innerHTML = `<tr><td colspan="11"><span class="empty-state">${emptyMessage}</span></td></tr>`;
       return;
     }
     table.innerHTML = entries.map((item) => {
@@ -3081,6 +3165,36 @@
         </tr>
       `;
     }).join('');
+  }
+
+  function exportFilteredTimeEntries() {
+    const entries = filteredTimeEntries();
+    if (!entries.length) {
+      toast('Não existem pontos no período selecionado para exportar.');
+      return;
+    }
+    const rows = entries.map((item) => {
+      const overtime = calculateOvertime(item);
+      const values = calculateOvertimeValue(item, overtime);
+      return {
+        Data: formatDate(item.date),
+        Entrada: item.entryTime || '-',
+        Saída: item.exitTime || '-',
+        Entrada_Prevista: item.scheduledEntry || state.workSchedule.entryTime || '-',
+        Saída_Prevista: item.scheduledExit || state.workSchedule.exitTime || '-',
+        Hora_Extra_Antes: formatDuration(overtime.before),
+        Valor_Antes: currency(values.beforeValue),
+        Hora_Extra_Depois: formatDuration(overtime.after),
+        Valor_Depois: currency(values.afterValue),
+        Total_Horas_Extras: formatDuration(overtime.total),
+        Valor_Total: currency(values.totalValue),
+        Observação: item.notes || '-',
+      };
+    });
+    const { type, value } = timeEntryFilterState();
+    const period = type === 'all' ? 'todo-historico' : `${type}-${value}`;
+    exportCsv(`pontos-horas-extras-${period}.csv`, rows);
+    toast(`${entries.length} registro${entries.length === 1 ? '' : 's'} exportado${entries.length === 1 ? '' : 's'} em CSV.`);
   }
 
   function renderTimeExamples() {
@@ -3115,6 +3229,8 @@
     $('#defaultAfterOvertimeRate').value = Number(schedule.afterRate || 0).toFixed(2);
     $('#workScheduleSummary').textContent = `Base atual: ${schedule.entryTime} até ${schedule.exitTime}. Valores padrão: ${currency(schedule.beforeRate)}/h antes e ${currency(schedule.afterRate)}/h depois.`;
     $('#timeScheduleBadge').textContent = `${schedule.entryTime} → ${schedule.exitTime}`;
+    populateTimeEntryYearFilter();
+    syncTimeEntryFilterControls();
     renderOvertimePreview();
     renderOvertimeMetrics();
     renderTimeExamples();
@@ -3269,6 +3385,21 @@
     ['actualEntry', 'actualExit', 'timeBeforeOvertimeRate', 'timeAfterOvertimeRate'].forEach((id) => $(`#${id}`).addEventListener('input', renderOvertimePreview));
     $('#clearTimeEntry').addEventListener('click', resetTimeEntryForm);
     $('#addTimeExamples').addEventListener('click', addTimeExamples);
+    $('#timeEntryPeriodFilter').addEventListener('change', () => {
+      syncTimeEntryFilterControls(true);
+      renderTimeEntryTable();
+    });
+    ['timeEntryDayFilter', 'timeEntryMonthFilter', 'timeEntryYearFilter'].forEach((id) => {
+      $(`#${id}`).addEventListener('change', renderTimeEntryTable);
+    });
+    $('#clearTimeEntryFilter').addEventListener('click', () => {
+      $('#timeEntryPeriodFilter').value = 'all';
+      $('#timeEntryDayFilter').value = '';
+      $('#timeEntryMonthFilter').value = '';
+      syncTimeEntryFilterControls();
+      renderTimeEntryTable();
+    });
+    $('#exportTimeEntriesCsv').addEventListener('click', exportFilteredTimeEntries);
     $('#timeEntryTable').addEventListener('click', (event) => {
       const button = event.target.closest('[data-action]');
       if (!button) return;

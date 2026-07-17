@@ -971,12 +971,40 @@
           </div>
         </article>
 
-        <article class="card">
+        <article class="card time-history-card">
           <div class="card-header">
             <div>
               <h3>Histórico de pontos</h3>
               <p>Detalhamento das horas e dos valores calculados antes e depois da jornada fixa.</p>
             </div>
+          </div>
+          <div class="time-history-filters" aria-label="Filtros do histórico de pontos">
+            <div class="time-history-filter-field">
+              <label for="timeEntryPeriodFilter">Filtrar por</label>
+              <select id="timeEntryPeriodFilter">
+                <option value="all" selected>Todo o histórico</option>
+                <option value="day">Dia</option>
+                <option value="month">Mês</option>
+                <option value="year">Ano</option>
+              </select>
+            </div>
+            <div class="time-history-filter-field" id="timeEntryDayField" hidden>
+              <label for="timeEntryDayFilter">Escolha o dia</label>
+              <input type="date" id="timeEntryDayFilter" />
+            </div>
+            <div class="time-history-filter-field" id="timeEntryMonthField" hidden>
+              <label for="timeEntryMonthFilter">Escolha o mês</label>
+              <input type="month" id="timeEntryMonthFilter" />
+            </div>
+            <div class="time-history-filter-field" id="timeEntryYearField" hidden>
+              <label for="timeEntryYearFilter">Escolha o ano</label>
+              <select id="timeEntryYearFilter"></select>
+            </div>
+            <div class="time-history-filter-actions">
+              <button class="ghost-btn" id="clearTimeEntryFilter" type="button">Limpar filtro</button>
+              <button class="primary-btn" id="exportTimeEntriesCsv" type="button">Exportar CSV</button>
+            </div>
+            <p class="time-history-filter-summary" id="timeEntryFilterSummary" aria-live="polite"></p>
           </div>
           <div class="table-wrap">
             <table>

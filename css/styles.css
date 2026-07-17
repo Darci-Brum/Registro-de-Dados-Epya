@@ -2022,6 +2022,62 @@ body.presentation-mode .chart-box {
   min-width: 1180px;
 }
 
+.time-history-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 220px)) minmax(260px, 1fr);
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--epya-light);
+}
+
+.time-history-filter-field {
+  min-width: 0;
+}
+
+.time-history-filter-field label {
+  display: block;
+  color: var(--epya-charcoal);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.time-history-filter-field input,
+.time-history-filter-field select {
+  min-height: 42px;
+  margin-top: 6px;
+  padding: 9px 11px;
+}
+
+.time-history-filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.time-history-filter-actions button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.time-history-filter-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.time-history-filter-summary {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--epya-gray);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .schedule-summary,
 .overtime-preview {
   display: flex;
@@ -2083,10 +2139,24 @@ body.presentation-mode .chart-box {
 
 body[data-theme="dark"] .schedule-summary,
 body[data-theme="dark"] .overtime-preview,
-body[data-theme="dark"] .overtime-examples > div {
+body[data-theme="dark"] .overtime-examples > div,
+body[data-theme="dark"] .time-history-filters {
   color: #c8cbd3;
   background: #26282e;
   border-color: rgba(255, 255, 255, 0.1);
+}
+
+body[data-theme="dark"] .nav-item,
+body[data-theme="dark"] .nav-item > span,
+body[data-theme="dark"] .nav-item.active,
+body[data-theme="dark"] .nav-item:hover,
+body[data-theme="dark"] .time-history-filter-field label {
+  color: #ffffff;
+}
+
+body[data-theme="dark"] option {
+  color: #ffffff;
+  background: #171a20;
 }
 
 body[data-theme="dark"] .overtime-preview.has-overtime {
@@ -2108,6 +2178,15 @@ body[data-theme="dark"] .overtime-preview.has-overtime {
     grid-template-columns: 1fr;
   }
 
+  .time-history-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .time-history-filter-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
   .time-hero {
     align-items: flex-start;
     flex-direction: column;
@@ -2119,3 +2198,16 @@ body[data-theme="dark"] .overtime-preview.has-overtime {
   }
 }
 
+@media (max-width: 560px) {
+  .time-history-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .time-history-filter-actions {
+    flex-direction: column;
+  }
+
+  .time-history-filter-actions button {
+    width: 100%;
+  }
+}
