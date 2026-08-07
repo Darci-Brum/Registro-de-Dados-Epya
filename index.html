@@ -682,7 +682,7 @@
           <div class="card-header">
             <div>
               <h3>Controle do meu carro</h3>
-              <p>Registre modelo, placa, quilometragem e gastos de uso.</p>
+              <p>Registre os dados do veículo, o Km de recebimento e a próxima revisão.</p>
             </div>
           </div>
           <form id="vehicleProfileForm" class="form-grid compact-form profile-form">
@@ -695,8 +695,11 @@
             <label>Cor
               <input type="text" id="vehicleColor" />
             </label>
-            <label>Odômetro atual
-              <input type="number" id="vehicleOdometer" min="0" />
+            <label>Km quando peguei o carro
+              <input type="number" id="vehiclePickupOdometer" min="0" step="1" inputmode="numeric" placeholder="Ex.: 85000" />
+            </label>
+            <label>Km da próxima revisão
+              <input type="number" id="vehicleRevisionOdometer" min="0" step="1" inputmode="numeric" placeholder="Ex.: 95000" />
             </label>
             <div class="form-actions full-span">
               <button type="submit" class="primary-btn">Salvar dados do carro</button>

@@ -38,7 +38,8 @@
       model: '',
       plate: '',
       color: '',
-      odometer: '',
+      pickupOdometer: '',
+      revisionOdometer: '',
     },
     vehicleCosts: [],
     vehicleChecklists: [],
@@ -63,6 +64,10 @@
     if (!Array.isArray(state.leaders)) state.leaders = [];
     if (!Array.isArray(state.vehicleChecklists)) state.vehicleChecklists = [];
     if (!Array.isArray(state.timeEntries)) state.timeEntries = [];
+    state.vehicle = { ...defaultState.vehicle, ...(state.vehicle || {}) };
+    if ((state.vehicle.pickupOdometer === '' || state.vehicle.pickupOdometer == null) && state.vehicle.odometer !== '' && state.vehicle.odometer != null) {
+      state.vehicle.pickupOdometer = state.vehicle.odometer;
+    }
     state.workSchedule = { ...defaultState.workSchedule, ...(state.workSchedule || {}) };
     const known = new Set(state.projects.map((project) => normalizeText(project.name)));
     [...state.rdos, ...state.ncs].forEach((item) => {
@@ -568,13 +573,27 @@
 
   function vehicleFromDb(row) {
     if (!row) return structuredClone(defaultState.vehicle);
-    return { id: row.id, model: row.model || '', plate: row.plate || '', color: row.color || '', odometer: row.odometer || '' };
+    return {
+      id: row.id,
+      model: row.model || '',
+      plate: row.plate || '',
+      color: row.color || '',
+      pickupOdometer: row.pickup_odometer ?? row.odometer ?? '',
+      revisionOdometer: row.revision_odometer ?? '',
+    };
   }
 
   function vehicleToDb(vehicle) {
+    const pickupOdometer = vehicle.pickupOdometer ?? vehicle.odometer ?? '';
+    const revisionOdometer = vehicle.revisionOdometer ?? '';
     return {
       id: vehicle.id || `vehicle-${currentProfile?.id || 'local'}`,
-      model: vehicle.model || '', plate: vehicle.plate || '', color: vehicle.color || '', odometer: Number(vehicle.odometer || 0),
+      model: vehicle.model || '',
+      plate: vehicle.plate || '',
+      color: vehicle.color || '',
+      odometer: pickupOdometer === '' ? null : Number(pickupOdometer),
+      pickup_odometer: pickupOdometer === '' ? null : Number(pickupOdometer),
+      revision_odometer: revisionOdometer === '' ? null : Number(revisionOdometer),
       updated_at: new Date().toISOString(),
     };
   }
@@ -2508,7 +2527,8 @@
         model: $('#vehicleModel').value.trim(),
         plate: $('#vehiclePlate').value.trim().toUpperCase(),
         color: $('#vehicleColor').value.trim(),
-        odometer: $('#vehicleOdometer').value,
+        pickupOdometer: $('#vehiclePickupOdometer').value,
+        revisionOdometer: $('#vehicleRevisionOdometer').value,
       };
       saveState();
       await saveVehicleRemote();
@@ -2562,10 +2582,11 @@
     $('#vehicleModel').value = state.vehicle.model || '';
     $('#vehiclePlate').value = state.vehicle.plate || '';
     $('#vehicleColor').value = state.vehicle.color || '';
-    $('#vehicleOdometer').value = state.vehicle.odometer || '';
+    $('#vehiclePickupOdometer').value = state.vehicle.pickupOdometer || '';
+    $('#vehicleRevisionOdometer').value = state.vehicle.revisionOdometer || '';
 
     const vehicleText = state.vehicle.model || state.vehicle.plate
-      ? `${state.vehicle.model || 'Modelo não informado'} • Placa ${state.vehicle.plate || '-'} • Km ${state.vehicle.odometer || '-'}`
+      ? `${state.vehicle.model || 'Modelo não informado'} • Placa ${state.vehicle.plate || '-'} • Km quando peguei: ${state.vehicle.pickupOdometer || '-'} • Próxima revisão: ${state.vehicle.revisionOdometer || '-'} km`
       : 'Nenhum veículo cadastrado.';
     $('#vehicleSummary').textContent = vehicleText;
     const total = state.vehicleCosts.reduce((sum, item) => sum + Number(item.value || 0), 0);
@@ -3592,7 +3613,8 @@
         Modelo: state.vehicle.model || '',
         Placa: state.vehicle.plate || '',
         Cor: state.vehicle.color || '',
-        Odometro_Atual: state.vehicle.odometer || '',
+        KM_Quando_Peguei: state.vehicle.pickupOdometer || '',
+        KM_Proxima_Revisao: state.vehicle.revisionOdometer || '',
       }],
       Gastos_Veiculo: state.vehicleCosts.map((item) => ({
         Data: formatDate(item.date),
@@ -3879,7 +3901,8 @@
     section('Veiculo e agenda');
     row('Modelo', state.vehicle.model || '-');
     row('Placa', state.vehicle.plate || '-');
-    row('Odometro atual', state.vehicle.odometer || '-');
+    row('Km quando peguei o carro', state.vehicle.pickupOdometer || '-');
+    row('Km da proxima revisao', state.vehicle.revisionOdometer || '-');
     row('Total de gastos do veiculo', currency(state.vehicleCosts.reduce((sum, item) => sum + Number(item.value || 0), 0)));
     y += 8;
     text('Proximos lembretes', margin, { style: 'bold', size: 12 });

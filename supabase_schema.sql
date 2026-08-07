@@ -211,8 +211,18 @@ create table if not exists public.vehicles (
   plate text,
   color text,
   odometer numeric(12,0),
+  pickup_odometer numeric(12,0),
+  revision_odometer numeric(12,0),
   updated_at timestamptz not null default now()
 );
+
+-- Compatibilidade com bancos criados antes dos campos de Km de recebimento e revisao.
+alter table public.vehicles add column if not exists pickup_odometer numeric(12,0);
+alter table public.vehicles add column if not exists revision_odometer numeric(12,0);
+update public.vehicles
+set pickup_odometer = odometer
+where pickup_odometer is null and odometer is not null;
+
 
 create table if not exists public.vehicle_costs (
   id text primary key,
