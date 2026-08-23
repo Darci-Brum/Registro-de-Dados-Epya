@@ -1,0 +1,56 @@
+{
+  "name": "Controle de Recebimentos EPYA",
+  "short_name": "Recebimentos EPYA",
+  "description": "Controle diário de dormentes, trilhos, notas fiscais e qualidade.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#17191c",
+  "theme_color": "#17191c",
+  "lang": "pt-BR",
+  "categories": [
+    "business",
+    "productivity",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Novo recebimento",
+      "short_name": "Novo lançamento",
+      "url": "./?view=form",
+      "icons": [
+        {
+          "src": "./icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Histórico",
+      "short_name": "Histórico",
+      "url": "./?view=history",
+      "icons": [
+        {
+          "src": "./icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}

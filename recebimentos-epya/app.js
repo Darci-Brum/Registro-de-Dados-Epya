@@ -1,0 +1,584 @@
+import {
+  DEFAULT_CATEGORIES,
+  OWNER_EMAIL,
+  TARGET_SLEEPERS,
+  expandSeedGroups,
+} from "./seed-data.js";
+
+const app = document.querySelector("#app");
+const GITHUB_PAGES_MODE = window.location.hostname.endsWith("github.io");
+const STORAGE_KEY = "epya-recebimentos-v5";
+const OUTBOX_KEY = "epya-recebimentos-outbox-v2";
+const THEME_KEY = "epya-recebimentos-theme";
+const AUTH_CACHE_KEY = "epya-recebimentos-access-v2";
+const CATEGORY_KEY = "epya-recebimentos-categories-v1";
+const requestedView = new URLSearchParams(window.location.search).get("view");
+
+const MATERIALS = {
+  dormente: { label: "Dormentes", singular: "Dormente", unit: "un", color: "#f4c914" },
+  trilho: { label: "Trilhos", singular: "Trilho", unit: "barras", color: "#39b8ff" },
+};
+
+const state = {
+  view: ["dashboard", "form", "history", "quality", "reports", "team"].includes(requestedView)
+    ? requestedView
+    : "dashboard",
+  records: [],
+  categories: readCategories(),
+  draft: null,
+  editingId: "",
+  loading: true,
+  authLoading: !GITHUB_PAGES_MODE,
+  authenticated: GITHUB_PAGES_MODE,
+  authorized: GITHUB_PAGES_MODE,
+  user: GITHUB_PAGES_MODE
+    ? { email: "acesso-publico@epya.local", fullName: "Acesso público", role: "admin" }
+    : null,
+  team: [],
+  teamLoaded: false,
+  online: navigator.onLine,
+  storageMode: GITHUB_PAGES_MODE ? "local" : "cloud",
+  pendingSync: 0,
+  installPrompt: null,
+  theme: localStorage.getItem(THEME_KEY) || "light",
+  tvMode: false,
+  modal: null,
+  historyFilters: { search: "", material: "todos", from: "", to: "" },
+  reportFilters: { from: "2026-07-28", to: "2026-08-21", material: "todos" },
+};
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function number(value) {
+  return Math.max(0, Number.parseInt(value, 10) || 0);
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat("pt-BR").format(number(value));
+}
+
+function todayInput() {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+}
+
+function nowTime() {
+  return new Date().toTimeString().slice(0, 5);
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  const [year, month, day] = String(value).slice(0, 10).split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function formatShortDate(value) {
+  if (!value) return "—";
+  const [, month, day] = String(value).slice(0, 10).split("-");
+  return `${day}/${month}`;
+}
+
+function readCategories() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(CATEGORY_KEY) || "null");
+    return Array.isArray(stored) && stored.length ? stored : structuredClone(DEFAULT_CATEGORIES);
+  } catch {
+    return structuredClone(DEFAULT_CATEGORIES);
+  }
+}
+
+function saveCategoriesLocal() {
+  localStorage.setItem(CATEGORY_KEY, JSON.stringify(state.categories));
+}
+
+function defaultDraft(material = "dormente") {
+  return {
+    id: "",
+    status: "concluido",
+    material,
+    receivedDate: todayInput(),
+    receivedTime: nowTime(),
+    timeKnown: true,
+    location: "Pera ferroviária",
+    supplier: material === "dormente" ? "Cavan / Arauco" : "Arauco",
+    vehiclePlate: "",
+    inspectorName: state.user?.fullName || "Darci Brum",
+    invoiceItems: [{ number: "", quantity: "" }],
+    quality: Object.fromEntries(state.categories.map((category) => [category.id, 0])),
+    observations: "",
+  };
+}
+
+function invoiceItems(record) {
+  if (Array.isArray(record.invoiceItems) && record.invoiceItems.length) return record.invoiceItems;
+  const invoices = String(record.invoiceNumbers || "").split(/[;,\n]+/).map((item) => item.trim()).filter(Boolean);
+  if (!invoices.length) return [];
+  const each = Math.floor(number(record.quantity) / invoices.length);
+  return invoices.map((item, index) => ({
+    number: item,
+    quantity: index === invoices.length - 1 ? number(record.quantity) - each * (invoices.length - 1) : each,
+  }));
+}
+
+function recordQuantity(record) {
+  const items = invoiceItems(record);
+  return items.length ? items.reduce((sum, item) => sum + number(item.quantity), 0) : number(record.quantity);
+}
+
+function qualityRejected(record) {
+  return number(record.quality?.reprovados ?? record.rejected);
+}
+
+function metrics(records = state.records) {
+  const dorm = records.filter((record) => record.material === "dormente");
+  const rail = records.filter((record) => record.material === "trilho");
+  const sleepers = dorm.reduce((sum, record) => sum + recordQuantity(record), 0);
+  const rails = rail.reduce((sum, record) => sum + recordQuantity(record), 0);
+  const sleeperNfs = dorm.reduce((sum, record) => sum + invoiceItems(record).length, 0);
+  const railNfs = rail.reduce((sum, record) => sum + invoiceItems(record).length, 0);
+  const rejected = dorm.reduce((sum, record) => sum + qualityRejected(record), 0);
+  const repaired = dorm.reduce((sum, record) => sum + number(record.quality?.reparados), 0);
+  return {
+    sleepers,
+    rails,
+    sleeperNfs,
+    railNfs,
+    totalNfs: sleeperNfs + railNfs,
+    remaining: Math.max(0, TARGET_SLEEPERS - sleepers),
+    progress: Math.min(100, (sleepers / TARGET_SLEEPERS) * 100),
+    rejected,
+    repaired,
+    records: records.length,
+  };
+}
+
+function materialBadge(material) {
+  const info = MATERIALS[material] || MATERIALS.dormente;
+  return `<span class="material-badge ${material}"><i></i>${info.label}</span>`;
+}
+
+function canEdit() {
+  return state.user?.role !== "viewer";
+}
+
+function navButton(view, label, icon) {
+  return `<button class="nav-button ${state.view === view ? "active" : ""}" data-nav="${view}"><span aria-hidden="true">${icon}</span><b>${label}</b></button>`;
+}
+
+function render() {
+  document.documentElement.dataset.theme = state.theme;
+  document.body.classList.toggle("tv-mode", state.tvMode);
+  if (state.authLoading || !state.user || !state.authorized) {
+    app.innerHTML = renderAccessScreen();
+    bindAccessEvents();
+    return;
+  }
+  app.innerHTML = `
+    <div class="app-shell">
+      <header class="topbar no-print">
+        <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel EPYA"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Controle diário de materiais</small></span></button>
+        <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("reports", "Relatórios", "▤")}${state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
+        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button>${GITHUB_PAGES_MODE ? '<span class="user-chip"><strong>Demo</strong><small>Neste aparelho</small></span>' : `<a class="user-chip" href="/signout-with-chatgpt?return_to=/" title="Sair"><strong>${escapeHtml(state.user.fullName || state.user.email.split("@")[0])}</strong><small>${state.user.role === "admin" ? "Administrador" : state.user.role === "viewer" ? "Consulta" : "Operação"}</small></a>`}</div>
+      </header>
+      <main class="app-main">${renderCurrentView()}</main>
+      <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("reports", "Relatórios", "▤")}</footer>
+      ${state.tvMode ? '<button class="exit-tv no-print" data-tv-toggle>Sair do modo TV</button>' : ""}
+      ${renderModal()}<div class="toast" role="status" aria-live="polite"></div>
+    </div>`;
+  bindEvents();
+}
+
+function renderAccessScreen() {
+  const unauthorized = state.authenticated && !state.authorized;
+  return `<main class="login-screen"><section class="login-card"><div class="login-brands"><img src="./epya-logo-oficial.png" alt="EPYA" /><span></span><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></div><span class="eyebrow">Controle diário • Pera ferroviária</span><h1>${state.authLoading ? "Preparando seu acesso" : unauthorized ? "E-mail não liberado" : "Recebimentos sob controle"}</h1><p>${state.authLoading ? "Validando o acesso seguro deste aparelho…" : unauthorized ? `O e-mail <strong>${escapeHtml(state.user?.email || "")}</strong> entrou corretamente, mas ainda precisa ser adicionado por ${OWNER_EMAIL}.` : "Entre com um e-mail autorizado para registrar dormentes, trilhos e acompanhar os indicadores da obra."}</p>${state.authLoading ? '<span class="login-loading"><i></i> Aguarde um instante</span>' : unauthorized ? '<a class="button button-outline full" href="/signout-with-chatgpt?return_to=/">Entrar com outro e-mail</a>' : state.online ? '<a class="button button-yellow full" href="/signin-with-chatgpt?return_to=/">Entrar com e-mail autorizado</a>' : '<button class="button button-dark full" disabled>Primeiro acesso exige conexão</button>'}<button class="install-link" data-install>＋ Adicionar à tela inicial</button><div class="login-benefits"><span><b>✓</b> Acesso restrito</span><span><b>✓</b> Trabalho offline</span><span><b>✓</b> PDF e relatórios</span></div></section></main>`;
+}
+
+function bindAccessEvents() {
+  document.querySelectorAll("[data-install]").forEach((button) => button.addEventListener("click", installApp));
+}
+
+function renderCurrentView() {
+  if (state.loading) return '<section class="loading-panel"><span class="spinner"></span><h1>Carregando os recebimentos</h1><p>Organizando notas fiscais e indicadores.</p></section>';
+  if (state.view === "form") return renderForm();
+  if (state.view === "history") return renderHistory();
+  if (state.view === "quality") return renderQuality();
+  if (state.view === "reports") return renderReports();
+  if (state.view === "team") return renderTeam();
+  return renderDashboard();
+}
+
+function renderSyncBadge() {
+  if (GITHUB_PAGES_MODE) return '<span class="sync-badge warning"><i></i> Demonstração local</span>';
+  if (state.pendingSync) return `<span class="sync-badge warning"><i></i> ${state.pendingSync} aguardando sincronização</span>`;
+  return state.storageMode === "cloud" ? '<span class="sync-badge success"><i></i> Dados sincronizados</span>' : '<span class="sync-badge warning"><i></i> Salvo neste aparelho</span>';
+}
+
+function weekStart(dateString) {
+  const date = new Date(`${dateString}T12:00:00`);
+  const day = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - day);
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(dateString, days) {
+  const date = new Date(`${dateString}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function groupedComparison(period, records = state.records) {
+  const grouped = new Map();
+  records.forEach((record) => {
+    const date = record.receivedDate || String(record.receivedAt).slice(0, 10);
+    const key = period === "week" ? weekStart(date) : date.slice(0, 7);
+    const current = grouped.get(key) || { key, dormente: 0, trilho: 0, nfs: 0, records: [] };
+    current[record.material] += recordQuantity(record);
+    current.nfs += invoiceItems(record).length;
+    current.records.push(record);
+    grouped.set(key, current);
+  });
+  return [...grouped.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function comparisonLabel(item, period) {
+  if (period === "month") {
+    const [year, month] = item.key.split("-");
+    return `${month}/${year.slice(2)}`;
+  }
+  return `${formatShortDate(item.key)}–${formatShortDate(addDays(item.key, 6))}`;
+}
+
+function renderComparisonChart(period, records = state.records) {
+  const grouped = groupedComparison(period, records);
+  const max = Math.max(1, ...grouped.flatMap((item) => [item.dormente, item.trilho]));
+  return `<div class="comparison-chart" aria-label="Comparação ${period === "week" ? "semanal" : "mensal"} de materiais">${grouped.map((item) => `<div class="comparison-group"><div class="comparison-bars"><span class="chart-bar sleeper" style="height:${Math.max(item.dormente ? 6 : 0, (item.dormente / max) * 100)}%"><b>${item.dormente ? formatNumber(item.dormente) : ""}</b></span><span class="chart-bar rail" style="height:${Math.max(item.trilho ? 6 : 0, (item.trilho / max) * 100)}%"><b>${item.trilho ? formatNumber(item.trilho) : ""}</b></span></div><small>${comparisonLabel(item, period)}</small></div>`).join("")}</div>`;
+}
+
+function dailyComparison(records = state.records) {
+  const grouped = new Map();
+  records.forEach((record) => {
+    const key = record.receivedDate || String(record.receivedAt).slice(0, 10);
+    const item = grouped.get(key) || { key, dormente: 0, trilho: 0, nfs: 0 };
+    item[record.material] += recordQuantity(record);
+    item.nfs += invoiceItems(record).length;
+    grouped.set(key, item);
+  });
+  return [...grouped.values()].sort((a, b) => a.key.localeCompare(b.key)).slice(-12);
+}
+
+function renderDailyChart(records = state.records) {
+  const grouped = dailyComparison(records);
+  const max = Math.max(1, ...grouped.map((item) => item.dormente + item.trilho));
+  return `<div class="daily-chart" aria-label="Volume diário recebido">${grouped.map((item) => { const total = item.dormente + item.trilho; return `<div class="daily-column"><div class="daily-stack" title="${formatDate(item.key)}: ${formatNumber(total)} itens"><span class="rail" style="height:${(item.trilho / max) * 100}%"></span><span class="sleeper" style="height:${(item.dormente / max) * 100}%"></span></div><small>${formatShortDate(item.key)}</small></div>`; }).join("")}</div>`;
+}
+
+function qualityTotals(records = state.records) {
+  const totals = Object.fromEntries(state.categories.map((category) => [category.id, 0]));
+  records.filter((record) => record.material === "dormente").forEach((record) => state.categories.forEach((category) => { totals[category.id] = number(totals[category.id]) + number(record.quality?.[category.id]); }));
+  return totals;
+}
+
+function renderQualityDonut(records = state.records) {
+  const totals = qualityTotals(records);
+  const sum = Object.values(totals).reduce((total, value) => total + number(value), 0);
+  let angle = 0;
+  const stops = state.categories.map((category) => { const start = angle; angle += sum ? (number(totals[category.id]) / sum) * 360 : 0; return `${category.color} ${start}deg ${angle}deg`; });
+  const gradient = sum ? `conic-gradient(${stops.join(",")})` : "conic-gradient(#dfe3e8 0deg 360deg)";
+  return `<div class="quality-summary"><div class="quality-donut" style="--quality-donut:${gradient}"><strong>${formatNumber(sum)}</strong><small>ocorrências</small></div><ul>${state.categories.map((category) => `<li><i style="background:${category.color}"></i><span>${escapeHtml(category.label)}</span><strong>${formatNumber(totals[category.id])}</strong></li>`).join("")}</ul></div>`;
+}
+
+function renderDashboard() {
+  const value = metrics();
+  const recent = state.records.slice(0, 6);
+  return `<section class="view dashboard-view"><article class="dashboard-hero"><div class="hero-copy"><div class="hero-kicker"><span>Projeto Sucuriú</span><i></i><span>Pera ferroviária</span></div><h1>Controle diário de<br />dormentes e trilhos.</h1><p>Notas fiscais, quantidades, qualidade e avanço físico reunidos em uma visão clara da obra.</p><div class="hero-actions no-print">${renderSyncBadge()}${canEdit() ? '<button class="button button-yellow" data-new-record>+ Novo recebimento</button>' : ""}<button class="button button-glass" data-nav="reports">Gerar relatório</button></div></div><div class="hero-corner-brand"><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></div></article>
+    <div class="section-heading"><div><span class="eyebrow">Visão executiva</span><h2>Panorama acumulado</h2></div><span class="updated-label">Atualizado com ${value.totalNfs} notas fiscais</span></div><div class="metrics-grid"><article class="metric-card sleeper"><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs • meta ${formatNumber(TARGET_SLEEPERS)}</small><div class="metric-progress"><i style="width:${value.progress}%"></i></div></article><article class="metric-card rail"><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs • meta ainda não definida</small><div class="metric-line"></div></article><article class="metric-card remaining"><span>Saldo de dormentes</span><strong>${formatNumber(value.remaining)}</strong><small>${value.progress.toFixed(2).replace(".", ",")}% da meta concluída</small><div class="metric-line"></div></article><article class="metric-card quality"><span>Controle de qualidade</span><strong>${formatNumber(value.rejected)}</strong><small>reprovados • ${formatNumber(value.repaired)} reparados</small><div class="metric-line"></div></article></div>
+    <div class="dashboard-grid charts-main"><article class="panel chart-card clickable" data-chart-modal="week" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação semanal</span><h2>Entradas por semana</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("week")}</article><article class="panel chart-card clickable" data-chart-modal="month" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação mensal</span><h2>Evolução por mês</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("month")}</article></div>
+    <div class="dashboard-grid charts-secondary"><article class="panel chart-card clickable" data-chart-modal="daily" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Ritmo da operação</span><h2>Volume diário</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderDailyChart()}</article><article class="panel quality-card clickable" data-chart-modal="quality" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Classificações</span><h2>Qualidade dos dormentes</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut()}</article></div>
+    <article class="panel recent-panel"><div class="panel-heading"><div><span class="eyebrow">Últimos lançamentos</span><h2>Recebimentos recentes</h2></div><button class="text-button" data-nav="history">Abrir histórico →</button></div>${renderRecordsTable(recent, true)}</article></section>`;
+}
+
+function formRecordFromDom() {
+  const form = document.querySelector("#receiving-form");
+  if (!form) return state.draft || defaultDraft();
+  const invoiceNumbers = [...form.querySelectorAll('[name="invoiceNumber"]')];
+  const invoiceQuantities = [...form.querySelectorAll('[name="invoiceQuantity"]')];
+  const items = invoiceNumbers.map((input, index) => ({ number: input.value.trim(), quantity: number(invoiceQuantities[index]?.value) })).filter((item) => item.number || item.quantity);
+  const quality = {};
+  state.categories.forEach((category) => { quality[category.id] = number(form.querySelector(`[name="quality_${category.id}"]`)?.value); });
+  return { ...(state.draft || defaultDraft()), material: form.elements.material.value, receivedDate: form.elements.receivedDate.value, receivedTime: form.elements.receivedTime.value, timeKnown: Boolean(form.elements.receivedTime.value), location: form.elements.location.value.trim(), supplier: form.elements.supplier.value.trim(), vehiclePlate: form.elements.vehiclePlate.value.trim().toUpperCase(), inspectorName: form.elements.inspectorName.value.trim(), observations: form.elements.observations.value.trim(), invoiceItems: items.length ? items : [{ number: "", quantity: 0 }], quality };
+}
+
+function renderForm() {
+  const draft = state.draft || defaultDraft();
+  const items = draft.invoiceItems?.length ? draft.invoiceItems : [{ number: "", quantity: "" }];
+  const total = items.reduce((sum, item) => sum + number(item.quantity), 0);
+  const isSleeper = draft.material === "dormente";
+  return `<section class="view form-view"><div class="page-heading"><div><button class="back-link" data-nav="dashboard">← Voltar ao painel</button><span class="eyebrow">${state.editingId ? "Editar lançamento" : "Novo recebimento"}</span><h1>${state.editingId ? "Atualizar recebimento" : "Registrar chegada do dia"}</h1><p>Informe as NFs e as quantidades. O total é calculado automaticamente.</p></div><div class="heading-summary"><span>Total deste lançamento</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></div><form id="receiving-form" class="receiving-form">
+    <article class="panel form-panel"><div class="form-section-title"><span>01</span><div><h2>Material recebido</h2><p>Escolha o tipo antes de preencher as notas.</p></div></div><div class="material-selector"><button type="button" class="material-option ${isSleeper ? "active" : ""}" data-material="dormente"><i class="sleeper-icon"></i><span><strong>Dormentes</strong><small>Meta: ${formatNumber(TARGET_SLEEPERS)} unidades</small></span><b>${isSleeper ? "✓" : ""}</b></button><button type="button" class="material-option ${!isSleeper ? "active" : ""}" data-material="trilho"><i class="rail-icon"></i><span><strong>Trilhos</strong><small>Meta aberta para definição</small></span><b>${!isSleeper ? "✓" : ""}</b></button></div><input type="hidden" name="material" value="${draft.material}" /></article>
+    <article class="panel form-panel"><div class="form-section-title"><span>02</span><div><h2>Data, horário e local</h2><p>O horário pode ficar vazio quando ainda não foi confirmado.</p></div></div><div class="field-grid four"><label><span>Data do recebimento *</span><input type="date" name="receivedDate" value="${escapeHtml(draft.receivedDate)}" required /></label><label><span>Horário</span><input type="time" name="receivedTime" value="${escapeHtml(draft.receivedTime || "")}" /></label><label class="span-two"><span>Local / ponto de descarga *</span><input name="location" value="${escapeHtml(draft.location)}" placeholder="Ex.: Pera ferroviária • 2º ponto" required /></label><label class="span-two"><span>Fornecedor / origem</span><input name="supplier" value="${escapeHtml(draft.supplier)}" /></label><label><span>Placa do veículo</span><input name="vehiclePlate" value="${escapeHtml(draft.vehiclePlate || "")}" placeholder="ABC-1D23" /></label><label><span>Responsável</span><input name="inspectorName" value="${escapeHtml(draft.inspectorName || "")}" /></label></div></article>
+    <article class="panel form-panel invoice-panel"><div class="form-section-title"><span>03</span><div><h2>Notas fiscais e quantidades</h2><p>Adicione quantas NFs chegaram juntas. A soma aparece no topo.</p></div></div><div class="invoice-head"><span>Nota fiscal</span><span>Quantidade</span><span></span></div><div class="invoice-list">${items.map((item, index) => `<div class="invoice-row" data-invoice-row="${index}"><label><span>NF ${index + 1}</span><input name="invoiceNumber" value="${escapeHtml(item.number)}" inputmode="numeric" placeholder="Número da NF" required /></label><label><span>Quantidade</span><input type="number" min="0" name="invoiceQuantity" value="${item.quantity || ""}" placeholder="0" required /></label><button type="button" class="remove-row" data-remove-invoice="${index}" aria-label="Remover nota" ${items.length === 1 ? "disabled" : ""}>×</button></div>`).join("")}</div><button type="button" class="add-row-button" data-add-invoice>＋ Adicionar outra NF</button><div class="invoice-total"><span>Total automático</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></article>
+    ${isSleeper ? `<article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Separação de qualidade</h2><p>Use somente quando houver ocorrência. Os campos podem permanecer zerados.</p></div></div><div class="quality-input-grid">${state.categories.map((category) => `<label style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><input type="number" min="0" name="quality_${category.id}" value="${number(draft.quality?.[category.id])}" /></label>`).join("")}</div><div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div></article>` : ""}
+    <article class="panel form-panel final-form-panel"><div class="form-section-title"><span>${isSleeper ? "05" : "04"}</span><div><h2>Observações e confirmação</h2><p>Registre qualquer ressalva importante para o relatório.</p></div></div><label><span>Observações</span><textarea name="observations" rows="4" placeholder="Condições da descarga, divergências ou informações complementares">${escapeHtml(draft.observations || "")}</textarea></label><div class="form-actions"><button type="button" class="button button-outline" data-cancel-form>Cancelar</button><button type="button" class="button button-dark" data-save-status="rascunho">Salvar rascunho</button><button type="submit" class="button button-yellow">${state.editingId ? "Atualizar recebimento" : "Salvar recebimento"}</button></div></article></form></section>`;
+}
+
+function filteredHistory() {
+  const { search, material, from, to } = state.historyFilters;
+  const query = search.trim().toLowerCase();
+  return state.records.filter((record) => {
+    const date = record.receivedDate || String(record.receivedAt).slice(0, 10);
+    const content = `${record.invoiceNumbers || ""} ${record.supplier || ""} ${record.location || ""}`.toLowerCase();
+    return (!query || content.includes(query)) && (material === "todos" || record.material === material) && (!from || date >= from) && (!to || date <= to);
+  });
+}
+
+function renderRecordsTable(records, compact = false) {
+  if (!records.length) return '<div class="empty-state"><span>▤</span><h3>Nenhum recebimento encontrado</h3><p>Altere os filtros ou faça um novo lançamento.</p></div>';
+  return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Data / horário</th><th>Material</th><th>Nota fiscal</th><th>Local</th><th>Quantidade</th>${compact ? "" : "<th>Qualidade</th>"}<th class="no-print">Ações</th></tr></thead><tbody>${records.map((record) => { const items = invoiceItems(record); const date = record.receivedDate || String(record.receivedAt).slice(0, 10); return `<tr><td><strong>${formatDate(date)}</strong><small>${record.receivedTime ? record.receivedTime : "Horário pendente"}</small></td><td>${materialBadge(record.material)}</td><td><strong>${items.length} NF${items.length === 1 ? "" : "s"}</strong><small>${escapeHtml(items.map((item) => item.number).join(", "))}</small></td><td><strong>${escapeHtml(record.location || "—")}</strong><small>${escapeHtml(record.supplier || "—")}</small></td><td><strong>${formatNumber(recordQuantity(record))}</strong><small>${MATERIALS[record.material]?.unit || "un"}</small></td>${compact ? "" : `<td><strong>${record.material === "dormente" ? `${formatNumber(qualityRejected(record))} reprovados` : "Conferido"}</strong><small>${record.status === "rascunho" ? "Rascunho" : "Concluído"}</small></td>`}<td class="table-actions no-print"><button data-view-record="${record.id}" title="Ver detalhes">Ver</button>${canEdit() ? `<button data-edit-record="${record.id}" title="Editar">Editar</button><button class="danger" data-delete-record="${record.id}" title="Excluir">Excluir</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`;
+}
+
+function renderHistory() {
+  const records = filteredHistory();
+  const value = metrics(records);
+  return `<section class="view history-view"><div class="page-heading"><div><span class="eyebrow">Rastreabilidade</span><h1>Histórico de recebimentos</h1><p>Pesquise por NF, fornecedor, período ou tipo de material.</p></div><div class="heading-actions">${canEdit() ? '<button class="button button-yellow" data-new-record>+ Novo recebimento</button>' : ""}<button class="button button-outline" data-export-csv>Exportar planilha</button></div></div><article class="panel filters-panel no-print"><label class="search-field"><span>Buscar NF, local ou fornecedor</span><input name="historySearch" value="${escapeHtml(state.historyFilters.search)}" placeholder="Digite para pesquisar" /></label><label><span>Material</span><select name="historyMaterial"><option value="todos">Todos</option><option value="dormente" ${state.historyFilters.material === "dormente" ? "selected" : ""}>Dormentes</option><option value="trilho" ${state.historyFilters.material === "trilho" ? "selected" : ""}>Trilhos</option></select></label><label><span>De</span><input type="date" name="historyFrom" value="${state.historyFilters.from}" /></label><label><span>Até</span><input type="date" name="historyTo" value="${state.historyFilters.to}" /></label><button class="button button-dark compact" data-apply-history>Filtrar</button><button class="text-button" data-clear-history>Limpar</button></article><div class="history-summary"><span><strong>${records.length}</strong> lançamentos</span><span><strong>${formatNumber(value.totalNfs)}</strong> notas fiscais</span><span><strong>${formatNumber(value.sleepers)}</strong> dormentes</span><span><strong>${formatNumber(value.rails)}</strong> trilhos</span></div><article class="panel">${renderRecordsTable(records)}</article></section>`;
+}
+
+function renderQuality() {
+  const sleeperRecords = state.records.filter((record) => record.material === "dormente");
+  const value = metrics(sleeperRecords);
+  const totals = qualityTotals(sleeperRecords);
+  return `<section class="view quality-view"><div class="page-heading"><div><span class="eyebrow">Inspeção e segregação</span><h1>Qualidade dos dormentes</h1><p>Acompanhe ocorrências e adicione novas classificações conforme a rotina de campo.</p></div>${canEdit() ? '<button class="button button-yellow" data-new-sleeper>+ Lançar dormentes</button>' : ""}</div><div class="quality-hero-grid"><article class="panel quality-overview clickable" data-chart-modal="quality" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Distribuição acumulada</span><h2>Ocorrências registradas</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut()}</article><article class="panel quality-kpis"><div><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong></div><div><span>Reprovados</span><strong class="danger-text">${formatNumber(value.rejected)}</strong></div><div><span>Reparados</span><strong class="success-text">${formatNumber(value.repaired)}</strong></div><div><span>Índice liberado</span><strong>${value.sleepers ? (((value.sleepers - value.rejected) / value.sleepers) * 100).toFixed(2).replace(".", ",") : "100,00"}%</strong></div></article></div><div class="quality-category-grid">${state.categories.map((category) => `<article class="category-card" style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><strong>${formatNumber(totals[category.id])}</strong><small>ocorrências acumuladas</small></article>`).join("")}</div>${canEdit() ? `<article class="panel category-manager"><div><span class="eyebrow">Personalizar controle</span><h2>Adicionar nova classificação</h2><p>Ex.: fissuras, ombreira danificada ou cordoalha aparente.</p></div><div class="category-add-form"><input name="qualityNewCategory" placeholder="Nome da classificação" /><button class="button button-dark" data-add-category-page>Adicionar</button></div></article>` : ""}<article class="panel"><div class="panel-heading"><div><span class="eyebrow">Lançamentos</span><h2>Últimos recebimentos de dormentes</h2></div></div>${renderRecordsTable(sleeperRecords.slice(0, 10), true)}</article></section>`;
+}
+
+function reportRecords() {
+  const { from, to, material } = state.reportFilters;
+  return state.records.filter((record) => { const date = record.receivedDate || String(record.receivedAt).slice(0, 10); return (!from || date >= from) && (!to || date <= to) && (material === "todos" || record.material === material); });
+}
+
+function renderReports() {
+  const records = reportRecords();
+  const value = metrics(records);
+  return `<section class="view reports-view"><div class="page-heading no-print"><div><span class="eyebrow">Documentação</span><h1>Relatórios da obra</h1><p>Selecione o período e gere o PDF pronto para envio.</p></div><div class="heading-actions"><button class="button button-outline" data-export-report>Exportar planilha</button><button class="button button-yellow" data-print-report>Gerar PDF</button></div></div><article class="panel report-filters no-print"><label><span>Data inicial</span><input type="date" name="reportFrom" value="${state.reportFilters.from}" /></label><label><span>Data final</span><input type="date" name="reportTo" value="${state.reportFilters.to}" /></label><label><span>Material</span><select name="reportMaterial"><option value="todos">Todos os materiais</option><option value="dormente" ${state.reportFilters.material === "dormente" ? "selected" : ""}>Dormentes</option><option value="trilho" ${state.reportFilters.material === "trilho" ? "selected" : ""}>Trilhos</option></select></label><button class="button button-dark" data-apply-report>Atualizar relatório</button></article><article class="print-report"><header class="report-header"><img src="./epya-logo-pdf.svg" alt="EPYA" /><div><span>RELATÓRIO DE RECEBIMENTO DE MATERIAIS</span><h1>Projeto Sucuriú • Pera ferroviária</h1><p>Período: ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}</p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header><div class="report-kpis"><div><span>Dormentes</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs</small></div><div><span>Trilhos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs</small></div><div><span>Total de NFs</span><strong>${formatNumber(value.totalNfs)}</strong><small>${value.records} lançamentos</small></div><div><span>Reprovados</span><strong>${formatNumber(value.rejected)}</strong><small>dormentes</small></div></div><div class="report-charts"><section><h2>Comparação semanal</h2>${renderComparisonChart("week", records)}</section><section><h2>Qualidade</h2>${renderQualityDonut(records)}</section></div><h2 class="report-table-title">Detalhamento por recebimento</h2><div class="report-table"><table><thead><tr><th>Data</th><th>Material</th><th>NFs</th><th>Local</th><th>Qtd.</th></tr></thead><tbody>${records.map((record) => `<tr><td>${formatDate(record.receivedDate)}</td><td>${MATERIALS[record.material].label}</td><td>${escapeHtml(invoiceItems(record).map((item) => item.number).join(", "))}</td><td>${escapeHtml(record.location)}</td><td>${formatNumber(recordQuantity(record))}</td></tr>`).join("")}</tbody></table></div><footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle diário de recebimentos</span></footer></article><article class="panel email-report no-print"><div><span class="eyebrow">Envio rápido</span><h2>Preparar e-mail do relatório</h2><p>O PDF será salvo pelo navegador; depois basta anexá-lo ao e-mail preparado.</p></div><div class="email-fields"><input type="email" name="reportEmail" value="${OWNER_EMAIL}" placeholder="destinatario@empresa.com" /><button class="button button-outline" data-email-report>Preparar e-mail</button></div></article></section>`;
+}
+
+function renderTeam() {
+  if (state.user?.role !== "admin") return renderDashboard();
+  return `<section class="view team-view"><div class="page-heading"><div><span class="eyebrow">Segurança e acompanhamento</span><h1>E-mails autorizados</h1><p>Libere consulta, operação ou administração para novos integrantes.</p></div></div><div class="team-grid"><article class="panel team-form-panel"><span class="eyebrow">Novo acesso</span><h2>Adicionar e-mail</h2><label><span>Nome</span><input name="teamFullName" placeholder="Nome completo" /></label><label><span>E-mail</span><input type="email" name="teamEmail" placeholder="nome@empresa.com" /></label><label><span>Permissão</span><select name="teamRole"><option value="viewer">Consulta — somente acompanhar</option><option value="editor">Operação — lançar e editar</option><option value="admin">Administrador — gerenciar acessos</option></select></label><button class="button button-yellow" data-add-user>Adicionar acesso</button><p class="security-note">O site não armazena senhas. Cada pessoa confirma a própria identidade no primeiro acesso.</p></article><article class="panel team-list-panel"><div class="panel-heading"><div><span class="eyebrow">Equipe liberada</span><h2>${state.team.filter((user) => user.active).length} acesso(s) ativo(s)</h2></div></div>${state.teamLoaded ? `<div class="team-list">${state.team.map((user) => `<div class="team-row ${user.active ? "" : "inactive"}"><span class="team-avatar">${escapeHtml((user.fullName || user.email).slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(user.fullName || "Sem nome")}</strong><small>${escapeHtml(user.email)}</small></div><span class="role-pill">${user.role === "admin" ? "Administrador" : user.role === "viewer" ? "Consulta" : "Operação"}</span>${user.email === OWNER_EMAIL ? '<span class="owner-pill">Acesso principal</span>' : user.active ? `<button class="danger-link" data-remove-user="${user.id}">Remover</button>` : '<span class="status-pill">Inativo</span>'}</div>`).join("")}</div>` : '<div class="loading-inline"><span class="spinner"></span> Carregando acessos…</div>'}</article></div></section>`;
+}
+
+function renderModal() {
+  if (!state.modal) return "";
+  let title = "Detalhes";
+  let subtitle = "Dados do painel";
+  let body = "";
+  if (["week", "month"].includes(state.modal.type)) {
+    const period = state.modal.type;
+    const grouped = groupedComparison(period);
+    title = period === "week" ? "Comparação semanal" : "Comparação mensal";
+    subtitle = "Dormentes e trilhos recebidos no período";
+    body = `<div class="modal-chart">${renderComparisonChart(period)}</div><div class="modal-table"><table><thead><tr><th>Período</th><th>Dormentes</th><th>Trilhos</th><th>NFs</th></tr></thead><tbody>${grouped.map((item) => `<tr><td>${comparisonLabel(item, period)}</td><td>${formatNumber(item.dormente)}</td><td>${formatNumber(item.trilho)}</td><td>${item.nfs}</td></tr>`).join("")}</tbody></table></div>`;
+  } else if (state.modal.type === "daily") {
+    title = "Volume diário";
+    subtitle = "Ritmo das chegadas por data";
+    const grouped = dailyComparison();
+    body = `<div class="modal-chart">${renderDailyChart()}</div><div class="modal-table"><table><thead><tr><th>Data</th><th>Dormentes</th><th>Trilhos</th><th>NFs</th></tr></thead><tbody>${grouped.map((item) => `<tr><td>${formatDate(item.key)}</td><td>${formatNumber(item.dormente)}</td><td>${formatNumber(item.trilho)}</td><td>${item.nfs}</td></tr>`).join("")}</tbody></table></div>`;
+  } else if (state.modal.type === "quality") {
+    title = "Qualidade dos dormentes";
+    subtitle = "Separação acumulada por classificação";
+    const totals = qualityTotals();
+    body = `<div class="modal-quality">${renderQualityDonut()}</div><div class="modal-table"><table><thead><tr><th>Classificação</th><th>Quantidade</th></tr></thead><tbody>${state.categories.map((category) => `<tr><td><i class="table-dot" style="background:${category.color}"></i>${escapeHtml(category.label)}</td><td>${formatNumber(totals[category.id])}</td></tr>`).join("")}</tbody></table></div>`;
+  } else if (state.modal.type === "record") {
+    const record = state.records.find((item) => item.id === state.modal.id);
+    if (!record) return "";
+    title = `${MATERIALS[record.material].label} • ${formatDate(record.receivedDate)}`;
+    subtitle = `${record.location || "Local não informado"} • ${record.receivedTime || "horário pendente"}`;
+    body = `<div class="record-modal-summary"><div><span>Total recebido</span><strong>${formatNumber(recordQuantity(record))}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Fornecedor</span><strong>${escapeHtml(record.supplier || "—")}</strong><small>${escapeHtml(record.vehiclePlate || "Sem placa")}</small></div></div><div class="modal-table"><table><thead><tr><th>Nota fiscal</th><th>Quantidade</th></tr></thead><tbody>${invoiceItems(record).map((item) => `<tr><td>NF ${escapeHtml(item.number)}</td><td>${formatNumber(item.quantity)} ${MATERIALS[record.material].unit}</td></tr>`).join("")}</tbody></table></div>${record.material === "dormente" ? `<div class="record-quality-list">${state.categories.map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(record.quality?.[category.id])}</strong></span>`).join("")}</div>` : ""}<p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>`;
+  }
+  return `<div class="modal-backdrop" data-modal-close><section class="chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" onclick="event.stopPropagation()"><header><div><span class="eyebrow">${escapeHtml(subtitle)}</span><h2>${escapeHtml(title)}</h2></div><button data-modal-close aria-label="Fechar">×</button></header>${body}<footer><button class="button button-outline" data-modal-close>Fechar</button><button class="button button-dark" data-print-report>Gerar PDF do painel</button></footer></section></div>`;
+}
+
+function bindEvents() {
+  document.querySelectorAll("[data-nav]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.nav)));
+  document.querySelectorAll("[data-new-record]").forEach((button) => button.addEventListener("click", () => newRecord()));
+  document.querySelector("[data-new-sleeper]")?.addEventListener("click", () => newRecord("dormente"));
+  document.querySelector("[data-theme-toggle]")?.addEventListener("click", toggleTheme);
+  document.querySelectorAll("[data-tv-toggle]").forEach((button) => button.addEventListener("click", toggleTv));
+  document.querySelectorAll("[data-install]").forEach((button) => button.addEventListener("click", installApp));
+  document.querySelectorAll("[data-chart-modal]").forEach((card) => { const open = () => { state.modal = { type: card.dataset.chartModal }; render(); }; card.addEventListener("click", open); card.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") open(); }); });
+  document.querySelectorAll("[data-modal-close]").forEach((button) => button.addEventListener("click", () => { state.modal = null; render(); }));
+  document.querySelectorAll("[data-view-record]").forEach((button) => button.addEventListener("click", () => { state.modal = { type: "record", id: button.dataset.viewRecord }; render(); }));
+  document.querySelectorAll("[data-edit-record]").forEach((button) => button.addEventListener("click", () => editRecord(button.dataset.editRecord)));
+  document.querySelectorAll("[data-delete-record]").forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord)));
+  document.querySelector("[data-export-csv]")?.addEventListener("click", () => exportCsv(filteredHistory()));
+  document.querySelector("[data-export-report]")?.addEventListener("click", () => exportCsv(reportRecords()));
+  document.querySelectorAll("[data-print-report]").forEach((button) => button.addEventListener("click", printReport));
+  document.querySelector("[data-email-report]")?.addEventListener("click", emailReport);
+  document.querySelector("[data-add-user]")?.addEventListener("click", addTeamMember);
+  document.querySelectorAll("[data-remove-user]").forEach((button) => button.addEventListener("click", () => removeTeamMember(button.dataset.removeUser)));
+  document.querySelector("[data-apply-history]")?.addEventListener("click", applyHistoryFilters);
+  document.querySelector("[data-clear-history]")?.addEventListener("click", () => { state.historyFilters = { search: "", material: "todos", from: "", to: "" }; render(); });
+  document.querySelector("[data-apply-report]")?.addEventListener("click", applyReportFilters);
+  bindFormEvents(); bindCategoryEvents();
+}
+
+function bindFormEvents() {
+  const form = document.querySelector("#receiving-form");
+  if (!form) return;
+  form.addEventListener("submit", (event) => { event.preventDefault(); saveCurrent("concluido"); });
+  form.querySelectorAll('[name="invoiceQuantity"]').forEach((input) => input.addEventListener("input", updateFormTotal));
+  form.querySelectorAll("[data-material]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.material = button.dataset.material; if (!state.draft.supplier) state.draft.supplier = button.dataset.material === "dormente" ? "Cavan / Arauco" : "Arauco"; render(); }));
+  form.querySelector("[data-add-invoice]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.push({ number: "", quantity: "" }); render(); });
+  form.querySelectorAll("[data-remove-invoice]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.splice(number(button.dataset.removeInvoice), 1); render(); }));
+  form.querySelector("[data-save-status]")?.addEventListener("click", () => saveCurrent("rascunho"));
+  form.querySelector("[data-cancel-form]")?.addEventListener("click", () => navigate("dashboard"));
+}
+
+function bindCategoryEvents() {
+  document.querySelector("[data-add-category]")?.addEventListener("click", () => addCategory(document.querySelector('[name="newCategory"]')?.value));
+  document.querySelector("[data-add-category-page]")?.addEventListener("click", () => addCategory(document.querySelector('[name="qualityNewCategory"]')?.value));
+}
+
+function updateFormTotal() {
+  const total = [...document.querySelectorAll('[name="invoiceQuantity"]')].reduce((sum, input) => sum + number(input.value), 0);
+  document.querySelectorAll("[data-form-total]").forEach((node) => { node.textContent = formatNumber(total); });
+}
+
+function navigate(view) {
+  if (view === "form" && !canEdit()) return;
+  state.view = view; state.modal = null;
+  if (view === "form" && !state.draft) state.draft = defaultDraft();
+  if (view === "team" && state.user?.role === "admin" && !state.teamLoaded) loadTeam();
+  render(); window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function newRecord(material = "dormente") { state.draft = defaultDraft(material); state.editingId = ""; navigate("form"); }
+
+function editRecord(id) {
+  const record = state.records.find((item) => item.id === id);
+  if (!record || !canEdit()) return;
+  state.draft = structuredClone({ ...record, receivedDate: record.receivedDate || String(record.receivedAt).slice(0, 10), receivedTime: record.receivedTime || "", invoiceItems: invoiceItems(record), quality: { ...Object.fromEntries(state.categories.map((category) => [category.id, 0])), ...(record.quality || {}) } });
+  state.editingId = id; navigate("form");
+}
+
+async function saveCurrent(status) {
+  if (!canEdit()) return toast("Seu acesso é somente para consulta.", "error");
+  const record = formRecordFromDom();
+  const validItems = record.invoiceItems.filter((item) => item.number && number(item.quantity));
+  if (status !== "rascunho" && !record.receivedDate) return toast("Informe a data do recebimento.", "error");
+  if (status !== "rascunho" && !validItems.length) return toast("Informe ao menos uma NF com quantidade.", "error");
+  if (status !== "rascunho" && !record.location) return toast("Informe o local de descarga.", "error");
+  record.id = state.editingId || record.id || crypto.randomUUID(); record.status = status; record.invoiceItems = validItems.length ? validItems : record.invoiceItems; record.invoiceNumbers = record.invoiceItems.map((item) => item.number).filter(Boolean).join(", "); record.quantity = record.invoiceItems.reduce((sum, item) => sum + number(item.quantity), 0); record.rejected = record.material === "dormente" ? number(record.quality?.reprovados) : 0; record.approved = Math.max(0, record.quantity - record.rejected); record.receivedAt = `${record.receivedDate || todayInput()}T${record.receivedTime || "00:00"}:00`; record.timeKnown = Boolean(record.receivedTime); record.createdAt = record.createdAt || new Date().toISOString(); record.updatedAt = new Date().toISOString();
+  try {
+    if (GITHUB_PAGES_MODE) throw new Error("local");
+    const response = await fetch("/api/crms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) });
+    if (!response.ok) throw new Error("Falha ao sincronizar");
+    replaceRecord((await response.json()).record); state.storageMode = "cloud";
+  } catch {
+    replaceRecord(record); writeLocalRecords(); if (!GITHUB_PAGES_MODE) queueForSync(record); state.storageMode = "local";
+  }
+  state.draft = null; state.editingId = ""; state.view = "dashboard"; render(); toast(status === "rascunho" ? "Rascunho salvo." : "Recebimento salvo e painel atualizado.", "success");
+}
+
+function replaceRecord(record) { const index = state.records.findIndex((item) => item.id === record.id); if (index >= 0) state.records[index] = record; else state.records.push(record); state.records.sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))); }
+
+async function deleteRecord(id) {
+  if (!canEdit()) return;
+  const record = state.records.find((item) => item.id === id);
+  if (!record || !confirm(`Excluir o recebimento de ${formatDate(record.receivedDate)}?`)) return;
+  try { if (GITHUB_PAGES_MODE) throw new Error("local"); const response = await fetch(`/api/crms/${encodeURIComponent(id)}`, { method: "DELETE" }); if (!response.ok) throw new Error("Falha"); } catch { state.storageMode = "local"; }
+  state.records = state.records.filter((item) => item.id !== id); writeLocalRecords(); render(); toast("Recebimento excluído.", "success");
+}
+
+async function addCategory(rawName) {
+  const label = String(rawName || "").trim();
+  if (!label) return toast("Digite o nome da nova classificação.", "error");
+  const id = label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  if (state.categories.some((category) => category.id === id)) return toast("Essa classificação já existe.", "error");
+  const palette = ["#ef8d32", "#15b7a5", "#ec5f78", "#806bff", "#25a8e0", "#9cbf33"];
+  const category = { id, label, color: palette[state.categories.length % palette.length] };
+  try { if (GITHUB_PAGES_MODE) throw new Error("local"); const response = await fetch("/api/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(category) }); if (!response.ok) throw new Error("Falha"); state.categories.push((await response.json()).category); } catch { state.categories.push(category); saveCategoriesLocal(); }
+  if (state.draft) { const formDraft = formRecordFromDom(); state.draft = { ...formDraft, quality: { ...formDraft.quality, [id]: 0 } }; }
+  render(); toast(`Classificação “${label}” adicionada.`, "success");
+}
+
+function applyHistoryFilters() { state.historyFilters = { search: document.querySelector('[name="historySearch"]')?.value || "", material: document.querySelector('[name="historyMaterial"]')?.value || "todos", from: document.querySelector('[name="historyFrom"]')?.value || "", to: document.querySelector('[name="historyTo"]')?.value || "" }; render(); }
+function applyReportFilters() { state.reportFilters = { from: document.querySelector('[name="reportFrom"]')?.value || "", to: document.querySelector('[name="reportTo"]')?.value || "", material: document.querySelector('[name="reportMaterial"]')?.value || "todos" }; render(); }
+
+function exportCsv(records) {
+  const rows = [["Data", "Horário", "Material", "Nota Fiscal", "Quantidade", "Local", "Fornecedor", "Pequenas quebras", "Reparados", "Reprovados", "Bolhas", "Observações"]];
+  records.forEach((record) => invoiceItems(record).forEach((item) => rows.push([formatDate(record.receivedDate), record.receivedTime || "não informado", MATERIALS[record.material].label, item.number, item.quantity, record.location, record.supplier, record.quality?.["pequenas-quebras"] || 0, record.quality?.reparados || 0, record.quality?.reprovados || 0, record.quality?.bolhas || 0, record.observations || ""])));
+  const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
+  const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); link.download = `recebimentos-epya-${todayInput()}.csv`; link.click(); URL.revokeObjectURL(link.href); toast("Planilha gerada.", "success");
+}
+
+function printReport() { state.modal = null; state.view = "reports"; render(); setTimeout(() => window.print(), 250); }
+
+function emailReport() {
+  const recipient = document.querySelector('[name="reportEmail"]')?.value.trim();
+  if (!recipient || !/^\S+@\S+\.\S+$/.test(recipient)) return toast("Informe um e-mail válido.", "error");
+  const value = metrics(reportRecords()); const subject = `Relatório EPYA • Recebimentos ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}`; const body = `Olá,\n\nSegue o relatório de recebimentos do Projeto Sucuriú.\n\nDormentes: ${formatNumber(value.sleepers)}\nTrilhos: ${formatNumber(value.rails)}\nNotas fiscais: ${formatNumber(value.totalNfs)}\n\nAnexe o PDF gerado pelo painel antes de enviar.`; window.location.href = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+function toggleTheme() { state.theme = state.theme === "dark" ? "light" : "dark"; localStorage.setItem(THEME_KEY, state.theme); render(); }
+async function toggleTv() { state.tvMode = !state.tvMode; state.view = "dashboard"; if (state.tvMode) { try { await document.documentElement.requestFullscreen?.(); } catch {} } else if (document.fullscreenElement) await document.exitFullscreen?.(); render(); }
+async function installApp() { if (state.installPrompt) { state.installPrompt.prompt(); await state.installPrompt.userChoice; state.installPrompt = null; return; } toast(/iphone|ipad|ipod/i.test(navigator.userAgent) ? "No Safari, toque em Compartilhar e Adicionar à Tela de Início." : "No menu do navegador, escolha Instalar app.", "success"); }
+function toast(message, type = "success") { const node = document.querySelector(".toast"); if (!node) return; node.textContent = message; node.className = `toast show ${type}`; clearTimeout(toast.timer); toast.timer = setTimeout(() => { node.className = "toast"; }, 4200); }
+
+function readLocalRecords() { try { const records = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); return Array.isArray(records) && records.length ? records : expandSeedGroups(); } catch { return expandSeedGroups(); } }
+function writeLocalRecords() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records)); }
+function readOutbox() { try { const records = JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]"); return Array.isArray(records) ? records : []; } catch { return []; } }
+function queueForSync(record) { const outbox = readOutbox(); const index = outbox.findIndex((item) => item.id === record.id); if (index >= 0) outbox[index] = record; else outbox.push(record); localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); state.pendingSync = outbox.length; }
+
+async function syncOutbox() {
+  if (GITHUB_PAGES_MODE || !state.online || !state.authorized) return;
+  const pending = readOutbox(); const remaining = [];
+  for (const record of pending) { try { const response = await fetch("/api/crms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) }); if (!response.ok) throw new Error("Falha"); replaceRecord((await response.json()).record); } catch { remaining.push(record); } }
+  localStorage.setItem(OUTBOX_KEY, JSON.stringify(remaining)); state.pendingSync = remaining.length; if (!remaining.length) state.storageMode = "cloud"; writeLocalRecords();
+}
+
+async function loadSession() {
+  let cached = null; try { cached = JSON.parse(localStorage.getItem(AUTH_CACHE_KEY) || "null"); } catch {}
+  try { const response = await fetch("/api/session", { headers: { Accept: "application/json" } }); if (!response.ok) throw new Error("Sessão indisponível"); const session = await response.json(); state.authenticated = Boolean(session.authenticated); state.authorized = Boolean(session.authorized); state.user = session.user || (session.authenticated ? { email: session.email || "" } : null); if (state.authorized && state.user) localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(state.user)); else localStorage.removeItem(AUTH_CACHE_KEY); } catch { if (cached) { state.authenticated = true; state.authorized = true; state.user = cached; state.storageMode = "local"; } else { state.authenticated = false; state.authorized = false; state.user = null; } }
+  state.authLoading = false;
+}
+
+async function loadRecordsAndCategories() {
+  try { const [recordsResponse, categoriesResponse] = await Promise.all([fetch("/api/crms", { headers: { Accept: "application/json" } }), fetch("/api/categories", { headers: { Accept: "application/json" } })]); if (!recordsResponse.ok) throw new Error("Banco indisponível"); const recordData = await recordsResponse.json(); state.records = Array.isArray(recordData.records) && recordData.records.length ? recordData.records : expandSeedGroups(); if (categoriesResponse.ok) { const categoryData = await categoriesResponse.json(); if (Array.isArray(categoryData.categories) && categoryData.categories.length) state.categories = categoryData.categories; } readOutbox().forEach(replaceRecord); state.storageMode = "cloud"; writeLocalRecords(); saveCategoriesLocal(); } catch { state.records = readLocalRecords(); state.storageMode = "local"; }
+  state.pendingSync = readOutbox().length;
+}
+
+async function loadTeam() {
+  try { const response = await fetch("/api/users", { headers: { Accept: "application/json" } }); if (!response.ok) throw new Error("Falha"); const data = await response.json(); state.team = Array.isArray(data.users) ? data.users : []; } catch { state.team = [{ id: "owner", email: OWNER_EMAIL, fullName: "Darci Brum", role: "admin", active: true }]; }
+  state.teamLoaded = true; if (state.view === "team") render();
+}
+
+async function addTeamMember() {
+  const fullName = document.querySelector('[name="teamFullName"]')?.value.trim() || ""; const email = document.querySelector('[name="teamEmail"]')?.value.trim().toLowerCase() || ""; const role = document.querySelector('[name="teamRole"]')?.value || "viewer";
+  if (!/^\S+@\S+\.\S+$/.test(email)) return toast("Informe um e-mail válido.", "error");
+  try { const response = await fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fullName, email, role }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Não foi possível adicionar."); state.teamLoaded = false; await loadTeam(); toast(`${email} foi liberado.`, "success"); } catch (error) { toast(error.message || "É necessário estar online para liberar um acesso.", "error"); }
+}
+
+async function removeTeamMember(id) {
+  const user = state.team.find((item) => item.id === id); if (!user || !confirm(`Remover o acesso de ${user.fullName || user.email}?`)) return;
+  try { const response = await fetch(`/api/users/${encodeURIComponent(id)}`, { method: "DELETE" }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Falha"); state.teamLoaded = false; await loadTeam(); toast("Acesso removido.", "success"); } catch (error) { toast(error.message || "Falha ao remover acesso.", "error"); }
+}
+
+async function bootstrap() {
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js" : "/service-worker.js").catch(() => {});
+  if (GITHUB_PAGES_MODE) { state.records = readLocalRecords(); state.loading = false; render(); return; }
+  await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
+}
+
+window.addEventListener("beforeinstallprompt", (event) => { event.preventDefault(); state.installPrompt = event; render(); });
+window.addEventListener("online", async () => { state.online = true; await loadSession(); if (state.authorized) await syncOutbox(); render(); });
+window.addEventListener("offline", () => { state.online = false; state.storageMode = "local"; render(); });
+window.addEventListener("keydown", (event) => { if (event.key === "Escape" && state.modal) { state.modal = null; render(); } });
+
+bootstrap();

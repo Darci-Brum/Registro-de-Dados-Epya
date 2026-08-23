@@ -1,0 +1,19 @@
+<svg width="520" height="180" viewBox="0 0 520 180" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Emblema EPYA</title>
+  <desc id="desc">Emblema vetorial inspirado na identidade visual pública da EPYA, com trilho amarelo e tipografia escura.</desc>
+  <rect width="520" height="180" rx="28" fill="#17181B"/>
+  <g transform="translate(26 39)">
+    <path d="M4 54C4 37.9837 16.9837 25 33 25H114C129.464 25 142 37.536 142 53V91H33C16.9837 91 4 78.0163 4 62V54Z" fill="#F3C229"/>
+    <path d="M38 49L56 67L74 49" stroke="#17181B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M74 67L92 49L112 69" stroke="#17181B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="28" cy="58" r="6" fill="#17181B"/>
+    <circle cx="123" cy="58" r="6" fill="#17181B"/>
+    <circle cx="58" cy="82" r="6" fill="#17181B"/>
+    <circle cx="96" cy="82" r="6" fill="#17181B"/>
+    <path d="M18 110H132" stroke="#F3C229" stroke-width="8" stroke-linecap="round"/>
+    <path d="M35 126H114" stroke="#F3C229" stroke-width="8" stroke-linecap="round" opacity="0.78"/>
+  </g>
+  <text x="188" y="92" font-family="Inter, Arial, Helvetica, sans-serif" font-size="68" letter-spacing="5" font-weight="900" fill="#F5F6F8">EPYA</text>
+  <text x="192" y="124" font-family="Inter, Arial, Helvetica, sans-serif" font-size="18" letter-spacing="3" font-weight="700" fill="#F3C229">INFRAESTRUTURA FERROVIÁRIA</text>
+  <path d="M189 140H457" stroke="#F3C229" stroke-width="5" stroke-linecap="round"/>
+</svg>
