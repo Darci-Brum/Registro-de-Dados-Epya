@@ -113,6 +113,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .hero-corner-brand span { display: grid; text-transform: uppercase; }
 .hero-corner-brand strong { font-size: 1rem; letter-spacing: .12em; }
 .hero-corner-brand small { margin-top: 4px; color: #6c7077; font-size: .72rem; font-weight: 760; letter-spacing: .08em; }
+.hero-quote { max-width: 230px; padding: 11px 15px; position: absolute; z-index: 3; display: grid; gap: 1px; border-radius: 10px; font-style: normal; line-height: 1.15; box-shadow: 0 10px 28px rgba(0, 0, 0, .22); backdrop-filter: blur(10px); }
+.hero-quote span { font-size: .72rem; font-weight: 680; letter-spacing: .02em; }
+.hero-quote strong { font-size: .95rem; letter-spacing: -.02em; }
+.hero-quote-quality { right: 42px; bottom: 46px; color: #17191d; background: rgba(255, 255, 255, .89); border-left: 4px solid var(--yellow); }
+.hero-quote-control { right: 345px; bottom: 29px; color: white; background: rgba(13, 15, 18, .73); border: 1px solid rgba(255, 255, 255, .2); }
+.hero-quote-control strong { color: var(--yellow); }
 
 .section-heading, .page-heading, .panel-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .section-heading { margin: 35px 0 18px; }
@@ -448,6 +454,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .hero-corner-brand img { width: 50px; max-height: 50px; }
   .hero-corner-brand strong { font-size: .82rem; }
   .hero-corner-brand small { font-size: .62rem; }
+  .hero-quote { max-width: 190px; padding: 9px 12px; }
+  .hero-quote-quality { top: 108px; right: 18px; bottom: auto; }
+  .hero-quote-control { top: 176px; right: 18px; bottom: auto; }
   .metrics-grid { grid-template-columns: 1fr 1fr; }
   .page-heading, .section-heading, .email-report, .category-manager { align-items: stretch; flex-direction: column; }
   .heading-summary { width: 100%; text-align: left; }
@@ -474,6 +483,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .dashboard-hero { min-height: 570px; padding: 23px; border-radius: 18px; }
   .dashboard-hero h1 { font-size: clamp(2.7rem, 14vw, 4.3rem); }
   .hero-kicker { flex-wrap: wrap; }
+  .hero-quote { max-width: 178px; }
+  .hero-quote span { font-size: .64rem; }
+  .hero-quote strong { font-size: .82rem; }
   .hero-actions { align-items: stretch; flex-direction: column; }
   .hero-actions .button, .hero-actions .sync-badge { width: 100%; }
   .metrics-grid { grid-template-columns: 1fr; }
