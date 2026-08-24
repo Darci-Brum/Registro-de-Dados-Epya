@@ -108,8 +108,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dashboard-hero p { max-width: 565px; margin-bottom: 28px; color: #d2d6da; font-size: clamp(.88rem, 1.2vw, 1.05rem); line-height: 1.6; }
 .hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .dashboard-hero .sync-badge { color: #d9dcdf; background: rgba(14, 16, 19, .66); border-color: rgba(255, 255, 255, .16); }
-.hero-corner-brand { width: 235px; height: 64px; padding: 14px 17px; position: absolute; top: 25px; right: 27px; display: grid; place-items: center; background: rgba(255, 255, 255, .92); border-radius: 12px; box-shadow: 0 12px 35px rgba(0, 0, 0, .16); backdrop-filter: blur(12px); }
-.hero-corner-brand img { width: 100%; max-height: 42px; }
+.hero-corner-brand { width: 315px; min-height: 88px; padding: 12px 18px; position: absolute; top: 25px; right: 27px; display: grid; grid-template-columns: 62px 1fr; align-items: center; gap: 15px; color: #191b1f; background: rgba(255, 255, 255, .94); border-radius: 12px; box-shadow: 0 12px 35px rgba(0, 0, 0, .16); backdrop-filter: blur(12px); }
+.hero-corner-brand img { width: 62px; max-height: 62px; }
+.hero-corner-brand span { display: grid; text-transform: uppercase; }
+.hero-corner-brand strong { font-size: 1rem; letter-spacing: .12em; }
+.hero-corner-brand small { margin-top: 4px; color: #6c7077; font-size: .72rem; font-weight: 760; letter-spacing: .08em; }
 
 .section-heading, .page-heading, .panel-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .section-heading { margin: 35px 0 18px; }
@@ -141,7 +144,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dot.yellow { background: var(--yellow); }
 .dot.blue { background: var(--blue); }
 .comparison-chart { min-width: 0; height: 255px; padding: 25px 10px 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(76px, 1fr); align-items: end; gap: clamp(9px, 1.5vw, 22px); overflow-x: auto; background-image: linear-gradient(to bottom, transparent 24.5%, var(--line) 25%, transparent 25.5%, transparent 49.5%, var(--line) 50%, transparent 50.5%, transparent 74.5%, var(--line) 75%, transparent 75.5%); border-bottom: 1px solid var(--line); }
-.comparison-group { height: 100%; display: grid; grid-template-rows: 1fr 27px; align-items: end; }
+.comparison-group { height: 100%; position: relative; display: grid; grid-template-rows: 1fr 27px; align-items: end; }
 .comparison-bars { height: 100%; display: flex; align-items: end; justify-content: center; gap: 7px; }
 .chart-bar { width: min(28px, 40%); min-height: 0; position: relative; display: block; border-radius: 7px 7px 2px 2px; transition: filter .2s ease; }
 .chart-bar:hover { filter: brightness(.92); }
@@ -150,7 +153,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .chart-bar b { position: absolute; top: -19px; left: 50%; color: var(--muted); font-size: .57rem; font-weight: 760; transform: translateX(-50%); white-space: nowrap; }
 .comparison-group > small, .daily-column > small { color: var(--muted); font-size: .6rem; text-align: center; white-space: nowrap; }
 .daily-chart { height: 280px; padding: 17px 8px 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(34px, 1fr); align-items: end; gap: 7px; overflow-x: auto; border-bottom: 1px solid var(--line); background-image: linear-gradient(to bottom, transparent 32.8%, var(--line) 33%, transparent 33.4%, transparent 65.8%, var(--line) 66%, transparent 66.4%); }
-.daily-column { height: 100%; display: grid; grid-template-rows: 1fr 28px; align-items: end; }
+.daily-column { height: 100%; position: relative; display: grid; grid-template-rows: 1fr 28px; align-items: end; }
 .daily-stack { width: 70%; height: 100%; max-width: 34px; margin: auto; display: flex; flex-direction: column-reverse; justify-content: flex-start; overflow: hidden; border-radius: 6px 6px 2px 2px; }
 .daily-stack span { width: 100%; display: block; min-height: 0; }
 .daily-stack .sleeper { background: var(--yellow); }
@@ -165,6 +168,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .quality-summary li { display: grid; grid-template-columns: 9px 1fr auto; align-items: center; gap: 8px; color: var(--muted); font-size: .68rem; }
 .quality-summary li i, .table-dot, .record-quality-list i { width: 8px; height: 8px; display: inline-block; border-radius: 50%; }
 .quality-summary li strong { color: var(--ink); font-size: .78rem; }
+[data-tooltip] { position: relative; }
+[data-tooltip]::after { content: attr(data-tooltip); width: max-content; max-width: 250px; padding: 9px 11px; position: absolute; left: 50%; top: 42%; z-index: 30; color: white; font-size: .66rem; font-weight: 720; line-height: 1.35; text-align: center; white-space: normal; background: rgba(15, 17, 20, .94); border: 1px solid rgba(255, 255, 255, .14); border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .28); opacity: 0; transform: translate(-50%, -50%) scale(.96); pointer-events: none; transition: opacity .16s ease, transform .16s ease; }
+[data-tooltip]:hover, [data-tooltip]:focus-visible { z-index: 25; }
+[data-tooltip]:hover::after, [data-tooltip]:focus-visible::after { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.quality-summary li[data-tooltip]::after { top: 50%; }
 .recent-panel { margin-top: 1px; }
 
 .table-wrap { width: 100%; overflow-x: auto; }
@@ -233,7 +241,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .add-row-button { margin-top: 6px; color: #8b7400; }
 :root[data-theme="dark"] .add-row-button { color: #f3d95e; }
 .invoice-panel { position: relative; }
-.invoice-total { min-width: 190px; padding: 15px 18px; position: absolute; right: 28px; bottom: 24px; display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
+.invoice-total { width: fit-content; min-width: 220px; margin: 20px 0 0 auto; padding: 15px 18px; position: static; display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
 .invoice-total span { grid-column: 1 / -1; color: var(--muted); font-size: .62rem; }
 .invoice-total strong { font-size: 1.55rem; letter-spacing: -.04em; }
 .invoice-total small { align-self: end; padding-bottom: 4px; color: var(--muted); }
@@ -273,6 +281,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .category-add-form { min-width: min(460px, 50%); display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 
 .report-filters { grid-template-columns: 1fr 1fr 1.2fr auto; }
+.report-material-panel { margin-bottom: 14px; display: grid; grid-template-columns: minmax(240px, .6fr) minmax(520px, 1.4fr); align-items: center; gap: 24px; }
+.report-material-panel h2 { margin: 0 0 5px; }
+.report-material-panel p { margin: 0; color: var(--muted); }
+.report-material-switch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.report-material-switch button { min-height: 74px; padding: 12px; display: grid; grid-template-columns: 38px 1fr; align-items: center; gap: 10px; color: var(--muted); text-align: left; background: var(--surface-2); border: 1px solid var(--line); border-radius: 11px; cursor: pointer; }
+.report-material-switch button > i { width: 36px; height: 36px; display: grid; place-items: center; color: var(--ink); font-size: .78rem; font-style: normal; font-weight: 850; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; }
+.report-material-switch button > span { display: grid; }
+.report-material-switch button strong { color: var(--ink); font-size: .8rem; }
+.report-material-switch button small { margin-top: 3px; font-size: .62rem; }
+.report-material-switch button.active { color: #6a5700; background: color-mix(in srgb, var(--yellow) 12%, var(--surface)); border-color: color-mix(in srgb, var(--yellow) 72%, var(--line)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--yellow) 28%, transparent); }
+.report-material-switch button.active > i { color: #181a1e; background: var(--yellow); border-color: var(--yellow); }
 .report-image-control { margin-bottom: 14px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 14px 24px; }
 .report-image-control h2 { margin: 0 0 5px; }
 .report-image-control p { margin: 0; color: var(--muted); }
@@ -425,7 +444,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .mobile-nav .nav-button b { font-size: .57rem; }
   .app-main { padding-bottom: 95px; }
   .dashboard-hero { min-height: 510px; padding: 28px; align-items: flex-end; background: linear-gradient(0deg, rgba(8, 10, 13, .96) 0%, rgba(8, 10, 13, .72) 54%, rgba(8, 10, 13, .1) 100%), url("./hero-recebimento-epya.png") 60% center / cover; }
-  .hero-corner-brand { width: 190px; top: 18px; right: 18px; }
+  .hero-corner-brand { width: 245px; min-height: 74px; top: 18px; right: 18px; grid-template-columns: 50px 1fr; gap: 11px; }
+  .hero-corner-brand img { width: 50px; max-height: 50px; }
+  .hero-corner-brand strong { font-size: .82rem; }
+  .hero-corner-brand small { font-size: .62rem; }
   .metrics-grid { grid-template-columns: 1fr 1fr; }
   .page-heading, .section-heading, .email-report, .category-manager { align-items: stretch; flex-direction: column; }
   .heading-summary { width: 100%; text-align: left; }
@@ -435,6 +457,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .history-summary { grid-template-columns: 1fr 1fr; }
   .quality-hero-grid { grid-template-columns: 1fr; }
   .quality-category-grid { grid-template-columns: 1fr 1fr; }
+  .report-material-panel { grid-template-columns: 1fr; }
   .report-image-control { grid-template-columns: 1fr; }
   .report-image-previews { grid-template-columns: repeat(3, 1fr); }
   .category-add-form, .email-fields { width: 100%; min-width: 0; }
@@ -469,8 +492,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .invoice-head { display: none; }
   .invoice-row { grid-template-columns: 1fr 120px 36px; }
   .invoice-row label > span { display: block; }
-  .invoice-total { margin-top: 20px; position: static; }
+  .invoice-total { width: 100%; margin-top: 20px; }
   .new-category-inline, .category-add-form, .email-fields { grid-template-columns: 1fr; }
+  .report-material-switch { grid-template-columns: 1fr; }
   .form-actions { align-items: stretch; flex-direction: column-reverse; }
   .filters-panel, .report-filters { grid-template-columns: 1fr; }
   .filters-panel .search-field { grid-column: auto; }
