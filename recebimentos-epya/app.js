@@ -13,6 +13,16 @@ const THEME_KEY = "epya-recebimentos-theme";
 const AUTH_CACHE_KEY = "epya-recebimentos-access-v2";
 const CATEGORY_KEY = "epya-recebimentos-categories-v1";
 const requestedView = new URLSearchParams(window.location.search).get("view");
+const CONTROL_OWNER = "Darci de Brum";
+
+const RAIL_QUALITY_CATEGORIES = [
+  { id: "trilho-empenamento", label: "Empenamento ou torção", color: "#39b8ff" },
+  { id: "trilho-oxidacao", label: "Oxidação ou corrosão", color: "#ef8d32" },
+  { id: "trilho-boleto", label: "Danos no boleto", color: "#806bff" },
+  { id: "trilho-alma", label: "Danos na alma", color: "#15b7a5" },
+  { id: "trilho-patim", label: "Danos no patim", color: "#9cbf33" },
+  { id: "trilho-reprovados", label: "Trilhos reprovados", color: "#ec5f78" },
+];
 
 const MATERIALS = {
   dormente: { label: "Dormentes", singular: "Dormente", unit: "un", color: "#f4c914" },
@@ -43,6 +53,7 @@ const state = {
   theme: localStorage.getItem(THEME_KEY) || "light",
   tvMode: false,
   modal: null,
+  reportImages: [],
   historyFilters: { search: "", material: "todos", from: "", to: "" },
   reportFilters: { from: "2026-07-28", to: "2026-08-21", material: "todos" },
 };
@@ -99,6 +110,10 @@ function saveCategoriesLocal() {
   localStorage.setItem(CATEGORY_KEY, JSON.stringify(state.categories));
 }
 
+function qualityCategories(material) {
+  return material === "trilho" ? RAIL_QUALITY_CATEGORIES : state.categories;
+}
+
 function defaultDraft(material = "dormente") {
   return {
     id: "",
@@ -110,9 +125,9 @@ function defaultDraft(material = "dormente") {
     location: "Pera ferroviária",
     supplier: material === "dormente" ? "Cavan / Arauco" : "Arauco",
     vehiclePlate: "",
-    inspectorName: state.user?.fullName || "Darci Brum",
+    inspectorName: CONTROL_OWNER,
     invoiceItems: [{ number: "", quantity: "" }],
-    quality: Object.fromEntries(state.categories.map((category) => [category.id, 0])),
+    quality: Object.fromEntries([...state.categories, ...RAIL_QUALITY_CATEGORIES].map((category) => [category.id, 0])),
     observations: "",
   };
 }
@@ -134,7 +149,9 @@ function recordQuantity(record) {
 }
 
 function qualityRejected(record) {
-  return number(record.quality?.reprovados ?? record.rejected);
+  return record.material === "trilho"
+    ? number(record.quality?.["trilho-reprovados"] ?? record.rejected)
+    : number(record.quality?.reprovados ?? record.rejected);
 }
 
 function metrics(records = state.records) {
@@ -146,6 +163,8 @@ function metrics(records = state.records) {
   const railNfs = rail.reduce((sum, record) => sum + invoiceItems(record).length, 0);
   const rejected = dorm.reduce((sum, record) => sum + qualityRejected(record), 0);
   const repaired = dorm.reduce((sum, record) => sum + number(record.quality?.reparados), 0);
+  const railRejected = rail.reduce((sum, record) => sum + qualityRejected(record), 0);
+  const railOccurrences = rail.reduce((sum, record) => sum + qualityCategories("trilho").reduce((total, category) => total + number(record.quality?.[category.id]), 0), 0);
   return {
     sleepers,
     rails,
@@ -156,6 +175,8 @@ function metrics(records = state.records) {
     progress: Math.min(100, (sleepers / TARGET_SLEEPERS) * 100),
     rejected,
     repaired,
+    railRejected,
+    railOccurrences,
     records: records.length,
   };
 }
@@ -184,9 +205,9 @@ function render() {
   app.innerHTML = `
     <div class="app-shell">
       <header class="topbar no-print">
-        <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel EPYA"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Controle diário de materiais</small></span></button>
+        <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel EPYA"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>ARAUCO / Projeto Sucuriú</strong><small>Recebimentos de dormentes e trilhos</small></span></button>
         <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("reports", "Relatórios", "▤")}${state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
-        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button>${GITHUB_PAGES_MODE ? '<span class="user-chip"><strong>Demo</strong><small>Neste aparelho</small></span>' : `<a class="user-chip" href="/signout-with-chatgpt?return_to=/" title="Sair"><strong>${escapeHtml(state.user.fullName || state.user.email.split("@")[0])}</strong><small>${state.user.role === "admin" ? "Administrador" : state.user.role === "viewer" ? "Consulta" : "Operação"}</small></a>`}</div>
+        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span>${GITHUB_PAGES_MODE ? "" : `<a class="user-chip" href="/signout-with-chatgpt?return_to=/" title="Sair"><strong>${escapeHtml(state.user.fullName || state.user.email.split("@")[0])}</strong><small>${state.user.role === "admin" ? "Administrador" : state.user.role === "viewer" ? "Consulta" : "Operação"}</small></a>`}</div>
       </header>
       <main class="app-main">${renderCurrentView()}</main>
       <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("reports", "Relatórios", "▤")}</footer>
@@ -280,28 +301,34 @@ function renderDailyChart(records = state.records) {
   return `<div class="daily-chart" aria-label="Volume diário recebido">${grouped.map((item) => { const total = item.dormente + item.trilho; return `<div class="daily-column"><div class="daily-stack" title="${formatDate(item.key)}: ${formatNumber(total)} itens"><span class="rail" style="height:${(item.trilho / max) * 100}%"></span><span class="sleeper" style="height:${(item.dormente / max) * 100}%"></span></div><small>${formatShortDate(item.key)}</small></div>`; }).join("")}</div>`;
 }
 
-function qualityTotals(records = state.records) {
-  const totals = Object.fromEntries(state.categories.map((category) => [category.id, 0]));
-  records.filter((record) => record.material === "dormente").forEach((record) => state.categories.forEach((category) => { totals[category.id] = number(totals[category.id]) + number(record.quality?.[category.id]); }));
+function qualityTotals(material = "dormente", records = state.records) {
+  const categories = qualityCategories(material);
+  const totals = Object.fromEntries(categories.map((category) => [category.id, 0]));
+  records.filter((record) => record.material === material).forEach((record) => categories.forEach((category) => { totals[category.id] = number(totals[category.id]) + number(record.quality?.[category.id]); }));
   return totals;
 }
 
-function renderQualityDonut(records = state.records) {
-  const totals = qualityTotals(records);
+function renderQualityDonut(material = "dormente", records = state.records) {
+  const categories = qualityCategories(material);
+  const totals = qualityTotals(material, records);
   const sum = Object.values(totals).reduce((total, value) => total + number(value), 0);
   let angle = 0;
-  const stops = state.categories.map((category) => { const start = angle; angle += sum ? (number(totals[category.id]) / sum) * 360 : 0; return `${category.color} ${start}deg ${angle}deg`; });
+  const stops = categories.map((category) => { const start = angle; angle += sum ? (number(totals[category.id]) / sum) * 360 : 0; return `${category.color} ${start}deg ${angle}deg`; });
   const gradient = sum ? `conic-gradient(${stops.join(",")})` : "conic-gradient(#dfe3e8 0deg 360deg)";
-  return `<div class="quality-summary"><div class="quality-donut" style="--quality-donut:${gradient}"><strong>${formatNumber(sum)}</strong><small>ocorrências</small></div><ul>${state.categories.map((category) => `<li><i style="background:${category.color}"></i><span>${escapeHtml(category.label)}</span><strong>${formatNumber(totals[category.id])}</strong></li>`).join("")}</ul></div>`;
+  return `<div class="quality-summary"><div class="quality-donut ${material}" style="--quality-donut:${gradient}"><strong>${formatNumber(sum)}</strong><small>ocorrências</small></div><ul>${categories.map((category) => `<li><i style="background:${category.color}"></i><span>${escapeHtml(category.label)}</span><strong>${formatNumber(totals[category.id])}</strong></li>`).join("")}</ul></div>`;
+}
+
+function renderReportQuality(records) {
+  return `<div class="report-quality-pair"><div><h3>Dormentes</h3>${renderQualityDonut("dormente", records)}</div><div><h3>Trilhos</h3>${renderQualityDonut("trilho", records)}</div></div>`;
 }
 
 function renderDashboard() {
   const value = metrics();
   const recent = state.records.slice(0, 6);
-  return `<section class="view dashboard-view"><article class="dashboard-hero"><div class="hero-copy"><div class="hero-kicker"><span>Projeto Sucuriú</span><i></i><span>Pera ferroviária</span></div><h1>Controle diário de<br />dormentes e trilhos.</h1><p>Notas fiscais, quantidades, qualidade e avanço físico reunidos em uma visão clara da obra.</p><div class="hero-actions no-print">${renderSyncBadge()}${canEdit() ? '<button class="button button-yellow" data-new-record>+ Novo recebimento</button>' : ""}<button class="button button-glass" data-nav="reports">Gerar relatório</button></div></div><div class="hero-corner-brand"><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></div></article>
-    <div class="section-heading"><div><span class="eyebrow">Visão executiva</span><h2>Panorama acumulado</h2></div><span class="updated-label">Atualizado com ${value.totalNfs} notas fiscais</span></div><div class="metrics-grid"><article class="metric-card sleeper"><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs • meta ${formatNumber(TARGET_SLEEPERS)}</small><div class="metric-progress"><i style="width:${value.progress}%"></i></div></article><article class="metric-card rail"><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs • meta ainda não definida</small><div class="metric-line"></div></article><article class="metric-card remaining"><span>Saldo de dormentes</span><strong>${formatNumber(value.remaining)}</strong><small>${value.progress.toFixed(2).replace(".", ",")}% da meta concluída</small><div class="metric-line"></div></article><article class="metric-card quality"><span>Controle de qualidade</span><strong>${formatNumber(value.rejected)}</strong><small>reprovados • ${formatNumber(value.repaired)} reparados</small><div class="metric-line"></div></article></div>
+  return `<section class="view dashboard-view"><article class="dashboard-hero"><div class="hero-copy"><div class="hero-kicker"><span>ARAUCO / Projeto Sucuriú</span><i></i><span>Pera ferroviária</span></div><h1>Controle diário de<br />dormentes e trilhos.</h1><p>Notas fiscais, quantidades, qualidade e avanço físico reunidos em uma visão clara da obra.</p><div class="hero-actions no-print">${renderSyncBadge()}${canEdit() ? '<button class="button button-yellow" data-new-record>+ Novo recebimento</button>' : ""}<button class="button button-glass" data-nav="reports">Gerar relatório</button></div></div><div class="hero-corner-brand"><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></div></article>
+    <div class="section-heading"><div><span class="eyebrow">Visão executiva</span><h2>Panorama acumulado</h2></div><span class="updated-label">Atualizado com ${value.totalNfs} notas fiscais</span></div><div class="metrics-grid"><article class="metric-card sleeper"><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs • meta ${formatNumber(TARGET_SLEEPERS)}</small><div class="metric-progress"><i style="width:${value.progress}%"></i></div></article><article class="metric-card rail"><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs • meta ainda não definida</small><div class="metric-line"></div></article><article class="metric-card remaining"><span>Saldo de dormentes</span><strong>${formatNumber(value.remaining)}</strong><small>${value.progress.toFixed(2).replace(".", ",")}% da meta concluída</small><div class="metric-line"></div></article><article class="metric-card quality"><span>Controle de qualidade</span><strong>${formatNumber(value.rejected + value.railRejected)}</strong><small>${formatNumber(value.rejected)} dormentes • ${formatNumber(value.railRejected)} trilhos reprovados</small><div class="metric-line"></div></article></div>
     <div class="dashboard-grid charts-main"><article class="panel chart-card clickable" data-chart-modal="week" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação semanal</span><h2>Entradas por semana</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("week")}</article><article class="panel chart-card clickable" data-chart-modal="month" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação mensal</span><h2>Evolução por mês</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("month")}</article></div>
-    <div class="dashboard-grid charts-secondary"><article class="panel chart-card clickable" data-chart-modal="daily" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Ritmo da operação</span><h2>Volume diário</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderDailyChart()}</article><article class="panel quality-card clickable" data-chart-modal="quality" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Classificações</span><h2>Qualidade dos dormentes</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut()}</article></div>
+    <div class="dashboard-grid charts-secondary"><article class="panel chart-card clickable" data-chart-modal="daily" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Ritmo da operação</span><h2>Volume diário</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderDailyChart()}</article><article class="panel quality-card clickable" data-chart-modal="quality-dormente" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Classificações</span><h2>Qualidade dos dormentes</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("dormente")}</article><article class="panel quality-card clickable" data-chart-modal="quality-trilho" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Inspeção ferroviária</span><h2>Qualidade dos trilhos</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("trilho")}</article></div>
     <article class="panel recent-panel"><div class="panel-heading"><div><span class="eyebrow">Últimos lançamentos</span><h2>Recebimentos recentes</h2></div><button class="text-button" data-nav="history">Abrir histórico →</button></div>${renderRecordsTable(recent, true)}</article></section>`;
 }
 
@@ -311,8 +338,8 @@ function formRecordFromDom() {
   const invoiceNumbers = [...form.querySelectorAll('[name="invoiceNumber"]')];
   const invoiceQuantities = [...form.querySelectorAll('[name="invoiceQuantity"]')];
   const items = invoiceNumbers.map((input, index) => ({ number: input.value.trim(), quantity: number(invoiceQuantities[index]?.value) })).filter((item) => item.number || item.quantity);
-  const quality = {};
-  state.categories.forEach((category) => { quality[category.id] = number(form.querySelector(`[name="quality_${category.id}"]`)?.value); });
+  const quality = { ...((state.draft || {}).quality || {}) };
+  qualityCategories(form.elements.material.value).forEach((category) => { quality[category.id] = number(form.querySelector(`[name="quality_${category.id}"]`)?.value); });
   return { ...(state.draft || defaultDraft()), material: form.elements.material.value, receivedDate: form.elements.receivedDate.value, receivedTime: form.elements.receivedTime.value, timeKnown: Boolean(form.elements.receivedTime.value), location: form.elements.location.value.trim(), supplier: form.elements.supplier.value.trim(), vehiclePlate: form.elements.vehiclePlate.value.trim().toUpperCase(), inspectorName: form.elements.inspectorName.value.trim(), observations: form.elements.observations.value.trim(), invoiceItems: items.length ? items : [{ number: "", quantity: 0 }], quality };
 }
 
@@ -325,8 +352,8 @@ function renderForm() {
     <article class="panel form-panel"><div class="form-section-title"><span>01</span><div><h2>Material recebido</h2><p>Escolha o tipo antes de preencher as notas.</p></div></div><div class="material-selector"><button type="button" class="material-option ${isSleeper ? "active" : ""}" data-material="dormente"><i class="sleeper-icon"></i><span><strong>Dormentes</strong><small>Meta: ${formatNumber(TARGET_SLEEPERS)} unidades</small></span><b>${isSleeper ? "✓" : ""}</b></button><button type="button" class="material-option ${!isSleeper ? "active" : ""}" data-material="trilho"><i class="rail-icon"></i><span><strong>Trilhos</strong><small>Meta aberta para definição</small></span><b>${!isSleeper ? "✓" : ""}</b></button></div><input type="hidden" name="material" value="${draft.material}" /></article>
     <article class="panel form-panel"><div class="form-section-title"><span>02</span><div><h2>Data, horário e local</h2><p>O horário pode ficar vazio quando ainda não foi confirmado.</p></div></div><div class="field-grid four"><label><span>Data do recebimento *</span><input type="date" name="receivedDate" value="${escapeHtml(draft.receivedDate)}" required /></label><label><span>Horário</span><input type="time" name="receivedTime" value="${escapeHtml(draft.receivedTime || "")}" /></label><label class="span-two"><span>Local / ponto de descarga *</span><input name="location" value="${escapeHtml(draft.location)}" placeholder="Ex.: Pera ferroviária • 2º ponto" required /></label><label class="span-two"><span>Fornecedor / origem</span><input name="supplier" value="${escapeHtml(draft.supplier)}" /></label><label><span>Placa do veículo</span><input name="vehiclePlate" value="${escapeHtml(draft.vehiclePlate || "")}" placeholder="ABC-1D23" /></label><label><span>Responsável</span><input name="inspectorName" value="${escapeHtml(draft.inspectorName || "")}" /></label></div></article>
     <article class="panel form-panel invoice-panel"><div class="form-section-title"><span>03</span><div><h2>Notas fiscais e quantidades</h2><p>Adicione quantas NFs chegaram juntas. A soma aparece no topo.</p></div></div><div class="invoice-head"><span>Nota fiscal</span><span>Quantidade</span><span></span></div><div class="invoice-list">${items.map((item, index) => `<div class="invoice-row" data-invoice-row="${index}"><label><span>NF ${index + 1}</span><input name="invoiceNumber" value="${escapeHtml(item.number)}" inputmode="numeric" placeholder="Número da NF" required /></label><label><span>Quantidade</span><input type="number" min="0" name="invoiceQuantity" value="${item.quantity || ""}" placeholder="0" required /></label><button type="button" class="remove-row" data-remove-invoice="${index}" aria-label="Remover nota" ${items.length === 1 ? "disabled" : ""}>×</button></div>`).join("")}</div><button type="button" class="add-row-button" data-add-invoice>＋ Adicionar outra NF</button><div class="invoice-total"><span>Total automático</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></article>
-    ${isSleeper ? `<article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Separação de qualidade</h2><p>Use somente quando houver ocorrência. Os campos podem permanecer zerados.</p></div></div><div class="quality-input-grid">${state.categories.map((category) => `<label style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><input type="number" min="0" name="quality_${category.id}" value="${number(draft.quality?.[category.id])}" /></label>`).join("")}</div><div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div></article>` : ""}
-    <article class="panel form-panel final-form-panel"><div class="form-section-title"><span>${isSleeper ? "05" : "04"}</span><div><h2>Observações e confirmação</h2><p>Registre qualquer ressalva importante para o relatório.</p></div></div><label><span>Observações</span><textarea name="observations" rows="4" placeholder="Condições da descarga, divergências ou informações complementares">${escapeHtml(draft.observations || "")}</textarea></label><div class="form-actions"><button type="button" class="button button-outline" data-cancel-form>Cancelar</button><button type="button" class="button button-dark" data-save-status="rascunho">Salvar rascunho</button><button type="submit" class="button button-yellow">${state.editingId ? "Atualizar recebimento" : "Salvar recebimento"}</button></div></article></form></section>`;
+    <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Qualidade dos ${isSleeper ? "dormentes" : "trilhos"}</h2><p>Use somente quando houver ocorrência. Os campos podem permanecer zerados.</p></div></div><div class="quality-input-grid">${qualityCategories(draft.material).map((category) => `<label style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><input type="number" min="0" name="quality_${category.id}" value="${number(draft.quality?.[category.id])}" /></label>`).join("")}</div>${isSleeper ? '<div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div>' : '<p class="rail-quality-note">Registre empenamento, corrosão e danos no boleto, alma ou patim antes da liberação.</p>'}</article>
+    <article class="panel form-panel final-form-panel"><div class="form-section-title"><span>05</span><div><h2>Observações e confirmação</h2><p>Registre qualquer ressalva importante para o relatório.</p></div></div><label><span>Observações</span><textarea name="observations" rows="4" placeholder="Condições da descarga, divergências ou informações complementares">${escapeHtml(draft.observations || "")}</textarea></label><div class="form-actions"><button type="button" class="button button-outline" data-cancel-form>Cancelar</button><button type="button" class="button button-dark" data-save-status="rascunho">Salvar rascunho</button><button type="submit" class="button button-yellow">${state.editingId ? "Atualizar recebimento" : "Salvar recebimento"}</button></div></article></form></section>`;
 }
 
 function filteredHistory() {
@@ -341,7 +368,7 @@ function filteredHistory() {
 
 function renderRecordsTable(records, compact = false) {
   if (!records.length) return '<div class="empty-state"><span>▤</span><h3>Nenhum recebimento encontrado</h3><p>Altere os filtros ou faça um novo lançamento.</p></div>';
-  return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Data / horário</th><th>Material</th><th>Nota fiscal</th><th>Local</th><th>Quantidade</th>${compact ? "" : "<th>Qualidade</th>"}<th class="no-print">Ações</th></tr></thead><tbody>${records.map((record) => { const items = invoiceItems(record); const date = record.receivedDate || String(record.receivedAt).slice(0, 10); return `<tr><td><strong>${formatDate(date)}</strong><small>${record.receivedTime ? record.receivedTime : "Horário pendente"}</small></td><td>${materialBadge(record.material)}</td><td><strong>${items.length} NF${items.length === 1 ? "" : "s"}</strong><small>${escapeHtml(items.map((item) => item.number).join(", "))}</small></td><td><strong>${escapeHtml(record.location || "—")}</strong><small>${escapeHtml(record.supplier || "—")}</small></td><td><strong>${formatNumber(recordQuantity(record))}</strong><small>${MATERIALS[record.material]?.unit || "un"}</small></td>${compact ? "" : `<td><strong>${record.material === "dormente" ? `${formatNumber(qualityRejected(record))} reprovados` : "Conferido"}</strong><small>${record.status === "rascunho" ? "Rascunho" : "Concluído"}</small></td>`}<td class="table-actions no-print"><button data-view-record="${record.id}" title="Ver detalhes">Ver</button>${canEdit() ? `<button data-edit-record="${record.id}" title="Editar">Editar</button><button class="danger" data-delete-record="${record.id}" title="Excluir">Excluir</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Data / horário</th><th>Material</th><th>Nota fiscal</th><th>Local</th><th>Quantidade</th>${compact ? "" : "<th>Qualidade</th>"}<th class="no-print">Ações</th></tr></thead><tbody>${records.map((record) => { const items = invoiceItems(record); const date = record.receivedDate || String(record.receivedAt).slice(0, 10); return `<tr><td><strong>${formatDate(date)}</strong><small>${record.receivedTime ? record.receivedTime : "Horário pendente"}</small></td><td>${materialBadge(record.material)}</td><td><strong>${items.length} NF${items.length === 1 ? "" : "s"}</strong><small>${escapeHtml(items.map((item) => item.number).join(", "))}</small></td><td><strong>${escapeHtml(record.location || "—")}</strong><small>${escapeHtml(record.supplier || "—")}</small></td><td><strong>${formatNumber(recordQuantity(record))}</strong><small>${MATERIALS[record.material]?.unit || "un"}</small></td>${compact ? "" : `<td><strong>${formatNumber(qualityRejected(record))} reprovados</strong><small>${record.status === "rascunho" ? "Rascunho" : "Concluído"}</small></td>`}<td class="table-actions no-print"><button data-view-record="${record.id}" title="Ver detalhes">Ver</button>${canEdit() ? `<button data-edit-record="${record.id}" title="Editar">Editar</button><button class="danger" data-delete-record="${record.id}" title="Excluir">Excluir</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`;
 }
 
 function renderHistory() {
@@ -352,9 +379,11 @@ function renderHistory() {
 
 function renderQuality() {
   const sleeperRecords = state.records.filter((record) => record.material === "dormente");
-  const value = metrics(sleeperRecords);
-  const totals = qualityTotals(sleeperRecords);
-  return `<section class="view quality-view"><div class="page-heading"><div><span class="eyebrow">Inspeção e segregação</span><h1>Qualidade dos dormentes</h1><p>Acompanhe ocorrências e adicione novas classificações conforme a rotina de campo.</p></div>${canEdit() ? '<button class="button button-yellow" data-new-sleeper>+ Lançar dormentes</button>' : ""}</div><div class="quality-hero-grid"><article class="panel quality-overview clickable" data-chart-modal="quality" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Distribuição acumulada</span><h2>Ocorrências registradas</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut()}</article><article class="panel quality-kpis"><div><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong></div><div><span>Reprovados</span><strong class="danger-text">${formatNumber(value.rejected)}</strong></div><div><span>Reparados</span><strong class="success-text">${formatNumber(value.repaired)}</strong></div><div><span>Índice liberado</span><strong>${value.sleepers ? (((value.sleepers - value.rejected) / value.sleepers) * 100).toFixed(2).replace(".", ",") : "100,00"}%</strong></div></article></div><div class="quality-category-grid">${state.categories.map((category) => `<article class="category-card" style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><strong>${formatNumber(totals[category.id])}</strong><small>ocorrências acumuladas</small></article>`).join("")}</div>${canEdit() ? `<article class="panel category-manager"><div><span class="eyebrow">Personalizar controle</span><h2>Adicionar nova classificação</h2><p>Ex.: fissuras, ombreira danificada ou cordoalha aparente.</p></div><div class="category-add-form"><input name="qualityNewCategory" placeholder="Nome da classificação" /><button class="button button-dark" data-add-category-page>Adicionar</button></div></article>` : ""}<article class="panel"><div class="panel-heading"><div><span class="eyebrow">Lançamentos</span><h2>Últimos recebimentos de dormentes</h2></div></div>${renderRecordsTable(sleeperRecords.slice(0, 10), true)}</article></section>`;
+  const railRecords = state.records.filter((record) => record.material === "trilho");
+  const value = metrics();
+  const sleeperTotals = qualityTotals("dormente", sleeperRecords);
+  const railTotals = qualityTotals("trilho", railRecords);
+  return `<section class="view quality-view"><div class="page-heading"><div><span class="eyebrow">Inspeção e segregação</span><h1>Qualidade de dormentes e trilhos</h1><p>Acompanhe ocorrências dos dois materiais e registre cada inspeção de campo.</p></div>${canEdit() ? '<div class="heading-actions"><button class="button button-yellow" data-new-sleeper>+ Lançar dormentes</button><button class="button button-outline" data-new-rail>+ Lançar trilhos</button></div>' : ""}</div><div class="quality-hero-grid"><article class="panel quality-overview clickable" data-chart-modal="quality-dormente" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Dormentes</span><h2>Ocorrências acumuladas</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("dormente", sleeperRecords)}</article><article class="panel quality-overview clickable" data-chart-modal="quality-trilho" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Trilhos</span><h2>Inspeções e avarias</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("trilho", railRecords)}</article></div><article class="panel quality-kpis quality-kpis-wide"><div><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong></div><div><span>Dormentes reprovados</span><strong class="danger-text">${formatNumber(value.rejected)}</strong></div><div><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong></div><div><span>Trilhos reprovados</span><strong class="danger-text">${formatNumber(value.railRejected)}</strong></div></article><div class="quality-section-heading"><span class="eyebrow">Separação de dormentes</span><h2>Classificações cadastradas</h2></div><div class="quality-category-grid">${state.categories.map((category) => `<article class="category-card" style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><strong>${formatNumber(sleeperTotals[category.id])}</strong><small>ocorrências acumuladas</small></article>`).join("")}</div><div class="quality-section-heading"><span class="eyebrow">Inspeção dos trilhos</span><h2>Classificações ferroviárias</h2></div><div class="quality-category-grid rail-categories">${RAIL_QUALITY_CATEGORIES.map((category) => `<article class="category-card" style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><strong>${formatNumber(railTotals[category.id])}</strong><small>ocorrências acumuladas</small></article>`).join("")}</div>${canEdit() ? `<article class="panel category-manager"><div><span class="eyebrow">Personalizar dormentes</span><h2>Adicionar nova classificação</h2><p>Ex.: fissuras, ombreira danificada ou cordoalha aparente.</p></div><div class="category-add-form"><input name="qualityNewCategory" placeholder="Nome da classificação" /><button class="button button-dark" data-add-category-page>Adicionar</button></div></article>` : ""}<article class="panel"><div class="panel-heading"><div><span class="eyebrow">Lançamentos</span><h2>Últimas inspeções de materiais</h2></div></div>${renderRecordsTable(state.records.slice(0, 12), true)}</article></section>`;
 }
 
 function reportRecords() {
@@ -362,10 +391,19 @@ function reportRecords() {
   return state.records.filter((record) => { const date = record.receivedDate || String(record.receivedAt).slice(0, 10); return (!from || date >= from) && (!to || date <= to) && (material === "todos" || record.material === material); });
 }
 
+function renderReportImageControls() {
+  return `<article class="panel report-image-control no-print"><div><span class="eyebrow">Registro fotográfico opcional</span><h2>Adicionar imagens ao relatório</h2><p>Selecione até 6 fotos. Elas aparecerão no PDF com o nome do arquivo.</p></div><label class="button button-outline file-button">＋ Selecionar imagens<input type="file" accept="image/*" multiple data-report-images /></label>${state.reportImages.length ? `<div class="report-image-previews">${state.reportImages.map((image) => `<figure><img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.name)}" /><figcaption>${escapeHtml(image.name)}</figcaption><button type="button" data-remove-report-image="${image.id}" aria-label="Remover ${escapeHtml(image.name)}">×</button></figure>`).join("")}</div>` : '<span class="report-image-empty">Nenhuma imagem selecionada.</span>'}</article>`;
+}
+
+function renderReportPhotoSection() {
+  if (!state.reportImages.length) return "";
+  return `<section class="report-photo-section"><h2>Registro fotográfico</h2><div class="report-photo-grid">${state.reportImages.map((image) => `<figure><img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.name)}" /><figcaption>${escapeHtml(image.name)}</figcaption></figure>`).join("")}</div></section>`;
+}
+
 function renderReports() {
   const records = reportRecords();
   const value = metrics(records);
-  return `<section class="view reports-view"><div class="page-heading no-print"><div><span class="eyebrow">Documentação</span><h1>Relatórios da obra</h1><p>Selecione o período e gere o PDF pronto para envio.</p></div><div class="heading-actions"><button class="button button-outline" data-export-report>Exportar planilha</button><button class="button button-yellow" data-print-report>Gerar PDF</button></div></div><article class="panel report-filters no-print"><label><span>Data inicial</span><input type="date" name="reportFrom" value="${state.reportFilters.from}" /></label><label><span>Data final</span><input type="date" name="reportTo" value="${state.reportFilters.to}" /></label><label><span>Material</span><select name="reportMaterial"><option value="todos">Todos os materiais</option><option value="dormente" ${state.reportFilters.material === "dormente" ? "selected" : ""}>Dormentes</option><option value="trilho" ${state.reportFilters.material === "trilho" ? "selected" : ""}>Trilhos</option></select></label><button class="button button-dark" data-apply-report>Atualizar relatório</button></article><article class="print-report"><header class="report-header"><img src="./epya-logo-pdf.svg" alt="EPYA" /><div><span>RELATÓRIO DE RECEBIMENTO DE MATERIAIS</span><h1>Projeto Sucuriú • Pera ferroviária</h1><p>Período: ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}</p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header><div class="report-kpis"><div><span>Dormentes</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs</small></div><div><span>Trilhos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs</small></div><div><span>Total de NFs</span><strong>${formatNumber(value.totalNfs)}</strong><small>${value.records} lançamentos</small></div><div><span>Reprovados</span><strong>${formatNumber(value.rejected)}</strong><small>dormentes</small></div></div><div class="report-charts"><section><h2>Comparação semanal</h2>${renderComparisonChart("week", records)}</section><section><h2>Qualidade</h2>${renderQualityDonut(records)}</section></div><h2 class="report-table-title">Detalhamento por recebimento</h2><div class="report-table"><table><thead><tr><th>Data</th><th>Material</th><th>NFs</th><th>Local</th><th>Qtd.</th></tr></thead><tbody>${records.map((record) => `<tr><td>${formatDate(record.receivedDate)}</td><td>${MATERIALS[record.material].label}</td><td>${escapeHtml(invoiceItems(record).map((item) => item.number).join(", "))}</td><td>${escapeHtml(record.location)}</td><td>${formatNumber(recordQuantity(record))}</td></tr>`).join("")}</tbody></table></div><footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle diário de recebimentos</span></footer></article><article class="panel email-report no-print"><div><span class="eyebrow">Envio rápido</span><h2>Preparar e-mail do relatório</h2><p>O PDF será salvo pelo navegador; depois basta anexá-lo ao e-mail preparado.</p></div><div class="email-fields"><input type="email" name="reportEmail" value="${OWNER_EMAIL}" placeholder="destinatario@empresa.com" /><button class="button button-outline" data-email-report>Preparar e-mail</button></div></article></section>`;
+  return `<section class="view reports-view"><div class="page-heading no-print"><div><span class="eyebrow">Documentação</span><h1>Relatórios da obra</h1><p>Selecione o período, inclua fotos se desejar e gere o PDF pronto para envio.</p></div><div class="heading-actions"><button class="button button-outline" data-export-report>Exportar planilha</button><button class="button button-yellow" data-print-report>Gerar PDF</button></div></div><article class="panel report-filters no-print"><label><span>Data inicial</span><input type="date" name="reportFrom" value="${state.reportFilters.from}" /></label><label><span>Data final</span><input type="date" name="reportTo" value="${state.reportFilters.to}" /></label><label><span>Material</span><select name="reportMaterial"><option value="todos">Todos os materiais</option><option value="dormente" ${state.reportFilters.material === "dormente" ? "selected" : ""}>Dormentes</option><option value="trilho" ${state.reportFilters.material === "trilho" ? "selected" : ""}>Trilhos</option></select></label><button class="button button-dark" data-apply-report>Atualizar relatório</button></article>${renderReportImageControls()}<article class="print-report"><header class="report-header"><img src="./epya-logo-pdf.svg" alt="EPYA" /><div><span>RELATÓRIO DE RECEBIMENTO DE MATERIAIS</span><h1>ARAUCO / Projeto Sucuriú • Pera ferroviária</h1><p>Período: ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}</p><p>Responsável pelo controle: <strong>${CONTROL_OWNER}</strong></p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header><div class="report-kpis"><div><span>Dormentes</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs</small></div><div><span>Trilhos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs</small></div><div><span>Total de NFs</span><strong>${formatNumber(value.totalNfs)}</strong><small>${value.records} lançamentos</small></div><div><span>Reprovados</span><strong>${formatNumber(value.rejected + value.railRejected)}</strong><small>${formatNumber(value.rejected)} dormentes • ${formatNumber(value.railRejected)} trilhos</small></div></div><div class="report-charts"><section class="clickable" data-chart-modal="report-week" tabindex="0"><div class="report-chart-heading"><h2>Comparação semanal</h2><span>Ampliar ↗</span></div>${renderComparisonChart("week", records)}</section><section class="clickable" data-chart-modal="report-quality" tabindex="0"><div class="report-chart-heading"><h2>Qualidade dos materiais</h2><span>Ampliar ↗</span></div>${renderReportQuality(records)}</section></div><h2 class="report-table-title">Detalhamento por recebimento</h2><div class="report-table"><table><thead><tr><th>Data</th><th>Material</th><th>NFs</th><th>Local</th><th>Qtd.</th></tr></thead><tbody>${records.map((record) => `<tr><td>${formatDate(record.receivedDate)}</td><td>${MATERIALS[record.material].label}</td><td>${escapeHtml(invoiceItems(record).map((item) => item.number).join(", "))}</td><td>${escapeHtml(record.location)}</td><td>${formatNumber(recordQuantity(record))}</td></tr>`).join("")}</tbody></table></div>${renderReportPhotoSection()}<footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle diário de recebimentos</span></footer></article><article class="panel email-report no-print"><div><span class="eyebrow">Envio rápido</span><h2>Preparar e-mail do relatório</h2><p>O PDF será salvo pelo navegador; depois basta anexá-lo ao e-mail preparado.</p></div><div class="email-fields"><input type="email" name="reportEmail" value="${OWNER_EMAIL}" placeholder="destinatario@empresa.com" /><button class="button button-outline" data-email-report>Preparar e-mail</button></div></article></section>`;
 }
 
 function renderTeam() {
@@ -378,28 +416,37 @@ function renderModal() {
   let title = "Detalhes";
   let subtitle = "Dados do painel";
   let body = "";
-  if (["week", "month"].includes(state.modal.type)) {
-    const period = state.modal.type;
-    const grouped = groupedComparison(period);
+  if (["week", "month", "report-week", "report-month"].includes(state.modal.type)) {
+    const reportMode = state.modal.type.startsWith("report-");
+    const period = state.modal.type.replace("report-", "");
+    const records = reportMode ? reportRecords() : state.records;
+    const grouped = groupedComparison(period, records);
     title = period === "week" ? "Comparação semanal" : "Comparação mensal";
     subtitle = "Dormentes e trilhos recebidos no período";
-    body = `<div class="modal-chart">${renderComparisonChart(period)}</div><div class="modal-table"><table><thead><tr><th>Período</th><th>Dormentes</th><th>Trilhos</th><th>NFs</th></tr></thead><tbody>${grouped.map((item) => `<tr><td>${comparisonLabel(item, period)}</td><td>${formatNumber(item.dormente)}</td><td>${formatNumber(item.trilho)}</td><td>${item.nfs}</td></tr>`).join("")}</tbody></table></div>`;
+    body = `<div class="modal-chart">${renderComparisonChart(period, records)}</div><div class="modal-table"><table><thead><tr><th>Período</th><th>Dormentes</th><th>Trilhos</th><th>NFs</th></tr></thead><tbody>${grouped.map((item) => `<tr><td>${comparisonLabel(item, period)}</td><td>${formatNumber(item.dormente)}</td><td>${formatNumber(item.trilho)}</td><td>${item.nfs}</td></tr>`).join("")}</tbody></table></div>`;
   } else if (state.modal.type === "daily") {
     title = "Volume diário";
     subtitle = "Ritmo das chegadas por data";
     const grouped = dailyComparison();
     body = `<div class="modal-chart">${renderDailyChart()}</div><div class="modal-table"><table><thead><tr><th>Data</th><th>Dormentes</th><th>Trilhos</th><th>NFs</th></tr></thead><tbody>${grouped.map((item) => `<tr><td>${formatDate(item.key)}</td><td>${formatNumber(item.dormente)}</td><td>${formatNumber(item.trilho)}</td><td>${item.nfs}</td></tr>`).join("")}</tbody></table></div>`;
-  } else if (state.modal.type === "quality") {
-    title = "Qualidade dos dormentes";
-    subtitle = "Separação acumulada por classificação";
-    const totals = qualityTotals();
-    body = `<div class="modal-quality">${renderQualityDonut()}</div><div class="modal-table"><table><thead><tr><th>Classificação</th><th>Quantidade</th></tr></thead><tbody>${state.categories.map((category) => `<tr><td><i class="table-dot" style="background:${category.color}"></i>${escapeHtml(category.label)}</td><td>${formatNumber(totals[category.id])}</td></tr>`).join("")}</tbody></table></div>`;
+  } else if (["quality", "quality-dormente", "quality-trilho"].includes(state.modal.type)) {
+    const material = state.modal.type === "quality-trilho" ? "trilho" : "dormente";
+    const categories = qualityCategories(material);
+    title = `Qualidade dos ${material === "trilho" ? "trilhos" : "dormentes"}`;
+    subtitle = material === "trilho" ? "Inspeção acumulada por tipo de ocorrência" : "Separação acumulada por classificação";
+    const totals = qualityTotals(material);
+    body = `<div class="modal-quality">${renderQualityDonut(material)}</div><div class="modal-table"><table><thead><tr><th>Classificação</th><th>Quantidade</th></tr></thead><tbody>${categories.map((category) => `<tr><td><i class="table-dot" style="background:${category.color}"></i>${escapeHtml(category.label)}</td><td>${formatNumber(totals[category.id])}</td></tr>`).join("")}</tbody></table></div>`;
+  } else if (state.modal.type === "report-quality") {
+    const records = reportRecords();
+    title = "Qualidade dos materiais";
+    subtitle = "Dormentes e trilhos no período selecionado";
+    body = `<div class="modal-quality">${renderReportQuality(records)}</div>`;
   } else if (state.modal.type === "record") {
     const record = state.records.find((item) => item.id === state.modal.id);
     if (!record) return "";
     title = `${MATERIALS[record.material].label} • ${formatDate(record.receivedDate)}`;
     subtitle = `${record.location || "Local não informado"} • ${record.receivedTime || "horário pendente"}`;
-    body = `<div class="record-modal-summary"><div><span>Total recebido</span><strong>${formatNumber(recordQuantity(record))}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Fornecedor</span><strong>${escapeHtml(record.supplier || "—")}</strong><small>${escapeHtml(record.vehiclePlate || "Sem placa")}</small></div></div><div class="modal-table"><table><thead><tr><th>Nota fiscal</th><th>Quantidade</th></tr></thead><tbody>${invoiceItems(record).map((item) => `<tr><td>NF ${escapeHtml(item.number)}</td><td>${formatNumber(item.quantity)} ${MATERIALS[record.material].unit}</td></tr>`).join("")}</tbody></table></div>${record.material === "dormente" ? `<div class="record-quality-list">${state.categories.map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(record.quality?.[category.id])}</strong></span>`).join("")}</div>` : ""}<p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>`;
+    body = `<div class="record-modal-summary"><div><span>Total recebido</span><strong>${formatNumber(recordQuantity(record))}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Fornecedor</span><strong>${escapeHtml(record.supplier || "—")}</strong><small>${escapeHtml(record.vehiclePlate || "Sem placa")}</small></div></div><div class="modal-table"><table><thead><tr><th>Nota fiscal</th><th>Quantidade</th></tr></thead><tbody>${invoiceItems(record).map((item) => `<tr><td>NF ${escapeHtml(item.number)}</td><td>${formatNumber(item.quantity)} ${MATERIALS[record.material].unit}</td></tr>`).join("")}</tbody></table></div><div class="record-quality-list">${qualityCategories(record.material).map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(record.quality?.[category.id])}</strong></span>`).join("")}</div><p class="record-observation"><strong>Responsável:</strong> ${escapeHtml(record.inspectorName || CONTROL_OWNER)}</p><p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>`;
   }
   return `<div class="modal-backdrop" data-modal-close><section class="chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" onclick="event.stopPropagation()"><header><div><span class="eyebrow">${escapeHtml(subtitle)}</span><h2>${escapeHtml(title)}</h2></div><button data-modal-close aria-label="Fechar">×</button></header>${body}<footer><button class="button button-outline" data-modal-close>Fechar</button><button class="button button-dark" data-print-report>Gerar PDF do painel</button></footer></section></div>`;
 }
@@ -408,6 +455,7 @@ function bindEvents() {
   document.querySelectorAll("[data-nav]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.nav)));
   document.querySelectorAll("[data-new-record]").forEach((button) => button.addEventListener("click", () => newRecord()));
   document.querySelector("[data-new-sleeper]")?.addEventListener("click", () => newRecord("dormente"));
+  document.querySelector("[data-new-rail]")?.addEventListener("click", () => newRecord("trilho"));
   document.querySelector("[data-theme-toggle]")?.addEventListener("click", toggleTheme);
   document.querySelectorAll("[data-tv-toggle]").forEach((button) => button.addEventListener("click", toggleTv));
   document.querySelectorAll("[data-install]").forEach((button) => button.addEventListener("click", installApp));
@@ -425,6 +473,8 @@ function bindEvents() {
   document.querySelector("[data-apply-history]")?.addEventListener("click", applyHistoryFilters);
   document.querySelector("[data-clear-history]")?.addEventListener("click", () => { state.historyFilters = { search: "", material: "todos", from: "", to: "" }; render(); });
   document.querySelector("[data-apply-report]")?.addEventListener("click", applyReportFilters);
+  document.querySelector("[data-report-images]")?.addEventListener("change", (event) => addReportImages(event.target.files));
+  document.querySelectorAll("[data-remove-report-image]").forEach((button) => button.addEventListener("click", () => removeReportImage(button.dataset.removeReportImage)));
   bindFormEvents(); bindCategoryEvents();
 }
 
@@ -463,7 +513,7 @@ function newRecord(material = "dormente") { state.draft = defaultDraft(material)
 function editRecord(id) {
   const record = state.records.find((item) => item.id === id);
   if (!record || !canEdit()) return;
-  state.draft = structuredClone({ ...record, receivedDate: record.receivedDate || String(record.receivedAt).slice(0, 10), receivedTime: record.receivedTime || "", invoiceItems: invoiceItems(record), quality: { ...Object.fromEntries(state.categories.map((category) => [category.id, 0])), ...(record.quality || {}) } });
+  state.draft = structuredClone({ ...record, receivedDate: record.receivedDate || String(record.receivedAt).slice(0, 10), receivedTime: record.receivedTime || "", invoiceItems: invoiceItems(record), quality: { ...Object.fromEntries([...state.categories, ...RAIL_QUALITY_CATEGORIES].map((category) => [category.id, 0])), ...(record.quality || {}) } });
   state.editingId = id; navigate("form");
 }
 
@@ -474,7 +524,7 @@ async function saveCurrent(status) {
   if (status !== "rascunho" && !record.receivedDate) return toast("Informe a data do recebimento.", "error");
   if (status !== "rascunho" && !validItems.length) return toast("Informe ao menos uma NF com quantidade.", "error");
   if (status !== "rascunho" && !record.location) return toast("Informe o local de descarga.", "error");
-  record.id = state.editingId || record.id || crypto.randomUUID(); record.status = status; record.invoiceItems = validItems.length ? validItems : record.invoiceItems; record.invoiceNumbers = record.invoiceItems.map((item) => item.number).filter(Boolean).join(", "); record.quantity = record.invoiceItems.reduce((sum, item) => sum + number(item.quantity), 0); record.rejected = record.material === "dormente" ? number(record.quality?.reprovados) : 0; record.approved = Math.max(0, record.quantity - record.rejected); record.receivedAt = `${record.receivedDate || todayInput()}T${record.receivedTime || "00:00"}:00`; record.timeKnown = Boolean(record.receivedTime); record.createdAt = record.createdAt || new Date().toISOString(); record.updatedAt = new Date().toISOString();
+  record.id = state.editingId || record.id || crypto.randomUUID(); record.status = status; record.invoiceItems = validItems.length ? validItems : record.invoiceItems; record.invoiceNumbers = record.invoiceItems.map((item) => item.number).filter(Boolean).join(", "); record.quantity = record.invoiceItems.reduce((sum, item) => sum + number(item.quantity), 0); record.rejected = qualityRejected(record); record.approved = Math.max(0, record.quantity - record.rejected); record.inspectorName = record.inspectorName || CONTROL_OWNER; record.receivedAt = `${record.receivedDate || todayInput()}T${record.receivedTime || "00:00"}:00`; record.timeKnown = Boolean(record.receivedTime); record.createdAt = record.createdAt || new Date().toISOString(); record.updatedAt = new Date().toISOString();
   try {
     if (GITHUB_PAGES_MODE) throw new Error("local");
     const response = await fetch("/api/crms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) });
@@ -511,9 +561,25 @@ async function addCategory(rawName) {
 function applyHistoryFilters() { state.historyFilters = { search: document.querySelector('[name="historySearch"]')?.value || "", material: document.querySelector('[name="historyMaterial"]')?.value || "todos", from: document.querySelector('[name="historyFrom"]')?.value || "", to: document.querySelector('[name="historyTo"]')?.value || "" }; render(); }
 function applyReportFilters() { state.reportFilters = { from: document.querySelector('[name="reportFrom"]')?.value || "", to: document.querySelector('[name="reportTo"]')?.value || "", material: document.querySelector('[name="reportMaterial"]')?.value || "todos" }; render(); }
 
+function addReportImages(fileList) {
+  const available = Math.max(0, 6 - state.reportImages.length);
+  const files = [...(fileList || [])].filter((file) => file.type.startsWith("image/") && file.size <= 8 * 1024 * 1024).slice(0, available);
+  if (!files.length) return toast(available ? "Selecione imagens de até 8 MB." : "O relatório aceita até 6 imagens.", "error");
+  state.reportImages.push(...files.map((file) => ({ id: crypto.randomUUID(), name: file.name, url: URL.createObjectURL(file) })));
+  render();
+  toast(`${files.length} imagem(ns) adicionada(s) ao relatório.`, "success");
+}
+
+function removeReportImage(id) {
+  const image = state.reportImages.find((item) => item.id === id);
+  if (image) URL.revokeObjectURL(image.url);
+  state.reportImages = state.reportImages.filter((item) => item.id !== id);
+  render();
+}
+
 function exportCsv(records) {
-  const rows = [["Data", "Horário", "Material", "Nota Fiscal", "Quantidade", "Local", "Fornecedor", "Pequenas quebras", "Reparados", "Reprovados", "Bolhas", "Observações"]];
-  records.forEach((record) => invoiceItems(record).forEach((item) => rows.push([formatDate(record.receivedDate), record.receivedTime || "não informado", MATERIALS[record.material].label, item.number, item.quantity, record.location, record.supplier, record.quality?.["pequenas-quebras"] || 0, record.quality?.reparados || 0, record.quality?.reprovados || 0, record.quality?.bolhas || 0, record.observations || ""])));
+  const rows = [["Data", "Horário", "Material", "Nota Fiscal", "Quantidade", "Local", "Fornecedor", "Pequenas quebras", "Reparados", "Dormentes reprovados", "Bolhas", "Empenamento / torção", "Oxidação / corrosão", "Danos no boleto", "Danos na alma", "Danos no patim", "Trilhos reprovados", "Responsável", "Observações"]];
+  records.forEach((record) => invoiceItems(record).forEach((item) => rows.push([formatDate(record.receivedDate), record.receivedTime || "não informado", MATERIALS[record.material].label, item.number, item.quantity, record.location, record.supplier, record.quality?.["pequenas-quebras"] || 0, record.quality?.reparados || 0, record.quality?.reprovados || 0, record.quality?.bolhas || 0, record.quality?.["trilho-empenamento"] || 0, record.quality?.["trilho-oxidacao"] || 0, record.quality?.["trilho-boleto"] || 0, record.quality?.["trilho-alma"] || 0, record.quality?.["trilho-patim"] || 0, record.quality?.["trilho-reprovados"] || 0, record.inspectorName || CONTROL_OWNER, record.observations || ""])));
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
   const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); link.download = `recebimentos-epya-${todayInput()}.csv`; link.click(); URL.revokeObjectURL(link.href); toast("Planilha gerada.", "success");
 }
@@ -555,7 +621,7 @@ async function loadRecordsAndCategories() {
 }
 
 async function loadTeam() {
-  try { const response = await fetch("/api/users", { headers: { Accept: "application/json" } }); if (!response.ok) throw new Error("Falha"); const data = await response.json(); state.team = Array.isArray(data.users) ? data.users : []; } catch { state.team = [{ id: "owner", email: OWNER_EMAIL, fullName: "Darci Brum", role: "admin", active: true }]; }
+  try { const response = await fetch("/api/users", { headers: { Accept: "application/json" } }); if (!response.ok) throw new Error("Falha"); const data = await response.json(); state.team = Array.isArray(data.users) ? data.users : []; } catch { state.team = [{ id: "owner", email: OWNER_EMAIL, fullName: CONTROL_OWNER, role: "admin", active: true }]; }
   state.teamLoaded = true; if (state.view === "team") render();
 }
 

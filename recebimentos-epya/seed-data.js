@@ -258,7 +258,7 @@ export function expandSeedGroups() {
       rejected: 0,
       quality,
       vehiclePlate: "",
-      inspectorName: "Darci Brum",
+      inspectorName: "Darci de Brum",
       observations: group.note || "Carga inicial com os dados reais informados.",
       createdAt: `${group.date}T00:00:00.000Z`,
       updatedAt: `${group.date}T00:00:00.000Z`,
