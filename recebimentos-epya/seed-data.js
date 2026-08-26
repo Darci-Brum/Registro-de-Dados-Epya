@@ -10,6 +10,16 @@ export const DEFAULT_CATEGORIES = [
 ];
 
 export const SLEEPER_QUALITY_BY_INVOICE = {
+  "193": { "pequenas-quebras": 7, reparados: 3 },
+  "195": { "pequenas-quebras": 6, reparados: 3 },
+  "194": { "pequenas-quebras": 6, reparados: 2 },
+  "192": { "pequenas-quebras": 6, reparados: 3 },
+  "196": { "pequenas-quebras": 6, reparados: 3 },
+  "197": { "pequenas-quebras": 6, reparados: 2 },
+  "202": { "pequenas-quebras": 6, reparados: 3 },
+  "199": { "pequenas-quebras": 6, reparados: 3 },
+  "201": { "pequenas-quebras": 6, reparados: 2 },
+  "198": { "pequenas-quebras": 6, reparados: 3 },
   "203": { "pequenas-quebras": 7 },
   "204": { "pequenas-quebras": 3 },
   "205": { "pequenas-quebras": 5 },
@@ -66,6 +76,7 @@ export const SEED_GROUPS = [
     location: "KM 4+560",
     supplier: "Cavan / Arauco",
     items: [["193", 100], ["195", 112], ["194", 100], ["192", 112]],
+    note: "Distribuição estimada por NF: o total diário de pequenas quebras e reparados foi informado sem identificação individual das notas.",
   },
   {
     id: "dormente-2026-08-11-km-4560",
@@ -74,6 +85,7 @@ export const SEED_GROUPS = [
     location: "KM 4+560",
     supplier: "Cavan / Arauco",
     items: [["196", 112], ["197", 90]],
+    note: "Distribuição estimada por NF: o total diário de pequenas quebras e reparados foi informado sem identificação individual das notas.",
   },
   {
     id: "dormente-2026-08-12-km-4560",
@@ -82,6 +94,7 @@ export const SEED_GROUPS = [
     location: "KM 4+560",
     supplier: "Cavan / Arauco",
     items: [["202", 116], ["199", 112], ["201", 98], ["198", 108]],
+    note: "Distribuição estimada por NF: o total diário de pequenas quebras e reparados foi informado sem identificação individual das notas.",
   },
   {
     id: "dormente-2026-08-13-km-4560",
@@ -358,6 +371,8 @@ export function expandSeedGroups() {
       vehiclePlate: "",
       inspectorName: "Darci de Brum",
       observations: group.note || "Carga inicial com os dados reais informados.",
+      rejections: [],
+      _cleanupMolde57Cav1: true,
       createdAt: `${group.date}T00:00:00.000Z`,
       updatedAt: `${group.date}T00:00:00.000Z`,
       seeded: true,

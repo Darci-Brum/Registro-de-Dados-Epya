@@ -12,6 +12,7 @@ const OUTBOX_KEY = "epya-recebimentos-outbox-v2";
 const THEME_KEY = "epya-recebimentos-theme";
 const AUTH_CACHE_KEY = "epya-recebimentos-access-v2";
 const CATEGORY_KEY = "epya-recebimentos-categories-v1";
+const REJECTION_REASON_KEY = "epya-recebimentos-rejection-reasons-v1";
 const requestedView = new URLSearchParams(window.location.search).get("view");
 const CONTROL_OWNER = "Darci de Brum";
 
@@ -35,6 +36,7 @@ const state = {
     : "dashboard",
   records: [],
   categories: readCategories(),
+  rejectionReasons: readRejectionReasons(),
   draft: null,
   editingId: "",
   loading: true,
@@ -54,6 +56,7 @@ const state = {
   tvMode: false,
   modal: null,
   reportImages: [],
+  nfQualityFilter: "",
   historyFilters: { search: "", material: "todos", from: "", to: "" },
   reportFilters: { from: "2026-08-18", to: "2026-08-24", material: "dormente" },
 };
@@ -110,6 +113,19 @@ function saveCategoriesLocal() {
   localStorage.setItem(CATEGORY_KEY, JSON.stringify(state.categories));
 }
 
+function readRejectionReasons() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(REJECTION_REASON_KEY) || "[]");
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRejectionReasonsLocal() {
+  localStorage.setItem(REJECTION_REASON_KEY, JSON.stringify(state.rejectionReasons));
+}
+
 function qualityCategories(material) {
   return material === "trilho" ? RAIL_QUALITY_CATEGORIES : state.categories;
 }
@@ -128,7 +144,9 @@ function defaultDraft(material = "dormente") {
     inspectorName: CONTROL_OWNER,
     invoiceItems: [{ number: "", quantity: "" }],
     quality: Object.fromEntries([...state.categories, ...RAIL_QUALITY_CATEGORIES].map((category) => [category.id, 0])),
+    rejections: [],
     observations: "",
+    _cleanupMolde57Cav1: true,
   };
 }
 
@@ -156,6 +174,45 @@ function sleeperQualitySummary(quality = {}) {
     breaks: number(quality.quebras),
     rejected: number(quality.reprovados),
   };
+}
+
+function rejectionRows(record) {
+  const existing = Array.isArray(record?.rejections) ? record.rejections : [];
+  const target = Math.max(existing.length, number(record?.quality?.reprovados ?? record?.rejected));
+  return Array.from({ length: target }, (_, index) => ({
+    id: existing[index]?.id || crypto.randomUUID(),
+    invoiceNumber: String(existing[index]?.invoiceNumber || ""),
+    mold: String(existing[index]?.mold || ""),
+    cavity: String(existing[index]?.cavity || ""),
+    reasonId: String(existing[index]?.reasonId || ""),
+    reason: String(existing[index]?.reason || ""),
+  }));
+}
+
+function rejectionsForInvoice(record, invoiceNumber) {
+  return rejectionRows(record).filter((rejection) => rejection.invoiceNumber === String(invoiceNumber));
+}
+
+function rejectionDetails(record, invoiceNumber) {
+  return rejectionsForInvoice(record, invoiceNumber).map((rejection) => {
+    const reason = rejection.reason || state.rejectionReasons.find((item) => item.id === rejection.reasonId)?.label || "motivo pendente";
+    return `Molde ${rejection.mold || "—"} / Cavidade ${rejection.cavity || "—"} — ${reason}`;
+  }).join(" | ");
+}
+
+function reconcileInvoiceQuality(record) {
+  if (record.material !== "dormente" || !Array.isArray(record.invoiceItems) || !record.invoiceItems.length) return record;
+  record.invoiceItems = record.invoiceItems.map((item) => ({ ...item, quality: { ...Object.fromEntries(state.categories.map((category) => [category.id, 0])), ...(item.quality || {}) } }));
+  state.categories.filter((category) => category.id !== "reprovados").forEach((category) => {
+    const target = number(record.quality?.[category.id]);
+    const current = record.invoiceItems.reduce((sum, item) => sum + number(item.quality?.[category.id]), 0);
+    if (current === target) return;
+    const base = Math.floor(target / record.invoiceItems.length);
+    let remainder = target % record.invoiceItems.length;
+    record.invoiceItems.forEach((item) => { item.quality[category.id] = base + (remainder-- > 0 ? 1 : 0); });
+  });
+  record.invoiceItems.forEach((item) => { item.quality.reprovados = rejectionsForInvoice(record, item.number).length; });
+  return record;
 }
 
 function recordQuantity(record) {
@@ -339,6 +396,35 @@ function renderQualityDonut(material = "dormente", records = state.records) {
   return `<div class="quality-summary"><div class="quality-donut ${material}" style="--quality-donut:${gradient}"><strong>${formatNumber(sum)}</strong><small>ocorrências</small></div><ul>${categories.map((category) => `<li tabindex="0" data-tooltip="${escapeHtml(`${category.label}: ${formatNumber(totals[category.id])} ocorrência(s)`)}"><i style="background:${category.color}"></i><span>${escapeHtml(category.label)}</span><strong>${formatNumber(totals[category.id])}</strong></li>`).join("")}</ul></div>`;
 }
 
+function sleeperInvoiceQualityRows(records = state.records, filter = "") {
+  const query = String(filter || "").trim().toLowerCase().replace(/^nf\s*/i, "");
+  const rows = records.filter((record) => record.material === "dormente").flatMap((record) => invoiceItems(record).map((item, index) => {
+    const quality = invoiceQuality(record, item, index);
+    const rejected = Math.max(number(quality.reprovados), rejectionsForInvoice(record, item.number).length);
+    const defects = qualityCategories("dormente").filter((category) => category.id !== "reprovados").reduce((sum, category) => sum + number(quality[category.id]), 0) + rejected;
+    const received = number(item.quantity);
+    return {
+      record,
+      item,
+      received,
+      defects,
+      percentage: received ? (defects / received) * 100 : 0,
+    };
+  }));
+  return rows.filter(({ item }) => !query || String(item.number).toLowerCase().includes(query)).sort((a, b) => `${a.record.receivedDate}-${String(a.item.number).padStart(12, "0")}`.localeCompare(`${b.record.receivedDate}-${String(b.item.number).padStart(12, "0")}`));
+}
+
+function renderNfQualityChart(records = state.records, filter = state.nfQualityFilter, expanded = false) {
+  const allRows = sleeperInvoiceQualityRows(records, filter);
+  const rows = filter || expanded ? allRows : allRows.filter((row) => row.defects > 0).slice(-12);
+  if (!rows.length) return '<div class="nf-quality-empty"><strong>Nenhuma NF encontrada</strong><span>Limpe a busca ou informe outro número.</span></div>';
+  return `<div class="nf-quality-chart" aria-label="Percentual de ocorrências de qualidade por nota fiscal">${rows.map((row) => {
+    const percentage = Math.min(100, row.percentage);
+    const percentageLabel = row.percentage.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    return `<article class="nf-quality-row" tabindex="0" data-tooltip="${escapeHtml(`NF ${row.item.number} • ${formatNumber(row.received)} recebidos • ${formatNumber(row.defects)} ocorrências • ${percentageLabel}%`)}"><div class="nf-quality-label"><strong>NF ${escapeHtml(row.item.number)}</strong><small>${formatDate(row.record.receivedDate)}</small></div><div class="nf-quality-bars"><span class="received"><i style="width:100%"></i><b>Recebido: ${formatNumber(row.received)} (100%)</b></span><span class="defects"><i style="width:${percentage}%"></i><b>Defeitos: ${formatNumber(row.defects)} (${percentageLabel}%)</b></span></div></article>`;
+  }).join("")}</div>`;
+}
+
 function renderReportQuality(records) {
   return `<div class="report-quality-pair"><div><h3>Dormentes</h3>${renderQualityDonut("dormente", records)}</div><div><h3>Trilhos</h3>${renderQualityDonut("trilho", records)}</div></div>`;
 }
@@ -349,8 +435,13 @@ function renderDashboard() {
   return `<section class="view dashboard-view"><article class="dashboard-hero"><div class="hero-copy"><div class="hero-kicker"><span>Controle de recebimentos</span></div><h1>Controle diário de<br />dormentes e trilhos.</h1><p>Notas fiscais, quantidades, qualidade e avanço físico reunidos em uma visão clara da obra.</p><div class="hero-actions no-print">${renderSyncBadge()}${canEdit() ? '<button class="button button-yellow" data-new-record>+ Novo recebimento</button>' : ""}<button class="button button-glass" data-nav="reports">Gerar relatório</button></div></div><div class="hero-corner-brand"><img src="./arauco-sucuriu-logo.svg" alt="Símbolo do Projeto Sucuriú" /><span><strong>ARAUCO</strong><small>Projeto Sucuriú</small></span></div><aside class="clipboard-motto" aria-label="Onde há controle, há qualidade">Onde há controle, há qualidade.</aside><span class="hero-signature" aria-label="Darci Brum">Darci Brum</span></article>
     <div class="section-heading"><div><span class="eyebrow">Visão executiva</span><h2>Panorama acumulado</h2></div><span class="updated-label">Atualizado com ${value.totalNfs} notas fiscais</span></div><div class="metrics-grid"><article class="metric-card sleeper"><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs • meta ${formatNumber(TARGET_SLEEPERS)}</small><div class="metric-progress"><i style="width:${value.progress}%"></i></div></article><article class="metric-card rail"><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs • meta ainda não definida</small><div class="metric-line"></div></article><article class="metric-card remaining"><span>Saldo de dormentes</span><strong>${formatNumber(value.remaining)}</strong><small>${value.progress.toFixed(2).replace(".", ",")}% da meta concluída</small><div class="metric-line"></div></article><article class="metric-card quality"><span>Ocorrências de qualidade</span><strong>${formatNumber(value.sleeperOccurrences + value.railOccurrences)}</strong><small>${formatNumber(value.sleeperOccurrences)} em dormentes • ${formatNumber(value.railOccurrences)} em trilhos</small><div class="metric-line"></div></article></div>
     <div class="dashboard-grid charts-main"><article class="panel chart-card clickable" data-chart-modal="week" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação semanal</span><h2>Entradas por semana</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("week")}</article><article class="panel chart-card clickable" data-chart-modal="month" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação mensal</span><h2>Evolução por mês</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("month")}</article></div>
+    <article class="panel nf-quality-panel"><div class="panel-heading"><div><span class="eyebrow">Comparação por nota fiscal</span><h2>Recebidos × defeitos dos dormentes</h2><p>O percentual mostra as ocorrências registradas em relação à quantidade recebida em cada NF.</p></div><button class="text-button" data-chart-modal="nf-quality">Ampliar gráfico ↗</button></div><form class="nf-quality-search no-print" data-nf-quality-form><label><span>Pesquisar por NF</span><input name="nfQualitySearch" value="${escapeHtml(state.nfQualityFilter)}" inputmode="numeric" placeholder="Ex.: 221" /></label><button class="button button-dark" type="submit">Pesquisar</button>${state.nfQualityFilter ? '<button class="button button-outline" type="button" data-clear-nf-quality>Limpar</button>' : ""}</form>${renderNfQualityChart()}</article>
     <div class="dashboard-grid charts-secondary"><article class="panel chart-card clickable" data-chart-modal="daily" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Ritmo da operação</span><h2>Volume diário</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderDailyChart()}</article><article class="panel quality-card clickable" data-chart-modal="quality-dormente" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Classificações</span><h2>Qualidade dos dormentes</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("dormente")}</article><article class="panel quality-card clickable" data-chart-modal="quality-trilho" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Inspeção ferroviária</span><h2>Qualidade dos trilhos</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("trilho")}</article></div>
     <article class="panel recent-panel"><div class="panel-heading"><div><span class="eyebrow">Últimos lançamentos</span><h2>Recebimentos recentes</h2></div><button class="text-button" data-nav="history">Abrir histórico →</button></div>${renderRecordsTable(recent, true)}</article></section>`;
+}
+
+function renderRejectionSection(draft, items, rejections) {
+  return `<section class="rejection-control"><div class="rejection-heading"><div><span class="eyebrow">Dormentes reprovados</span><h3>Identificação individual da reprovação</h3><p>Adicione um registro para cada dormente reprovado e informe a NF, o molde, a cavidade e o motivo.</p></div><button type="button" class="button button-dark" data-add-rejection>＋ Adicionar reprovado</button></div>${rejections.length ? `<div class="rejection-list">${rejections.map((rejection, index) => { const invoiceOptions = items.filter((item) => item.number).map((item) => `<option value="${escapeHtml(item.number)}" ${String(item.number) === rejection.invoiceNumber ? "selected" : ""}>NF ${escapeHtml(item.number)}</option>`).join(""); const reasonOptions = state.rejectionReasons.map((reason) => `<option value="${escapeHtml(reason.id)}" ${reason.id === rejection.reasonId ? "selected" : ""}>${escapeHtml(reason.label)}</option>`).join(""); return `<article class="rejection-row" data-rejection-row data-rejection-id="${escapeHtml(rejection.id)}"><header><strong>Dormente reprovado ${index + 1}</strong><button type="button" data-remove-rejection="${index}" aria-label="Remover dormente reprovado ${index + 1}">×</button></header><div class="rejection-fields"><label><span>Nota fiscal *</span><select name="rejectionInvoice" required><option value="">Selecione a NF</option>${invoiceOptions}</select></label><label><span>Molde *</span><input name="rejectionMold" value="${escapeHtml(rejection.mold)}" placeholder="Número do molde" required /></label><label><span>Cavidade *</span><input name="rejectionCavity" value="${escapeHtml(rejection.cavity)}" placeholder="Número da cavidade" required /></label><label><span>Motivo da reprovação *</span><select name="rejectionReason" required><option value="">Selecione o motivo</option>${reasonOptions}</select></label></div></article>`; }).join("")}</div>` : '<div class="rejection-empty">Nenhum dormente reprovado neste lançamento.</div>'}<div class="rejection-reason-manager"><div><strong>Motivos de reprovação</strong><small>Cadastre os motivos conforme precisar. Eles ficarão disponíveis nos próximos lançamentos.</small></div><input name="newRejectionReason" placeholder="Ex.: trinca estrutural" /><button type="button" class="button button-outline" data-add-rejection-reason>Adicionar motivo</button></div></section>`;
 }
 
 function formRecordFromDom() {
@@ -358,10 +449,16 @@ function formRecordFromDom() {
   if (!form) return state.draft || defaultDraft();
   const invoiceNumbers = [...form.querySelectorAll('[name="invoiceNumber"]')];
   const invoiceQuantities = [...form.querySelectorAll('[name="invoiceQuantity"]')];
-  const items = invoiceNumbers.map((input, index) => ({ number: input.value.trim(), quantity: number(invoiceQuantities[index]?.value) })).filter((item) => item.number || item.quantity);
+  const draftItems = invoiceItems(state.draft || {});
+  const items = invoiceNumbers.map((input, index) => { const numberValue = input.value.trim(); const previous = draftItems.find((item) => String(item.number) === numberValue) || draftItems[index]; return { number: numberValue, quantity: number(invoiceQuantities[index]?.value), ...(previous?.quality ? { quality: structuredClone(previous.quality) } : {}) }; }).filter((item) => item.number || item.quantity);
   const quality = { ...((state.draft || {}).quality || {}) };
   qualityCategories(form.elements.material.value).forEach((category) => { quality[category.id] = number(form.querySelector(`[name="quality_${category.id}"]`)?.value); });
-  return { ...(state.draft || defaultDraft()), material: form.elements.material.value, receivedDate: form.elements.receivedDate.value, receivedTime: form.elements.receivedTime.value, timeKnown: Boolean(form.elements.receivedTime.value), location: form.elements.location.value.trim(), supplier: form.elements.supplier.value.trim(), vehiclePlate: form.elements.vehiclePlate.value.trim().toUpperCase(), inspectorName: form.elements.inspectorName.value.trim(), observations: form.elements.observations.value.trim(), invoiceItems: items.length ? items : [{ number: "", quantity: 0 }], quality };
+  const rejections = [...form.querySelectorAll("[data-rejection-row]")].map((row) => {
+    const reasonId = row.querySelector('[name="rejectionReason"]')?.value || "";
+    return { id: row.dataset.rejectionId || crypto.randomUUID(), invoiceNumber: row.querySelector('[name="rejectionInvoice"]')?.value || "", mold: row.querySelector('[name="rejectionMold"]')?.value.trim() || "", cavity: row.querySelector('[name="rejectionCavity"]')?.value.trim() || "", reasonId, reason: state.rejectionReasons.find((item) => item.id === reasonId)?.label || "" };
+  });
+  if (form.elements.material.value === "dormente") quality.reprovados = rejections.length;
+  return { ...(state.draft || defaultDraft()), material: form.elements.material.value, receivedDate: form.elements.receivedDate.value, receivedTime: form.elements.receivedTime.value, timeKnown: Boolean(form.elements.receivedTime.value), location: form.elements.location.value.trim(), supplier: form.elements.supplier.value.trim(), vehiclePlate: form.elements.vehiclePlate.value.trim().toUpperCase(), inspectorName: form.elements.inspectorName.value.trim(), observations: form.elements.observations.value.trim(), invoiceItems: items.length ? items : [{ number: "", quantity: 0 }], quality, rejections, _cleanupMolde57Cav1: true };
 }
 
 function renderForm() {
@@ -369,11 +466,12 @@ function renderForm() {
   const items = draft.invoiceItems?.length ? draft.invoiceItems : [{ number: "", quantity: "" }];
   const total = items.reduce((sum, item) => sum + number(item.quantity), 0);
   const isSleeper = draft.material === "dormente";
+  const rejections = isSleeper ? rejectionRows(draft) : [];
   return `<section class="view form-view"><div class="page-heading"><div><button class="back-link" data-nav="dashboard">← Voltar ao painel</button><span class="eyebrow">${state.editingId ? "Editar lançamento" : "Novo recebimento"}</span><h1>${state.editingId ? "Atualizar recebimento" : "Registrar chegada do dia"}</h1><p>Informe as NFs e as quantidades. O total é calculado automaticamente.</p></div><div class="heading-summary"><span>Total deste lançamento</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></div><form id="receiving-form" class="receiving-form">
     <article class="panel form-panel"><div class="form-section-title"><span>01</span><div><h2>Material recebido</h2><p>Escolha o tipo antes de preencher as notas.</p></div></div><div class="material-selector"><button type="button" class="material-option ${isSleeper ? "active" : ""}" data-material="dormente"><i class="sleeper-icon"></i><span><strong>Dormentes</strong><small>Meta: ${formatNumber(TARGET_SLEEPERS)} unidades</small></span><b>${isSleeper ? "✓" : ""}</b></button><button type="button" class="material-option ${!isSleeper ? "active" : ""}" data-material="trilho"><i class="rail-icon"></i><span><strong>Trilhos</strong><small>Meta aberta para definição</small></span><b>${!isSleeper ? "✓" : ""}</b></button></div><input type="hidden" name="material" value="${draft.material}" /></article>
     <article class="panel form-panel"><div class="form-section-title"><span>02</span><div><h2>Data, horário e local</h2><p>O horário pode ficar vazio quando ainda não foi confirmado.</p></div></div><div class="field-grid four"><label><span>Data do recebimento *</span><input type="date" name="receivedDate" value="${escapeHtml(draft.receivedDate)}" required /></label><label><span>Horário</span><input type="time" name="receivedTime" value="${escapeHtml(draft.receivedTime || "")}" /></label><label class="span-two"><span>Local / ponto de descarga *</span><input name="location" value="${escapeHtml(draft.location)}" placeholder="Ex.: Frente Norte, pátio ou ponto de descarga" required /></label><label class="span-two"><span>Fornecedor / origem</span><input name="supplier" value="${escapeHtml(draft.supplier)}" /></label><label><span>Placa do veículo</span><input name="vehiclePlate" value="${escapeHtml(draft.vehiclePlate || "")}" placeholder="ABC-1D23" /></label><label><span>Responsável</span><input name="inspectorName" value="${escapeHtml(draft.inspectorName || "")}" /></label></div></article>
     <article class="panel form-panel invoice-panel"><div class="form-section-title"><span>03</span><div><h2>Notas fiscais e quantidades</h2><p>Adicione quantas NFs chegaram juntas. A soma aparece no topo.</p></div></div><div class="invoice-head"><span>Nota fiscal</span><span>Quantidade</span><span></span></div><div class="invoice-list">${items.map((item, index) => `<div class="invoice-row" data-invoice-row="${index}"><label><span>NF ${index + 1}</span><input name="invoiceNumber" value="${escapeHtml(item.number)}" inputmode="numeric" placeholder="Número da NF" required /></label><label><span>Quantidade</span><input type="number" min="0" name="invoiceQuantity" value="${item.quantity || ""}" placeholder="0" required /></label><button type="button" class="remove-row" data-remove-invoice="${index}" aria-label="Remover nota" ${items.length === 1 ? "disabled" : ""}>×</button></div>`).join("")}</div><button type="button" class="add-row-button" data-add-invoice>＋ Adicionar outra NF</button><div class="invoice-total"><span>Total automático</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></article>
-    <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Qualidade dos ${isSleeper ? "dormentes" : "trilhos"}</h2><p>Use somente quando houver ocorrência. Os campos podem permanecer zerados.</p></div></div><div class="quality-input-grid">${qualityCategories(draft.material).map((category) => `<label style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><input type="number" min="0" name="quality_${category.id}" value="${number(draft.quality?.[category.id])}" /></label>`).join("")}</div>${isSleeper ? '<div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div>' : '<p class="rail-quality-note">Registre empenamento, corrosão e danos no boleto, alma ou patim antes da liberação.</p>'}</article>
+    <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Qualidade dos ${isSleeper ? "dormentes" : "trilhos"}</h2><p>Use somente quando houver ocorrência. Os campos podem permanecer zerados.</p></div></div><div class="quality-input-grid">${qualityCategories(draft.material).map((category) => { const rejectedField = isSleeper && category.id === "reprovados"; return `<label style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><input type="number" min="0" name="quality_${category.id}" value="${rejectedField ? rejections.length : number(draft.quality?.[category.id])}" ${rejectedField ? "readonly aria-describedby=\"rejected-help\"" : ""} /></label>`; }).join("")}</div>${isSleeper ? `<p id="rejected-help" class="rejected-help">O total de reprovados é calculado automaticamente pelos registros individuais abaixo.</p><div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div>${renderRejectionSection(draft, items, rejections)}` : '<p class="rail-quality-note">Registre empenamento, corrosão e danos no boleto, alma ou patim antes da liberação.</p>'}</article>
     <article class="panel form-panel final-form-panel"><div class="form-section-title"><span>05</span><div><h2>Observações e confirmação</h2><p>Registre qualquer ressalva importante para o relatório.</p></div></div><label><span>Observações</span><textarea name="observations" rows="4" placeholder="Condições da descarga, divergências ou informações complementares">${escapeHtml(draft.observations || "")}</textarea></label><div class="form-actions"><button type="button" class="button button-outline" data-cancel-form>Cancelar</button><button type="button" class="button button-dark" data-save-status="rascunho">Salvar rascunho</button><button type="submit" class="button button-yellow">${state.editingId ? "Atualizar recebimento" : "Salvar recebimento"}</button></div></article></form></section>`;
 }
 
@@ -438,6 +536,16 @@ function reportInvoiceRows(records) {
   })));
 }
 
+function reportRejectionRows(records) {
+  return records.flatMap((record) => rejectionRows(record).map((rejection) => ({ record, rejection })));
+}
+
+function renderReportRejections(records) {
+  const rows = reportRejectionRows(records);
+  if (!rows.length) return "";
+  return `<section class="report-rejections"><h2>Dormentes reprovados</h2><table><thead><tr><th>Data</th><th>NF</th><th>Molde</th><th>Cavidade</th><th>Motivo da reprovação</th></tr></thead><tbody>${rows.map(({ record, rejection }) => `<tr><td>${formatDate(record.receivedDate)}</td><td>${escapeHtml(rejection.invoiceNumber || "—")}</td><td>${escapeHtml(rejection.mold || "—")}</td><td>${escapeHtml(rejection.cavity || "—")}</td><td>${escapeHtml(rejection.reason || state.rejectionReasons.find((reason) => reason.id === rejection.reasonId)?.label || "—")}</td></tr>`).join("")}</tbody></table></section>`;
+}
+
 function renderReports() {
   const records = reportRecords();
   const value = metrics(records);
@@ -453,7 +561,7 @@ function renderReports() {
       <div class="report-kpis"><div><span>Dormentes</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs</small></div><div><span>Trilhos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs</small></div><div><span>Total de NFs</span><strong>${formatNumber(value.totalNfs)}</strong><small>${value.records} lançamentos</small></div><div><span>Ocorrências em dormentes</span><strong>${formatNumber(occurrences)}</strong><small>PQ ${formatNumber(sleeperTotals["pequenas-quebras"])} • R ${formatNumber(sleeperTotals.reparados)} • B ${formatNumber(sleeperTotals.bolhas)} • Q ${formatNumber(sleeperTotals.quebras)}</small></div></div>
       <div class="report-charts"><section class="clickable" data-chart-modal="report-week" tabindex="0"><div class="report-chart-heading"><h2>Comparação semanal</h2><span>Ampliar ↗</span></div>${renderComparisonChart("week", records)}</section><section class="clickable" data-chart-modal="report-quality" tabindex="0"><div class="report-chart-heading"><h2>Qualidade dos materiais</h2><span>Ampliar ↗</span></div>${renderReportQuality(records)}</section></div>
       <h2 class="report-table-title">Detalhamento por nota fiscal</h2><div class="report-table"><table><thead><tr><th>Data</th><th>Material</th><th>NF</th><th>Local</th><th>Qtd.</th><th>PQ</th><th>R</th><th>B</th><th>Quebras</th></tr></thead><tbody>${rows.map(({ record, item, quality }) => { const summary = sleeperQualitySummary(quality); return `<tr><td>${formatDate(record.receivedDate)}</td><td>${MATERIALS[record.material].label}</td><td>${escapeHtml(item.number)}</td><td>${escapeHtml(record.location)}</td><td>${formatNumber(item.quantity)}</td><td>${formatNumber(summary.smallBreaks)}</td><td>${formatNumber(summary.repaired)}</td><td>${formatNumber(summary.bubbles)}</td><td>${formatNumber(summary.breaks)}</td></tr>`; }).join("")}</tbody></table></div>
-      ${renderReportPhotoSection()}<footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle diário de recebimentos</span></footer></article>
+      ${renderReportRejections(records)}${renderReportPhotoSection()}<footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle diário de recebimentos</span></footer></article>
     <article class="panel email-report no-print"><div><span class="eyebrow">Compartilhamento</span><h2>Enviar relatório</h2><p>Gere o PDF e depois abra o WhatsApp para anexar o arquivo salvo. Você também pode preparar o envio por e-mail.</p></div><div class="email-fields"><input type="email" name="reportEmail" value="${OWNER_EMAIL}" placeholder="destinatario@empresa.com" /><button class="button button-outline" data-email-report>Preparar e-mail</button><button class="button button-dark" data-whatsapp-report>Abrir WhatsApp</button></div></article>
   </section>`;
 }
@@ -481,6 +589,10 @@ function renderModal() {
     subtitle = "Ritmo das chegadas por data";
     const grouped = dailyComparison();
     body = `<div class="modal-chart">${renderDailyChart()}</div><div class="modal-table"><table><thead><tr><th>Data</th><th>Dormentes</th><th>Trilhos</th><th>NFs</th></tr></thead><tbody>${grouped.map((item) => `<tr><td>${formatDate(item.key)}</td><td>${formatNumber(item.dormente)}</td><td>${formatNumber(item.trilho)}</td><td>${item.nfs}</td></tr>`).join("")}</tbody></table></div>`;
+  } else if (state.modal.type === "nf-quality") {
+    title = "Recebidos × defeitos por NF";
+    subtitle = state.nfQualityFilter ? `Resultado para NF ${state.nfQualityFilter}` : "Percentual de ocorrências em cada nota fiscal de dormentes";
+    body = `<div class="modal-nf-quality">${renderNfQualityChart(state.records, state.nfQualityFilter, true)}</div>`;
   } else if (["quality", "quality-dormente", "quality-trilho"].includes(state.modal.type)) {
     const material = state.modal.type === "quality-trilho" ? "trilho" : "dormente";
     const categories = qualityCategories(material);
@@ -500,7 +612,8 @@ function renderModal() {
     subtitle = `${record.location || "Local não informado"} • ${record.receivedTime || "horário pendente"}`;
     const items = invoiceItems(record);
     const sleeperColumns = record.material === "dormente" ? "<th>PQ</th><th>R</th><th>B</th><th>Quebras</th>" : "";
-    body = `<div class="record-modal-summary"><div><span>Total recebido</span><strong>${formatNumber(recordQuantity(record))}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Fornecedor</span><strong>${escapeHtml(record.supplier || "—")}</strong><small>${escapeHtml(record.vehiclePlate || "Sem placa")}</small></div></div><div class="modal-table"><table><thead><tr><th>Nota fiscal</th><th>Quantidade</th>${sleeperColumns}</tr></thead><tbody>${items.map((item, index) => { const summary = sleeperQualitySummary(invoiceQuality(record, item, index)); return `<tr><td>NF ${escapeHtml(item.number)}</td><td>${formatNumber(item.quantity)} ${MATERIALS[record.material].unit}</td>${record.material === "dormente" ? `<td>${formatNumber(summary.smallBreaks)}</td><td>${formatNumber(summary.repaired)}</td><td>${formatNumber(summary.bubbles)}</td><td>${formatNumber(summary.breaks)}</td>` : ""}</tr>`; }).join("")}</tbody></table></div><div class="record-quality-list">${qualityCategories(record.material).map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(record.quality?.[category.id])}</strong></span>`).join("")}</div><p class="record-observation"><strong>Responsável:</strong> ${escapeHtml(record.inspectorName || CONTROL_OWNER)}</p><p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>`;
+    const rejectedRows = rejectionRows(record);
+    body = `<div class="record-modal-summary"><div><span>Total recebido</span><strong>${formatNumber(recordQuantity(record))}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Fornecedor</span><strong>${escapeHtml(record.supplier || "—")}</strong><small>${escapeHtml(record.vehiclePlate || "Sem placa")}</small></div></div><div class="modal-table"><table><thead><tr><th>Nota fiscal</th><th>Quantidade</th>${sleeperColumns}</tr></thead><tbody>${items.map((item, index) => { const summary = sleeperQualitySummary(invoiceQuality(record, item, index)); return `<tr><td>NF ${escapeHtml(item.number)}</td><td>${formatNumber(item.quantity)} ${MATERIALS[record.material].unit}</td>${record.material === "dormente" ? `<td>${formatNumber(summary.smallBreaks)}</td><td>${formatNumber(summary.repaired)}</td><td>${formatNumber(summary.bubbles)}</td><td>${formatNumber(summary.breaks)}</td>` : ""}</tr>`; }).join("")}</tbody></table></div><div class="record-quality-list">${qualityCategories(record.material).map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(record.quality?.[category.id])}</strong></span>`).join("")}</div>${rejectedRows.length ? `<div class="record-rejections"><h3>Dormentes reprovados</h3><div class="modal-table"><table><thead><tr><th>NF</th><th>Molde</th><th>Cavidade</th><th>Motivo</th></tr></thead><tbody>${rejectedRows.map((rejection) => `<tr><td>${escapeHtml(rejection.invoiceNumber || "—")}</td><td>${escapeHtml(rejection.mold || "—")}</td><td>${escapeHtml(rejection.cavity || "—")}</td><td>${escapeHtml(rejection.reason || state.rejectionReasons.find((reason) => reason.id === rejection.reasonId)?.label || "—")}</td></tr>`).join("")}</tbody></table></div></div>` : ""}<p class="record-observation"><strong>Responsável:</strong> ${escapeHtml(record.inspectorName || CONTROL_OWNER)}</p><p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>`;
   }
   return `<div class="modal-backdrop" data-modal-close><section class="chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" onclick="event.stopPropagation()"><header><div><span class="eyebrow">${escapeHtml(subtitle)}</span><h2>${escapeHtml(title)}</h2></div><button data-modal-close aria-label="Fechar">×</button></header>${body}<footer><button class="button button-outline" data-modal-close>Fechar</button><button class="button button-dark" data-print-report>Gerar PDF do painel</button></footer></section></div>`;
 }
@@ -529,6 +642,8 @@ function bindEvents() {
   document.querySelector("[data-clear-history]")?.addEventListener("click", () => { state.historyFilters = { search: "", material: "todos", from: "", to: "" }; render(); });
   document.querySelector("[data-apply-report]")?.addEventListener("click", applyReportFilters);
   document.querySelector("[data-report-week]")?.addEventListener("click", selectLatestReportWeek);
+  document.querySelector("[data-nf-quality-form]")?.addEventListener("submit", (event) => { event.preventDefault(); state.nfQualityFilter = document.querySelector('[name="nfQualitySearch"]')?.value.trim() || ""; render(); });
+  document.querySelector("[data-clear-nf-quality]")?.addEventListener("click", () => { state.nfQualityFilter = ""; render(); });
   document.querySelectorAll("[data-report-material]").forEach((button) => button.addEventListener("click", () => selectReportMaterial(button.dataset.reportMaterial)));
   document.querySelector("[data-report-images]")?.addEventListener("change", (event) => addReportImages(event.target.files));
   document.querySelectorAll("[data-remove-report-image]").forEach((button) => button.addEventListener("click", () => removeReportImage(button.dataset.removeReportImage)));
@@ -543,6 +658,9 @@ function bindFormEvents() {
   form.querySelectorAll("[data-material]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.material = button.dataset.material; if (!state.draft.supplier) state.draft.supplier = button.dataset.material === "dormente" ? "Cavan / Arauco" : "Arauco"; render(); }));
   form.querySelector("[data-add-invoice]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.push({ number: "", quantity: "" }); render(); });
   form.querySelectorAll("[data-remove-invoice]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.splice(number(button.dataset.removeInvoice), 1); render(); }));
+  form.querySelector("[data-add-rejection]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); const firstInvoice = state.draft.invoiceItems.find((item) => item.number)?.number || ""; state.draft.rejections = rejectionRows(state.draft); state.draft.rejections.push({ id: crypto.randomUUID(), invoiceNumber: firstInvoice, mold: "", cavity: "", reasonId: "", reason: "" }); state.draft.quality.reprovados = state.draft.rejections.length; render(); });
+  form.querySelectorAll("[data-remove-rejection]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.rejections.splice(number(button.dataset.removeRejection), 1); state.draft.quality.reprovados = state.draft.rejections.length; render(); }));
+  form.querySelector("[data-add-rejection-reason]")?.addEventListener("click", () => addRejectionReason(form.querySelector('[name="newRejectionReason"]')?.value));
   form.querySelector("[data-save-status]")?.addEventListener("click", () => saveCurrent("rascunho"));
   form.querySelector("[data-cancel-form]")?.addEventListener("click", () => navigate("dashboard"));
 }
@@ -581,7 +699,8 @@ async function saveCurrent(status) {
   if (status !== "rascunho" && !record.receivedDate) return toast("Informe a data do recebimento.", "error");
   if (status !== "rascunho" && !validItems.length) return toast("Informe ao menos uma NF com quantidade.", "error");
   if (status !== "rascunho" && !record.location) return toast("Informe o local de descarga.", "error");
-  record.id = state.editingId || record.id || crypto.randomUUID(); record.status = status; record.seeded = false; record.invoiceItems = validItems.length ? validItems : record.invoiceItems; record.invoiceNumbers = record.invoiceItems.map((item) => item.number).filter(Boolean).join(", "); record.quantity = record.invoiceItems.reduce((sum, item) => sum + number(item.quantity), 0); record.rejected = qualityRejected(record); record.approved = Math.max(0, record.quantity - record.rejected); record.inspectorName = record.inspectorName || CONTROL_OWNER; record.receivedAt = `${record.receivedDate || todayInput()}T${record.receivedTime || "00:00"}:00`; record.timeKnown = Boolean(record.receivedTime); record.createdAt = record.createdAt || new Date().toISOString(); record.updatedAt = new Date().toISOString();
+  if (status !== "rascunho" && record.material === "dormente" && record.rejections.some((item) => !item.invoiceNumber || !item.mold || !item.cavity || !item.reasonId)) return toast("Complete NF, molde, cavidade e motivo de cada dormente reprovado.", "error");
+  record.id = state.editingId || record.id || crypto.randomUUID(); record.status = status; record.seeded = false; record.invoiceItems = validItems.length ? validItems : record.invoiceItems; reconcileInvoiceQuality(record); record.invoiceNumbers = record.invoiceItems.map((item) => item.number).filter(Boolean).join(", "); record.quantity = record.invoiceItems.reduce((sum, item) => sum + number(item.quantity), 0); record.rejected = qualityRejected(record); record.approved = Math.max(0, record.quantity - record.rejected); record.inspectorName = record.inspectorName || CONTROL_OWNER; record.receivedAt = `${record.receivedDate || todayInput()}T${record.receivedTime || "00:00"}:00`; record.timeKnown = Boolean(record.receivedTime); record.createdAt = record.createdAt || new Date().toISOString(); record.updatedAt = new Date().toISOString();
   try {
     if (GITHUB_PAGES_MODE) throw new Error("local");
     const response = await fetch("/api/crms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) });
@@ -615,6 +734,17 @@ async function addCategory(rawName) {
   render(); toast(`Classificação “${label}” adicionada.`, "success");
 }
 
+async function addRejectionReason(rawName) {
+  const label = String(rawName || "").trim();
+  if (!label) return toast("Digite o motivo da reprovação.", "error");
+  const id = label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80);
+  if (state.rejectionReasons.some((reason) => reason.id === id)) return toast("Esse motivo já foi cadastrado.", "error");
+  const reason = { id, label };
+  if (state.draft) state.draft = formRecordFromDom();
+  try { if (GITHUB_PAGES_MODE) throw new Error("local"); const response = await fetch("/api/rejection-reasons", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(reason) }); if (!response.ok) throw new Error("Falha"); state.rejectionReasons.push((await response.json()).reason); } catch { state.rejectionReasons.push(reason); saveRejectionReasonsLocal(); }
+  render(); toast(`Motivo “${label}” adicionado.`, "success");
+}
+
 function applyHistoryFilters() { state.historyFilters = { search: document.querySelector('[name="historySearch"]')?.value || "", material: document.querySelector('[name="historyMaterial"]')?.value || "todos", from: document.querySelector('[name="historyFrom"]')?.value || "", to: document.querySelector('[name="historyTo"]')?.value || "" }; render(); }
 function applyReportFilters() { state.reportFilters = { from: document.querySelector('[name="reportFrom"]')?.value || "", to: document.querySelector('[name="reportTo"]')?.value || "", material: document.querySelector('[name="reportMaterial"]')?.value || "todos" }; render(); }
 function selectLatestReportWeek() { const material = document.querySelector('[name="reportMaterial"]')?.value || state.reportFilters.material; const dates = state.records.filter((record) => material === "todos" || record.material === material).map((record) => record.receivedDate || String(record.receivedAt).slice(0, 10)).filter(Boolean).sort(); const to = dates.at(-1) || todayInput(); state.reportFilters = { material, from: addDays(to, -6), to }; render(); }
@@ -637,8 +767,8 @@ function removeReportImage(id) {
 }
 
 function exportCsv(records) {
-  const rows = [["Data", "Horário", "Material", "Nota Fiscal", "Quantidade", "Local", "Fornecedor", "Pequenas quebras", "Reparados", "Bolhas", "Quebras", "Dormentes reprovados", "Empenamento / torção", "Oxidação / corrosão", "Danos no boleto", "Danos na alma", "Danos no patim", "Trilhos reprovados", "Responsável", "Observações"]];
-  records.forEach((record) => invoiceItems(record).forEach((item, index) => { const quality = invoiceQuality(record, item, index); rows.push([formatDate(record.receivedDate), record.receivedTime || "não informado", MATERIALS[record.material].label, item.number, item.quantity, record.location, record.supplier, quality["pequenas-quebras"] || 0, quality.reparados || 0, quality.bolhas || 0, quality.quebras || 0, quality.reprovados || 0, quality["trilho-empenamento"] || 0, quality["trilho-oxidacao"] || 0, quality["trilho-boleto"] || 0, quality["trilho-alma"] || 0, quality["trilho-patim"] || 0, quality["trilho-reprovados"] || 0, record.inspectorName || CONTROL_OWNER, record.observations || ""]); }));
+  const rows = [["Data", "Horário", "Material", "Nota Fiscal", "Quantidade", "Local", "Fornecedor", "Pequenas quebras", "Reparados", "Bolhas", "Quebras", "Dormentes reprovados", "Molde / cavidade / motivo", "Empenamento / torção", "Oxidação / corrosão", "Danos no boleto", "Danos na alma", "Danos no patim", "Trilhos reprovados", "Responsável", "Observações"]];
+  records.forEach((record) => invoiceItems(record).forEach((item, index) => { const quality = invoiceQuality(record, item, index); const rejected = Math.max(number(quality.reprovados), rejectionsForInvoice(record, item.number).length); rows.push([formatDate(record.receivedDate), record.receivedTime || "não informado", MATERIALS[record.material].label, item.number, item.quantity, record.location, record.supplier, quality["pequenas-quebras"] || 0, quality.reparados || 0, quality.bolhas || 0, quality.quebras || 0, rejected, rejectionDetails(record, item.number), quality["trilho-empenamento"] || 0, quality["trilho-oxidacao"] || 0, quality["trilho-boleto"] || 0, quality["trilho-alma"] || 0, quality["trilho-patim"] || 0, quality["trilho-reprovados"] || 0, record.inspectorName || CONTROL_OWNER, record.observations || ""]); }));
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
   const suffix = `${state.reportFilters.from || "inicio"}-a-${state.reportFilters.to || "fim"}`;
   const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); link.download = `relatorio-epya-${suffix}.csv`; link.click(); URL.revokeObjectURL(link.href); toast("Planilha para Excel gerada.", "success");
@@ -666,7 +796,17 @@ async function toggleTv() { state.tvMode = !state.tvMode; state.view = "dashboar
 async function installApp() { if (state.installPrompt) { state.installPrompt.prompt(); await state.installPrompt.userChoice; state.installPrompt = null; return; } toast(/iphone|ipad|ipod/i.test(navigator.userAgent) ? "No Safari, toque em Compartilhar e Adicionar à Tela de Início." : "No menu do navegador, escolha Instalar app.", "success"); }
 function toast(message, type = "success") { const node = document.querySelector(".toast"); if (!node) return; node.textContent = message; node.className = `toast show ${type}`; clearTimeout(toast.timer); toast.timer = setTimeout(() => { node.className = "toast"; }, 4200); }
 
-function readLocalRecords() { try { const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); const seeds = expandSeedGroups(); const merged = new Map(seeds.map((record) => [record.id, record])); if (Array.isArray(stored)) stored.filter((record) => !record.seeded).forEach((record) => merged.set(record.id, record)); return [...merged.values()].sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))); } catch { return expandSeedGroups(); } }
+function sanitizeLegacyMoldEntry(record) {
+  if (!record || record._cleanupMolde57Cav1) return record;
+  const cleaned = structuredClone(record);
+  cleaned.observations = String(cleaned.observations || "").replace(/\bmolde\s*:?\s*57\s*[,;\/-]?\s*cav(?:idade)?\.?\s*:?\s*1\b/gi, "").replace(/\s{2,}/g, " ").trim();
+  if (String(cleaned.mold || "").trim() === "57" && String(cleaned.cavity || "").trim() === "1") { delete cleaned.mold; delete cleaned.cavity; }
+  if (Array.isArray(cleaned.rejections)) cleaned.rejections = cleaned.rejections.filter((item) => !(String(item.mold || "").trim() === "57" && String(item.cavity || "").trim() === "1" && !String(item.reason || item.reasonId || "").trim()));
+  cleaned._cleanupMolde57Cav1 = true;
+  return cleaned;
+}
+
+function readLocalRecords() { try { const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); const seeds = expandSeedGroups(); const merged = new Map(seeds.map((record) => [record.id, record])); if (Array.isArray(stored)) stored.filter((record) => !record.seeded).map(sanitizeLegacyMoldEntry).forEach((record) => merged.set(record.id, record)); return [...merged.values()].sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))); } catch { return expandSeedGroups(); } }
 function writeLocalRecords() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records)); }
 function readOutbox() { try { const records = JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]"); return Array.isArray(records) ? records : []; } catch { return []; } }
 function queueForSync(record) { const outbox = readOutbox(); const index = outbox.findIndex((item) => item.id === record.id); if (index >= 0) outbox[index] = record; else outbox.push(record); localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); state.pendingSync = outbox.length; }
@@ -685,7 +825,7 @@ async function loadSession() {
 }
 
 async function loadRecordsAndCategories() {
-  try { const [recordsResponse, categoriesResponse] = await Promise.all([fetch("/api/crms", { headers: { Accept: "application/json" } }), fetch("/api/categories", { headers: { Accept: "application/json" } })]); if (!recordsResponse.ok) throw new Error("Banco indisponível"); const recordData = await recordsResponse.json(); state.records = Array.isArray(recordData.records) && recordData.records.length ? recordData.records : expandSeedGroups(); if (categoriesResponse.ok) { const categoryData = await categoriesResponse.json(); if (Array.isArray(categoryData.categories) && categoryData.categories.length) state.categories = categoryData.categories; } readOutbox().forEach(replaceRecord); state.storageMode = "cloud"; writeLocalRecords(); saveCategoriesLocal(); } catch { state.records = readLocalRecords(); state.storageMode = "local"; }
+  try { const [recordsResponse, categoriesResponse, reasonsResponse] = await Promise.all([fetch("/api/crms", { headers: { Accept: "application/json" } }), fetch("/api/categories", { headers: { Accept: "application/json" } }), fetch("/api/rejection-reasons", { headers: { Accept: "application/json" } })]); if (!recordsResponse.ok) throw new Error("Banco indisponível"); const recordData = await recordsResponse.json(); state.records = (Array.isArray(recordData.records) && recordData.records.length ? recordData.records : expandSeedGroups()).map(sanitizeLegacyMoldEntry); if (categoriesResponse.ok) { const categoryData = await categoriesResponse.json(); if (Array.isArray(categoryData.categories) && categoryData.categories.length) state.categories = categoryData.categories; } if (reasonsResponse.ok) { const reasonData = await reasonsResponse.json(); if (Array.isArray(reasonData.reasons)) state.rejectionReasons = reasonData.reasons; } readOutbox().forEach(replaceRecord); state.storageMode = "cloud"; writeLocalRecords(); saveCategoriesLocal(); saveRejectionReasonsLocal(); } catch { state.records = readLocalRecords(); state.storageMode = "local"; }
   state.pendingSync = readOutbox().length;
 }
 
