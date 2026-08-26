@@ -350,7 +350,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .email-report { margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 30px; }
 .email-report h2 { margin-bottom: 5px; }
 .email-report p { margin: 0; color: var(--muted); }
-.email-fields { min-width: min(560px, 50%); display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.email-fields { min-width: min(680px, 58%); display: grid; grid-template-columns: 1fr auto auto; gap: 8px; }
 
 .team-grid { display: grid; grid-template-columns: minmax(300px, .65fr) minmax(520px, 1.35fr); gap: 14px; }
 .team-form-panel { align-content: start; display: grid; gap: 13px; }
@@ -558,7 +558,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .report-table-title { margin-top: 5mm; }
   .report-table table { page-break-inside: auto; }
   .report-table tr { page-break-inside: avoid; }
-  .report-table th, .report-table td { padding: 2mm; font-size: 6.8pt; }
+  .report-table th, .report-table td { padding: 1.5mm; font-size: 6.4pt; }
+  .report-table th:nth-last-child(-n + 4), .report-table td:nth-last-child(-n + 4) { text-align: center; }
   .report-photo-section { margin-top: 5mm; page-break-before: auto; }
   .report-photo-grid { grid-template-columns: 1fr 1fr; gap: 3mm; }
   .report-photo-grid img { max-height: 70mm; border-radius: 2mm; }
