@@ -70,7 +70,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .status-pill i, .sync-badge i { width: 7px; height: 7px; background: var(--green); border-radius: 50%; box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 16%, transparent); }
 .status-pill.offline i, .sync-badge.warning i { background: var(--orange); box-shadow: 0 0 0 4px color-mix(in srgb, var(--orange) 16%, transparent); }
 .icon-button { width: 36px; height: 36px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; cursor: pointer; }
-.user-chip { min-width: 92px; padding-left: 11px; color: var(--ink); text-decoration: none; border-left: 1px solid var(--line); }
+.user-chip { min-width: 92px; padding-left: 11px; color: var(--ink); text-align: left; text-decoration: none; background: none; border: 0; border-left: 1px solid var(--line); cursor: pointer; }
 .user-chip strong { max-width: 110px; overflow: hidden; font-size: .74rem; text-overflow: ellipsis; white-space: nowrap; }
 .control-owner-chip { min-width: max-content; padding-left: 10px; display: flex; align-items: center; gap: 9px; border-left: 1px solid var(--line); }
 .control-owner-chip > i { width: 34px; height: 34px; display: grid; place-items: center; color: #17191c; font-size: .7rem; font-style: normal; font-weight: 880; background: var(--yellow); border-radius: 50%; }
@@ -460,6 +460,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .login-card p strong { color: white; }
 .login-loading { display: flex; align-items: center; gap: 10px; color: #d5d8dc; }
 .login-loading i { width: 20px; height: 20px; }
+.login-form { display: grid; gap: 12px; }
+.login-form label { display: grid; gap: 6px; color: #eef0f2; font-size: .82rem; font-weight: 750; }
+.login-form input { width: 100%; padding: 14px 15px; color: #17191c; background: white; border: 1px solid rgba(255, 255, 255, .35); border-radius: 10px; font: inherit; }
+.login-form input:focus { outline: 3px solid rgba(244, 201, 20, .28); border-color: var(--yellow); }
+.login-form small { color: #aeb4bb; font-size: .7rem; line-height: 1.5; }
+.login-message { padding: 11px 13px; color: #fff !important; background: rgba(244, 201, 20, .13); border: 1px solid rgba(244, 201, 20, .3); border-radius: 10px; font-size: .75rem; }
 .install-link { color: #d1d5da; }
 .login-benefits { padding-top: 15px; display: flex; flex-wrap: wrap; gap: 8px 15px; color: #b8bdc3; font-size: .68rem; border-top: 1px solid rgba(255, 255, 255, .12); }
 .login-benefits b { color: #66d7a3; }

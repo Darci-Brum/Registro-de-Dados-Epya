@@ -2,11 +2,17 @@ import {
   DEFAULT_CATEGORIES,
   OWNER_EMAIL,
   TARGET_SLEEPERS,
-  expandSeedGroups,
-} from "./seed-data.js";
+} from "./app-config.js";
 
 const app = document.querySelector("#app");
 const GITHUB_PAGES_MODE = window.location.hostname.endsWith("github.io");
+const SUPABASE_URL = "https://raaridhgnjrbmvrxdmtu.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ziP1cObIqUagG2opAALnGw_5ncCXDEg";
+const supabaseClient = window.supabase?.createClient
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    })
+  : null;
 const STORAGE_KEY = "epya-recebimentos-v5";
 const OUTBOX_KEY = "epya-recebimentos-outbox-v2";
 const THEME_KEY = "epya-recebimentos-theme";
@@ -40,16 +46,15 @@ const state = {
   draft: null,
   editingId: "",
   loading: true,
-  authLoading: !GITHUB_PAGES_MODE,
-  authenticated: GITHUB_PAGES_MODE,
-  authorized: GITHUB_PAGES_MODE,
-  user: GITHUB_PAGES_MODE
-    ? { email: "acesso-publico@epya.local", fullName: "Acesso público", role: "admin" }
-    : null,
+  authLoading: true,
+  authenticated: false,
+  authorized: false,
+  user: null,
+  authMessage: "",
   team: [],
   teamLoaded: false,
   online: navigator.onLine,
-  storageMode: GITHUB_PAGES_MODE ? "local" : "cloud",
+  storageMode: "cloud",
   pendingSync: 0,
   installPrompt: null,
   theme: localStorage.getItem(THEME_KEY) || "light",
@@ -296,7 +301,7 @@ function render() {
       <header class="topbar no-print">
         <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel EPYA"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Controle diário de materiais</small></span></button>
         <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("reports", "Relatórios", "▤")}${state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
-        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span>${GITHUB_PAGES_MODE ? "" : `<a class="user-chip" href="/signout-with-chatgpt?return_to=/" title="Sair"><strong>${escapeHtml(state.user.fullName || state.user.email.split("@")[0])}</strong><small>${state.user.role === "admin" ? "Administrador" : state.user.role === "viewer" ? "Consulta" : "Operação"}</small></a>`}</div>
+        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><button class="user-chip" type="button" data-sign-out title="Sair"><strong>${escapeHtml(state.user.fullName || state.user.email.split("@")[0])}</strong><small>${state.user.role === "admin" ? "Administrador" : state.user.role === "viewer" ? "Consulta" : "Operação"}</small></button></div>
       </header>
       <main class="app-main">${renderCurrentView()}</main>
       <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("reports", "Relatórios", "▤")}</footer>
@@ -308,11 +313,15 @@ function render() {
 
 function renderAccessScreen() {
   const unauthorized = state.authenticated && !state.authorized;
-  return `<main class="login-screen"><section class="login-card"><div class="login-brands"><img src="./epya-logo-oficial.png" alt="EPYA" /><span></span><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></div><span class="eyebrow">Controle diário • Projeto Sucuriú</span><h1>${state.authLoading ? "Preparando seu acesso" : unauthorized ? "E-mail não liberado" : "Recebimentos sob controle"}</h1><p>${state.authLoading ? "Validando o acesso seguro deste aparelho…" : unauthorized ? `O e-mail <strong>${escapeHtml(state.user?.email || "")}</strong> entrou corretamente, mas ainda precisa ser adicionado por ${OWNER_EMAIL}.` : "Entre com um e-mail autorizado para registrar dormentes, trilhos e acompanhar os indicadores da obra."}</p>${state.authLoading ? '<span class="login-loading"><i></i> Aguarde um instante</span>' : unauthorized ? '<a class="button button-outline full" href="/signout-with-chatgpt?return_to=/">Entrar com outro e-mail</a>' : state.online ? '<a class="button button-yellow full" href="/signin-with-chatgpt?return_to=/">Entrar com e-mail autorizado</a>' : '<button class="button button-dark full" disabled>Primeiro acesso exige conexão</button>'}<button class="install-link" data-install>＋ Adicionar à tela inicial</button><div class="login-benefits"><span><b>✓</b> Acesso restrito</span><span><b>✓</b> Trabalho offline</span><span><b>✓</b> PDF e relatórios</span></div></section></main>`;
+  const form = `<form class="login-form" data-auth-form><label><span>E-mail autorizado</span><input type="email" name="authEmail" autocomplete="email" required placeholder="nome@empresa.com" /></label><label><span>Senha</span><input type="password" name="authPassword" autocomplete="current-password" minlength="8" required placeholder="Mínimo de 8 caracteres" /></label><button class="button button-yellow full" type="submit">Entrar com segurança</button><button class="button button-outline full" type="button" data-create-account>Primeiro acesso</button><small>No primeiro acesso, o Supabase enviará a confirmação ao e-mail previamente autorizado.</small></form>`;
+  return `<main class="login-screen"><section class="login-card"><div class="login-brands"><img src="./epya-logo-oficial.png" alt="EPYA" /><span></span><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></div><span class="eyebrow">Controle diário • Projeto Sucuriú</span><h1>${state.authLoading ? "Preparando seu acesso" : unauthorized ? "E-mail não liberado" : "Recebimentos sob controle"}</h1><p>${state.authLoading ? "Validando sua sessão protegida pelo Supabase…" : unauthorized ? `O e-mail <strong>${escapeHtml(state.user?.email || "")}</strong> foi autenticado, mas não está na lista autorizada por ${OWNER_EMAIL}.` : "Entre com um e-mail autorizado para consultar ou registrar recebimentos."}</p>${state.authLoading ? '<span class="login-loading"><i></i> Aguarde um instante</span>' : unauthorized ? '<button class="button button-outline full" type="button" data-sign-out>Entrar com outro e-mail</button>' : state.online ? form : '<button class="button button-dark full" disabled>O acesso exige conexão</button>'}${state.authMessage ? `<p class="login-message">${escapeHtml(state.authMessage)}</p>` : ""}<button class="install-link" data-install>＋ Adicionar à tela inicial</button><div class="login-benefits"><span><b>✓</b> Supabase Auth</span><span><b>✓</b> RLS por e-mail</span><span><b>✓</b> PDF e relatórios</span></div></section></main>`;
 }
 
 function bindAccessEvents() {
   document.querySelectorAll("[data-install]").forEach((button) => button.addEventListener("click", installApp));
+  document.querySelector("[data-auth-form]")?.addEventListener("submit", signInWithEmail);
+  document.querySelector("[data-create-account]")?.addEventListener("click", createFirstAccess);
+  document.querySelectorAll("[data-sign-out]").forEach((button) => button.addEventListener("click", signOut));
 }
 
 function renderCurrentView() {
@@ -326,9 +335,8 @@ function renderCurrentView() {
 }
 
 function renderSyncBadge() {
-  if (GITHUB_PAGES_MODE) return '<span class="sync-badge warning"><i></i> Demonstração local</span>';
   if (state.pendingSync) return `<span class="sync-badge warning"><i></i> ${state.pendingSync} aguardando sincronização</span>`;
-  return state.storageMode === "cloud" ? '<span class="sync-badge success"><i></i> Dados sincronizados</span>' : '<span class="sync-badge warning"><i></i> Salvo neste aparelho</span>';
+  return state.storageMode === "cloud" ? '<span class="sync-badge success"><i></i> Supabase sincronizado</span>' : '<span class="sync-badge warning"><i></i> Salvo neste aparelho</span>';
 }
 
 function weekStart(dateString) {
@@ -654,6 +662,7 @@ function renderModal() {
 }
 
 function bindEvents() {
+  document.querySelector("[data-sign-out]")?.addEventListener("click", signOut);
   document.querySelectorAll("[data-nav]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.nav)));
   document.querySelectorAll("[data-new-record]").forEach((button) => button.addEventListener("click", () => newRecord()));
   document.querySelector("[data-new-sleeper]")?.addEventListener("click", () => newRecord("dormente"));
@@ -737,12 +746,12 @@ async function saveCurrent(status) {
   if (status !== "rascunho" && record.material === "dormente" && record.rejections.some((item) => !item.invoiceNumber || !item.mold || !item.cavity || !item.reasonId)) return toast("Complete NF, molde, cavidade e motivo de cada dormente reprovado.", "error");
   record.id = state.editingId || record.id || crypto.randomUUID(); record.status = status; record.seeded = false; record.invoiceItems = validItems.length ? validItems : record.invoiceItems; reconcileInvoiceQuality(record); record.invoiceNumbers = record.invoiceItems.map((item) => item.number).filter(Boolean).join(", "); record.quantity = record.invoiceItems.reduce((sum, item) => sum + number(item.quantity), 0); record.rejected = qualityRejected(record); record.approved = Math.max(0, record.quantity - record.rejected); record.inspectorName = record.inspectorName || CONTROL_OWNER; record.receivedAt = `${record.receivedDate || todayInput()}T${record.receivedTime || "00:00"}:00`; record.timeKnown = Boolean(record.receivedTime); record.createdAt = record.createdAt || new Date().toISOString(); record.updatedAt = new Date().toISOString();
   try {
-    if (GITHUB_PAGES_MODE) throw new Error("local");
-    const response = await fetch("/api/crms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) });
-    if (!response.ok) throw new Error("Falha ao sincronizar");
-    replaceRecord((await response.json()).record); state.storageMode = "cloud";
+    if (!supabaseClient || !state.online) throw new Error("offline");
+    const { error } = await supabaseClient.from("crm_records").upsert(supabaseRecordRow(record), { onConflict: "id" });
+    if (error) throw error;
+    replaceRecord(record); state.storageMode = "cloud";
   } catch {
-    replaceRecord(record); writeLocalRecords(); if (!GITHUB_PAGES_MODE) queueForSync(record); state.storageMode = "local";
+    replaceRecord(record); writeLocalRecords(); queueForSync(record); state.storageMode = "local";
   }
   state.draft = null; state.editingId = ""; state.view = "dashboard"; render(); toast(status === "rascunho" ? "Rascunho salvo." : "Recebimento salvo e painel atualizado.", "success");
 }
@@ -753,7 +762,7 @@ async function deleteRecord(id) {
   if (!canEdit()) return;
   const record = state.records.find((item) => item.id === id);
   if (!record || !confirm(`Excluir o recebimento de ${formatDate(record.receivedDate)}?`)) return;
-  try { if (GITHUB_PAGES_MODE) throw new Error("local"); const response = await fetch(`/api/crms/${encodeURIComponent(id)}`, { method: "DELETE" }); if (!response.ok) throw new Error("Falha"); } catch { state.storageMode = "local"; }
+  try { const { error } = await supabaseClient.from("crm_records").delete().eq("id", id); if (error) throw error; } catch { return toast("Não foi possível excluir no Supabase.", "error"); }
   state.records = state.records.filter((item) => item.id !== id); writeLocalRecords(); render(); toast("Recebimento excluído.", "success");
 }
 
@@ -764,7 +773,7 @@ async function addCategory(rawName) {
   if (state.categories.some((category) => category.id === id)) return toast("Essa classificação já existe.", "error");
   const palette = ["#ef8d32", "#15b7a5", "#ec5f78", "#806bff", "#25a8e0", "#9cbf33"];
   const category = { id, label, color: palette[state.categories.length % palette.length] };
-  try { if (GITHUB_PAGES_MODE) throw new Error("local"); const response = await fetch("/api/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(category) }); if (!response.ok) throw new Error("Falha"); state.categories.push((await response.json()).category); } catch { state.categories.push(category); saveCategoriesLocal(); }
+  try { const { data, error } = await supabaseClient.from("quality_categories").upsert({ ...category, active: true, created_by: state.user.email, updated_at: new Date().toISOString() }, { onConflict: "id" }).select("id,label,color").single(); if (error) throw error; state.categories.push(data); } catch { return toast("Não foi possível adicionar a classificação no Supabase.", "error"); }
   if (state.draft) { const formDraft = formRecordFromDom(); state.draft = { ...formDraft, quality: { ...formDraft.quality, [id]: 0 } }; }
   render(); toast(`Classificação “${label}” adicionada.`, "success");
 }
@@ -776,7 +785,7 @@ async function addRejectionReason(rawName) {
   if (state.rejectionReasons.some((reason) => reason.id === id)) return toast("Esse motivo já foi cadastrado.", "error");
   const reason = { id, label };
   if (state.draft) state.draft = formRecordFromDom();
-  try { if (GITHUB_PAGES_MODE) throw new Error("local"); const response = await fetch("/api/rejection-reasons", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(reason) }); if (!response.ok) throw new Error("Falha"); state.rejectionReasons.push((await response.json()).reason); } catch { state.rejectionReasons.push(reason); saveRejectionReasonsLocal(); }
+  try { const { data, error } = await supabaseClient.from("rejection_reasons").upsert({ ...reason, active: true, created_by: state.user.email, updated_at: new Date().toISOString() }, { onConflict: "id" }).select("id,label").single(); if (error) throw error; state.rejectionReasons.push(data); } catch { return toast("Não foi possível adicionar o motivo no Supabase.", "error"); }
   render(); toast(`Motivo “${label}” adicionado.`, "success");
 }
 
@@ -841,48 +850,66 @@ function sanitizeLegacyMoldEntry(record) {
   return cleaned;
 }
 
-function readLocalRecords() { try { const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); const seeds = expandSeedGroups(); const merged = new Map(seeds.map((record) => [record.id, record])); if (Array.isArray(stored)) stored.filter((record) => !record.seeded).map(sanitizeLegacyMoldEntry).forEach((record) => merged.set(record.id, record)); return [...merged.values()].sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))); } catch { return expandSeedGroups(); } }
-function writeLocalRecords() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records)); }
+function supabaseRecordRow(record) { return { id: record.id, status: record.status, received_at: record.receivedAt, invoice_numbers: record.invoiceNumbers || "", supplier: record.supplier || "", quantity: number(record.quantity), approved: number(record.approved), rejected: number(record.rejected), truckloads: 1, payload: record, created_at: record.createdAt || new Date().toISOString(), updated_at: record.updatedAt || new Date().toISOString() }; }
+function clearProtectedLocalData() { [STORAGE_KEY, OUTBOX_KEY, AUTH_CACHE_KEY, CATEGORY_KEY, REJECTION_REASON_KEY].forEach((key) => localStorage.removeItem(key)); }
+function readLocalRecords() { try { const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); return Array.isArray(stored) ? stored.map(sanitizeLegacyMoldEntry).sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))) : []; } catch { return []; } }
+function writeLocalRecords() { if (state.authorized) localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records)); }
 function readOutbox() { try { const records = JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]"); return Array.isArray(records) ? records : []; } catch { return []; } }
 function queueForSync(record) { const outbox = readOutbox(); const index = outbox.findIndex((item) => item.id === record.id); if (index >= 0) outbox[index] = record; else outbox.push(record); localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); state.pendingSync = outbox.length; }
 
 async function syncOutbox() {
-  if (GITHUB_PAGES_MODE || !state.online || !state.authorized) return;
+  if (!supabaseClient || !state.online || !state.authorized) return;
   const pending = readOutbox(); const remaining = [];
-  for (const record of pending) { try { const response = await fetch("/api/crms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) }); if (!response.ok) throw new Error("Falha"); replaceRecord((await response.json()).record); } catch { remaining.push(record); } }
+  for (const record of pending) { try { const { error } = await supabaseClient.from("crm_records").upsert(supabaseRecordRow(record), { onConflict: "id" }); if (error) throw error; replaceRecord(record); } catch { remaining.push(record); } }
   localStorage.setItem(OUTBOX_KEY, JSON.stringify(remaining)); state.pendingSync = remaining.length; if (!remaining.length) state.storageMode = "cloud"; writeLocalRecords();
 }
 
 async function loadSession() {
-  let cached = null; try { cached = JSON.parse(localStorage.getItem(AUTH_CACHE_KEY) || "null"); } catch {}
-  try { const response = await fetch("/api/session", { headers: { Accept: "application/json" } }); if (!response.ok) throw new Error("Sessão indisponível"); const session = await response.json(); state.authenticated = Boolean(session.authenticated); state.authorized = Boolean(session.authorized); state.user = session.user || (session.authenticated ? { email: session.email || "" } : null); if (state.authorized && state.user) localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(state.user)); else localStorage.removeItem(AUTH_CACHE_KEY); } catch { if (cached) { state.authenticated = true; state.authorized = true; state.user = cached; state.storageMode = "local"; } else { state.authenticated = false; state.authorized = false; state.user = null; } }
+  if (!supabaseClient) { state.authenticated = false; state.authorized = false; state.user = null; state.authMessage = "O cliente seguro do Supabase não foi carregado."; state.authLoading = false; return; }
+  try {
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+    const session = data.session;
+    if (!session?.user?.email) { state.authenticated = false; state.authorized = false; state.user = null; state.authLoading = false; return; }
+    const email = session.user.email.trim().toLowerCase();
+    state.authenticated = true;
+    const { data: profile, error: profileError } = await supabaseClient.from("app_users").select("id,email,full_name,role,active").eq("active", true).eq("email", email).maybeSingle();
+    if (profileError) throw profileError;
+    state.authorized = Boolean(profile);
+    state.user = profile ? { id: profile.id, email: profile.email, fullName: profile.full_name, role: profile.role } : { email, fullName: session.user.user_metadata?.full_name || email.split("@")[0], role: "viewer" };
+    if (state.authorized) localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(state.user)); else clearProtectedLocalData();
+  } catch (error) { state.authenticated = false; state.authorized = false; state.user = null; state.authMessage = error.message || "Não foi possível validar a sessão."; }
   state.authLoading = false;
 }
 
+function authFields() { return { email: document.querySelector('[name="authEmail"]')?.value.trim().toLowerCase() || "", password: document.querySelector('[name="authPassword"]')?.value || "" }; }
+async function signInWithEmail(event) { event?.preventDefault(); const { email, password } = authFields(); if (!email || password.length < 8) return; state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.signInWithPassword({ email, password }); if (error) { state.authLoading = false; state.authMessage = "E-mail ou senha inválidos, ou confirmação ainda pendente."; render(); return; } await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); }
+async function createFirstAccess() { const { email, password } = authFields(); if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 8) return toast("Informe um e-mail válido e uma senha de pelo menos 8 caracteres.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { data, error } = await supabaseClient.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}` } }); state.authLoading = false; if (error) { state.authMessage = error.message || "Não foi possível criar o primeiro acesso."; render(); return; } if (data.session) { await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); return; } state.authMessage = "Confira seu e-mail e use o link de confirmação para concluir o primeiro acesso."; render(); }
+async function signOut() { await supabaseClient?.auth.signOut(); clearProtectedLocalData(); state.authenticated = false; state.authorized = false; state.user = null; state.records = []; state.team = []; state.teamLoaded = false; state.authMessage = "Sessão encerrada com segurança."; render(); }
+
 async function loadRecordsAndCategories() {
-  try { const [recordsResponse, categoriesResponse, reasonsResponse] = await Promise.all([fetch("/api/crms", { headers: { Accept: "application/json" } }), fetch("/api/categories", { headers: { Accept: "application/json" } }), fetch("/api/rejection-reasons", { headers: { Accept: "application/json" } })]); if (!recordsResponse.ok) throw new Error("Banco indisponível"); const recordData = await recordsResponse.json(); state.records = (Array.isArray(recordData.records) && recordData.records.length ? recordData.records : expandSeedGroups()).map(sanitizeLegacyMoldEntry); if (categoriesResponse.ok) { const categoryData = await categoriesResponse.json(); if (Array.isArray(categoryData.categories) && categoryData.categories.length) state.categories = categoryData.categories; } if (reasonsResponse.ok) { const reasonData = await reasonsResponse.json(); if (Array.isArray(reasonData.reasons)) state.rejectionReasons = reasonData.reasons; } readOutbox().forEach(replaceRecord); state.storageMode = "cloud"; writeLocalRecords(); saveCategoriesLocal(); saveRejectionReasonsLocal(); } catch { state.records = readLocalRecords(); state.storageMode = "local"; }
+  try { const [recordsResult, categoriesResult, reasonsResult] = await Promise.all([supabaseClient.from("crm_records").select("payload").order("received_at", { ascending: false }), supabaseClient.from("quality_categories").select("id,label,color").eq("active", true).order("label"), supabaseClient.from("rejection_reasons").select("id,label").eq("active", true).order("label")]); if (recordsResult.error) throw recordsResult.error; state.records = (recordsResult.data || []).map((row) => row.payload).filter(Boolean).map(sanitizeLegacyMoldEntry); if (!categoriesResult.error && categoriesResult.data?.length) state.categories = categoriesResult.data; if (!reasonsResult.error) state.rejectionReasons = reasonsResult.data || []; readOutbox().forEach(replaceRecord); state.storageMode = "cloud"; writeLocalRecords(); saveCategoriesLocal(); saveRejectionReasonsLocal(); } catch { state.records = readLocalRecords(); state.storageMode = "local"; }
   state.pendingSync = readOutbox().length;
 }
 
 async function loadTeam() {
-  try { const response = await fetch("/api/users", { headers: { Accept: "application/json" } }); if (!response.ok) throw new Error("Falha"); const data = await response.json(); state.team = Array.isArray(data.users) ? data.users : []; } catch { state.team = [{ id: "owner", email: OWNER_EMAIL, fullName: CONTROL_OWNER, role: "admin", active: true }]; }
+  try { const { data, error } = await supabaseClient.from("app_users").select("id,email,full_name,role,active,created_at").order("active", { ascending: false }).order("full_name"); if (error) throw error; state.team = (data || []).map((item) => ({ id: item.id, email: item.email, fullName: item.full_name, role: item.role, active: item.active, createdAt: item.created_at })); } catch { state.team = [{ id: "owner-darci-brum", email: OWNER_EMAIL, fullName: CONTROL_OWNER, role: "admin", active: true }]; }
   state.teamLoaded = true; if (state.view === "team") render();
 }
 
 async function addTeamMember() {
   const fullName = document.querySelector('[name="teamFullName"]')?.value.trim() || ""; const email = document.querySelector('[name="teamEmail"]')?.value.trim().toLowerCase() || ""; const role = document.querySelector('[name="teamRole"]')?.value || "viewer";
   if (!/^\S+@\S+\.\S+$/.test(email)) return toast("Informe um e-mail válido.", "error");
-  try { const response = await fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fullName, email, role }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Não foi possível adicionar."); state.teamLoaded = false; await loadTeam(); toast(`${email} foi liberado.`, "success"); } catch (error) { toast(error.message || "É necessário estar online para liberar um acesso.", "error"); }
+  try { const existing = state.team.find((item) => item.email.toLowerCase() === email); const row = { email, full_name: fullName || email.split("@")[0], role, active: true, created_by: state.user.email, updated_at: new Date().toISOString() }; const query = existing ? supabaseClient.from("app_users").update(row).eq("id", existing.id) : supabaseClient.from("app_users").insert({ id: `user-${crypto.randomUUID()}`, ...row }); const { error } = await query; if (error) throw error; state.teamLoaded = false; await loadTeam(); toast(`${email} foi liberado.`, "success"); } catch (error) { toast(error.message || "Não foi possível liberar o acesso no Supabase.", "error"); }
 }
 
 async function removeTeamMember(id) {
   const user = state.team.find((item) => item.id === id); if (!user || !confirm(`Remover o acesso de ${user.fullName || user.email}?`)) return;
-  try { const response = await fetch(`/api/users/${encodeURIComponent(id)}`, { method: "DELETE" }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Falha"); state.teamLoaded = false; await loadTeam(); toast("Acesso removido.", "success"); } catch (error) { toast(error.message || "Falha ao remover acesso.", "error"); }
+  try { const { error } = await supabaseClient.from("app_users").update({ active: false, updated_at: new Date().toISOString() }).eq("id", id); if (error) throw error; state.teamLoaded = false; await loadTeam(); toast("Acesso removido.", "success"); } catch (error) { toast(error.message || "Falha ao remover acesso.", "error"); }
 }
 
 async function bootstrap() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js" : "/service-worker.js").catch(() => {});
-  if (GITHUB_PAGES_MODE) { state.records = readLocalRecords(); state.loading = false; render(); return; }
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
 }
 

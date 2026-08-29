@@ -1,9 +1,10 @@
-const CACHE_NAME = "epya-recebimentos-github-v11";
+const CACHE_NAME = "epya-recebimentos-github-v12";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./app.js",
   "./styles.css",
+  "./supabase.min.js",
   "./manifest.webmanifest",
   "./epya-logo-oficial.png",
   "./epya-logo-pdf.svg",
@@ -12,7 +13,7 @@ const APP_SHELL = [
   "./apple-touch-icon.png",
   "./hero-recebimento-epya.png",
   "./arauco-sucuriu-logo.svg",
-  "./seed-data.js",
+  "./app-config.js",
   "./qualidade-dormentes-bg.webp",
   "./dormente-desenho-tecnico.png"
 ];
