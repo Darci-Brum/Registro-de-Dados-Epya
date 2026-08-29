@@ -1,4 +1,4 @@
-const CACHE_NAME = "epya-recebimentos-github-v12";
+const CACHE_NAME = "epya-recebimentos-github-v13";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -7,7 +7,6 @@ const APP_SHELL = [
   "./supabase.min.js",
   "./manifest.webmanifest",
   "./epya-logo-oficial.png",
-  "./epya-logo-pdf.svg",
   "./icon-192.png",
   "./icon-512.png",
   "./apple-touch-icon.png",

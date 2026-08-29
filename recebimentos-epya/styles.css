@@ -58,7 +58,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .brand-lockup strong { font-size: .98rem; letter-spacing: -.015em; }
 .brand-lockup small, .user-chip small { margin-top: 2px; color: var(--muted); font-size: .78rem; }
 .main-nav { min-width: 0; display: flex; justify-content: center; align-self: stretch; gap: 3px; }
-.nav-button { min-width: 74px; padding: 0 11px; position: relative; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--muted); background: transparent; border: 0; cursor: pointer; }
+.nav-button { min-width: 74px; padding: 0 11px; position: relative; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--muted); white-space: nowrap; background: transparent; border: 0; cursor: pointer; }
 .nav-button span { font-size: 1.08rem; }
 .nav-button b { font-size: .84rem; font-weight: 740; }
 .nav-button::after { content: ""; height: 3px; position: absolute; right: 11px; bottom: 0; left: 11px; background: var(--yellow); border-radius: 4px 4px 0 0; transform: scaleX(0); transition: transform .2s ease; }
@@ -114,8 +114,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .hero-corner-brand span { display: grid; text-transform: uppercase; }
 .hero-corner-brand strong { font-size: 1rem; letter-spacing: .12em; }
 .hero-corner-brand small { margin-top: 4px; color: #6c7077; font-size: .72rem; font-weight: 760; letter-spacing: .08em; }
-.clipboard-motto { width: 250px; position: absolute; right: 1.8%; bottom: 15%; z-index: 3; color: #25282c; font-family: Georgia, "Times New Roman", serif; font-size: clamp(.72rem, .82vw, .9rem); font-style: italic; font-weight: 600; line-height: 1.25; letter-spacing: .008em; text-align: center; transform: rotate(1.2deg); text-shadow: 0 1px 1px rgba(255, 255, 255, .7); }
-.hero-signature { position: absolute; top: 62.5%; left: 63.5%; z-index: 3; color: #303338; font-family: inherit; font-size: clamp(.66rem, .82vw, .9rem); font-weight: 720; letter-spacing: .055em; line-height: 1; transform: translate(-50%, -50%); text-shadow: 0 1px 1px rgba(255, 255, 255, .58); }
 
 .section-heading, .page-heading, .panel-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .section-heading { margin: 35px 0 18px; }
@@ -482,11 +480,19 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .tv-mode .chart-card { min-height: 30vh; }
 .tv-mode .comparison-chart { height: 25vh; }
 
+@media (max-width: 1700px) and (min-width: 901px) {
+  .topbar { min-height: 124px; grid-template-columns: auto 1fr; grid-template-rows: 72px 52px; gap: 0 18px; }
+  .brand-lockup { grid-column: 1; grid-row: 1; }
+  .top-actions { grid-column: 2; grid-row: 1; justify-self: end; }
+  .main-nav { grid-column: 1 / -1; grid-row: 2; justify-content: center; border-top: 1px solid var(--line); }
+}
+
 @media (max-width: 1250px) {
-  .topbar { grid-template-columns: auto 1fr auto; gap: 16px; }
+  .topbar { grid-template-columns: auto 1fr; gap: 16px; }
   .brand-lockup small, .status-pill, .user-chip, .control-owner-chip > span { display: none; }
   .main-nav { justify-content: flex-start; }
   .nav-button { min-width: 62px; }
+  .nav-button span { display: none; }
   .charts-main, .charts-secondary { grid-template-columns: 1fr; }
   .quality-card .quality-summary { grid-template-columns: 220px 1fr; }
   .field-grid.four { grid-template-columns: repeat(2, 1fr); }
@@ -498,7 +504,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 }
 
 @media (max-width: 900px) {
-  .topbar { padding: 0 16px; position: static; grid-template-columns: auto 1fr; }
+  .topbar { min-height: 72px; padding: 0 16px; position: static; grid-template-columns: auto 1fr; grid-template-rows: 72px; }
   .main-nav { display: none; }
   .top-actions { justify-content: flex-end; }
   .top-actions .button-dark, .status-pill { display: none; }
@@ -513,8 +519,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .hero-corner-brand img { width: 50px; max-height: 50px; }
   .hero-corner-brand strong { font-size: .82rem; }
   .hero-corner-brand small { font-size: .62rem; }
-  .clipboard-motto { display: none; }
-  .hero-signature { top: 61.5%; left: 70%; font-size: .64rem; }
   .metrics-grid { grid-template-columns: 1fr 1fr; }
   .page-heading, .section-heading, .email-report, .category-manager { align-items: stretch; flex-direction: column; }
   .heading-summary { width: 100%; text-align: left; }
@@ -547,7 +551,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .dashboard-hero { min-height: 570px; padding: 23px; border-radius: 18px; }
   .dashboard-hero h1 { font-size: clamp(2.7rem, 14vw, 4.3rem); }
   .hero-kicker { flex-wrap: wrap; }
-  .hero-signature { top: 61%; left: 70%; font-size: .56rem; letter-spacing: .045em; }
   .hero-actions { align-items: stretch; flex-direction: column; }
   .hero-actions .button, .hero-actions .sync-badge { width: 100%; }
   .metrics-grid { grid-template-columns: 1fr; }
