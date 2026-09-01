@@ -135,6 +135,14 @@ function qualityCategories(material) {
   return material === "trilho" ? RAIL_QUALITY_CATEGORIES : state.categories;
 }
 
+function blankQuality(material) {
+  return Object.fromEntries(qualityCategories(material).map((category) => [category.id, 0]));
+}
+
+function blankInvoiceItem(material) {
+  return { number: "", quantity: "", quality: blankQuality(material) };
+}
+
 function defaultDraft(material = "dormente") {
   return {
     id: "",
@@ -147,7 +155,7 @@ function defaultDraft(material = "dormente") {
     supplier: material === "dormente" ? "Cavan / Arauco" : "Arauco",
     vehiclePlate: "",
     inspectorName: CONTROL_OWNER,
-    invoiceItems: [{ number: "", quantity: "" }],
+    invoiceItems: [blankInvoiceItem(material)],
     quality: Object.fromEntries([...state.categories, ...RAIL_QUALITY_CATEGORIES].map((category) => [category.id, 0])),
     rejections: [],
     observations: "",
@@ -217,17 +225,26 @@ function rejectionDetails(record, invoiceNumber) {
 }
 
 function reconcileInvoiceQuality(record) {
-  if (record.material !== "dormente" || !Array.isArray(record.invoiceItems) || !record.invoiceItems.length) return record;
-  record.invoiceItems = record.invoiceItems.map((item) => ({ ...item, quality: { ...Object.fromEntries(state.categories.map((category) => [category.id, 0])), ...(item.quality || {}) } }));
-  state.categories.filter((category) => category.id !== "reprovados").forEach((category) => {
-    const target = number(record.quality?.[category.id]);
-    const current = record.invoiceItems.reduce((sum, item) => sum + number(item.quality?.[category.id]), 0);
-    if (current === target) return;
-    const base = Math.floor(target / record.invoiceItems.length);
-    let remainder = target % record.invoiceItems.length;
-    record.invoiceItems.forEach((item) => { item.quality[category.id] = base + (remainder-- > 0 ? 1 : 0); });
+  if (!Array.isArray(record.invoiceItems) || !record.invoiceItems.length) return record;
+  const categories = qualityCategories(record.material);
+  const originalItems = record.invoiceItems;
+  record.invoiceItems = originalItems.map((item) => ({ ...item, quality: { ...blankQuality(record.material), ...(item.quality || {}) } }));
+  categories.forEach((category) => {
+    const hasPerInvoiceValue = originalItems.some((item) => Object.prototype.hasOwnProperty.call(item.quality || {}, category.id));
+    if (!hasPerInvoiceValue) record.invoiceItems[0].quality[category.id] = number(record.quality?.[category.id]);
   });
-  record.invoiceItems.forEach((item) => { item.quality.reprovados = rejectionsForInvoice(record, item.number).length; });
+  if (record.material === "dormente") {
+    const rejections = Array.isArray(record.rejections) ? record.rejections : [];
+    if (rejections.length) {
+      record.invoiceItems.forEach((item) => { item.quality.reprovados = rejections.filter((rejection) => rejection.invoiceNumber === String(item.number)).length; });
+      const unassigned = rejections.filter((rejection) => !rejection.invoiceNumber).length;
+      if (unassigned) record.invoiceItems[0].quality.reprovados += unassigned;
+    }
+  }
+  record.quality = { ...(record.quality || {}) };
+  categories.forEach((category) => {
+    record.quality[category.id] = record.invoiceItems.reduce((sum, item) => sum + number(item.quality?.[category.id]), 0);
+  });
   return record;
 }
 
@@ -476,23 +493,42 @@ function renderRejectionSection(draft, items, rejections) {
 function formRecordFromDom() {
   const form = document.querySelector("#receiving-form");
   if (!form) return state.draft || defaultDraft();
+  const material = form.elements.material.value;
+  const categories = qualityCategories(material);
   const invoiceNumbers = [...form.querySelectorAll('[name="invoiceNumber"]')];
   const invoiceQuantities = [...form.querySelectorAll('[name="invoiceQuantity"]')];
   const draftItems = invoiceItems(state.draft || {});
-  const items = invoiceNumbers.map((input, index) => { const numberValue = input.value.trim(); const previous = draftItems.find((item) => String(item.number) === numberValue) || draftItems[index]; return { number: numberValue, quantity: number(invoiceQuantities[index]?.value), ...(previous?.quality ? { quality: structuredClone(previous.quality) } : {}) }; }).filter((item) => item.number || item.quantity);
-  const quality = { ...((state.draft || {}).quality || {}) };
-  qualityCategories(form.elements.material.value).forEach((category) => { quality[category.id] = number(form.querySelector(`[name="quality_${category.id}"]`)?.value); });
+  const items = invoiceNumbers.map((input, index) => {
+    const numberValue = input.value.trim();
+    const previous = draftItems.find((item) => String(item.number) === numberValue) || draftItems[index];
+    const qualityCard = form.querySelector(`[data-invoice-quality-card="${index}"]`);
+    const quality = { ...blankQuality(material), ...(previous?.quality || {}) };
+    categories.forEach((category) => { quality[category.id] = number(qualityCard?.querySelector(`[data-quality-category="${category.id}"]`)?.value); });
+    return { number: numberValue, quantity: number(invoiceQuantities[index]?.value), quality };
+  });
   const rejections = [...form.querySelectorAll("[data-rejection-row]")].map((row) => {
     const reasonId = row.querySelector('[name="rejectionReason"]')?.value || "";
     return { id: row.dataset.rejectionId || crypto.randomUUID(), invoiceNumber: row.querySelector('[name="rejectionInvoice"]')?.value || "", mold: row.querySelector('[name="rejectionMold"]')?.value.trim() || "", cavity: row.querySelector('[name="rejectionCavity"]')?.value.trim() || "", reasonId, reason: state.rejectionReasons.find((item) => item.id === reasonId)?.label || "" };
   });
-  if (form.elements.material.value === "dormente") quality.reprovados = rejections.length;
-  return { ...(state.draft || defaultDraft()), material: form.elements.material.value, receivedDate: form.elements.receivedDate.value, receivedTime: form.elements.receivedTime.value, timeKnown: Boolean(form.elements.receivedTime.value), location: form.elements.location.value.trim(), supplier: form.elements.supplier.value.trim(), vehiclePlate: form.elements.vehiclePlate.value.trim().toUpperCase(), inspectorName: form.elements.inspectorName.value.trim(), observations: form.elements.observations.value.trim(), invoiceItems: items.length ? items : [{ number: "", quantity: 0 }], quality, rejections, _cleanupMolde57Cav1: true };
+  if (material === "dormente") items.forEach((item) => { item.quality.reprovados = rejections.filter((rejection) => rejection.invoiceNumber === item.number).length; });
+  const quality = { ...((state.draft || {}).quality || {}) };
+  categories.forEach((category) => { quality[category.id] = items.reduce((sum, item) => sum + number(item.quality?.[category.id]), 0); });
+  return { ...(state.draft || defaultDraft()), material, receivedDate: form.elements.receivedDate.value, receivedTime: form.elements.receivedTime.value, timeKnown: Boolean(form.elements.receivedTime.value), location: form.elements.location.value.trim(), supplier: form.elements.supplier.value.trim(), vehiclePlate: form.elements.vehiclePlate.value.trim().toUpperCase(), inspectorName: form.elements.inspectorName.value.trim(), observations: form.elements.observations.value.trim(), invoiceItems: items.length ? items : [blankInvoiceItem(material)], quality, rejections, _cleanupMolde57Cav1: true };
+}
+
+function renderInvoiceQualityCards(draft, items, rejections) {
+  const isSleeper = draft.material === "dormente";
+  return `<div class="invoice-quality-list">${items.map((item, index) => {
+    const quality = { ...blankQuality(draft.material), ...invoiceQuality(draft, item, index) };
+    const invoiceLabel = item.number ? `NF ${escapeHtml(item.number)}` : `NF ${index + 1}`;
+    const invoiceDetail = item.quantity ? `${formatNumber(item.quantity)} ${MATERIALS[draft.material].unit}` : "Quantidade ainda não informada";
+    return `<article class="invoice-quality-card" data-invoice-quality-card="${index}"><header><div><span>Qualidade desta nota</span><strong>${invoiceLabel}</strong></div><small>${invoiceDetail}</small></header><div class="quality-input-grid">${qualityCategories(draft.material).map((category) => { const rejectedField = isSleeper && category.id === "reprovados"; const value = rejectedField ? rejections.filter((rejection) => rejection.invoiceNumber === String(item.number)).length : number(quality[category.id]); return `<label style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><input type="number" min="0" name="invoiceQuality_${category.id}" data-quality-category="${category.id}" value="${value}" ${rejectedField ? "readonly aria-describedby=\"rejected-help\"" : ""} /></label>`; }).join("")}</div></article>`;
+  }).join("")}</div>`;
 }
 
 function renderForm() {
   const draft = state.draft || defaultDraft();
-  const items = draft.invoiceItems?.length ? draft.invoiceItems : [{ number: "", quantity: "" }];
+  const items = draft.invoiceItems?.length ? draft.invoiceItems : [blankInvoiceItem(draft.material)];
   const total = items.reduce((sum, item) => sum + number(item.quantity), 0);
   const isSleeper = draft.material === "dormente";
   const rejections = isSleeper ? rejectionRows(draft) : [];
@@ -500,7 +536,7 @@ function renderForm() {
     <article class="panel form-panel"><div class="form-section-title"><span>01</span><div><h2>Material recebido</h2><p>Escolha o tipo antes de preencher as notas.</p></div></div><div class="material-selector"><button type="button" class="material-option ${isSleeper ? "active" : ""}" data-material="dormente"><i class="sleeper-icon"></i><span><strong>Dormentes</strong><small>Meta: ${formatNumber(TARGET_SLEEPERS)} unidades</small></span><b>${isSleeper ? "✓" : ""}</b></button><button type="button" class="material-option ${!isSleeper ? "active" : ""}" data-material="trilho"><i class="rail-icon"></i><span><strong>Trilhos</strong><small>Meta aberta para definição</small></span><b>${!isSleeper ? "✓" : ""}</b></button></div><input type="hidden" name="material" value="${draft.material}" /></article>
     <article class="panel form-panel"><div class="form-section-title"><span>02</span><div><h2>Data, horário e local</h2><p>O horário pode ficar vazio quando ainda não foi confirmado.</p></div></div><div class="field-grid four"><label><span>Data do recebimento *</span><input type="date" name="receivedDate" value="${escapeHtml(draft.receivedDate)}" required /></label><label><span>Horário</span><input type="time" name="receivedTime" value="${escapeHtml(draft.receivedTime || "")}" /></label><label class="span-two"><span>Local / ponto de descarga *</span><input name="location" value="${escapeHtml(draft.location)}" placeholder="Ex.: Frente Norte, pátio ou ponto de descarga" required /></label><label class="span-two"><span>Fornecedor / origem</span><input name="supplier" value="${escapeHtml(draft.supplier)}" /></label><label><span>Placa do veículo</span><input name="vehiclePlate" value="${escapeHtml(draft.vehiclePlate || "")}" placeholder="ABC-1D23" /></label><label><span>Responsável</span><input name="inspectorName" value="${escapeHtml(draft.inspectorName || "")}" /></label></div></article>
     <article class="panel form-panel invoice-panel"><div class="form-section-title"><span>03</span><div><h2>Notas fiscais e quantidades</h2><p>Adicione quantas NFs chegaram juntas. A soma aparece no topo.</p></div></div><div class="invoice-head"><span>Nota fiscal</span><span>Quantidade</span><span></span></div><div class="invoice-list">${items.map((item, index) => `<div class="invoice-row" data-invoice-row="${index}"><label><span>NF ${index + 1}</span><input name="invoiceNumber" value="${escapeHtml(item.number)}" inputmode="numeric" placeholder="Número da NF" required /></label><label><span>Quantidade</span><input type="number" min="0" name="invoiceQuantity" value="${item.quantity || ""}" placeholder="0" required /></label><button type="button" class="remove-row" data-remove-invoice="${index}" aria-label="Remover nota" ${items.length === 1 ? "disabled" : ""}>×</button></div>`).join("")}</div><button type="button" class="add-row-button" data-add-invoice>＋ Adicionar outra NF</button><div class="invoice-total"><span>Total automático</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></article>
-    <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Qualidade dos ${isSleeper ? "dormentes" : "trilhos"}</h2><p>Use somente quando houver ocorrência. Os campos podem permanecer zerados.</p></div></div><div class="quality-input-grid">${qualityCategories(draft.material).map((category) => { const rejectedField = isSleeper && category.id === "reprovados"; return `<label style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><input type="number" min="0" name="quality_${category.id}" value="${rejectedField ? rejections.length : number(draft.quality?.[category.id])}" ${rejectedField ? "readonly aria-describedby=\"rejected-help\"" : ""} /></label>`; }).join("")}</div>${isSleeper ? `<p id="rejected-help" class="rejected-help">O total de reprovados é calculado automaticamente pelos registros individuais abaixo.</p><div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div>${renderRejectionSection(draft, items, rejections)}` : '<p class="rail-quality-note">Registre empenamento, corrosão e danos no boleto, alma ou patim antes da liberação.</p>'}</article>
+    <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Qualidade por nota fiscal</h2><p>Cada NF tem seus próprios defeitos. Ao adicionar outra nota, estes campos começam zerados.</p></div></div>${renderInvoiceQualityCards(draft, items, rejections)}${isSleeper ? `<p id="rejected-help" class="rejected-help">Os reprovados são calculados por NF a partir dos registros individuais abaixo.</p><div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div>${renderRejectionSection(draft, items, rejections)}` : '<p class="rail-quality-note">Registre em cada NF o empenamento, a corrosão e os danos no boleto, alma ou patim.</p>'}</article>
     <article class="panel form-panel final-form-panel"><div class="form-section-title"><span>05</span><div><h2>Observações e confirmação</h2><p>Registre qualquer ressalva importante para o relatório.</p></div></div><label><span>Observações</span><textarea name="observations" rows="4" placeholder="Condições da descarga, divergências ou informações complementares">${escapeHtml(draft.observations || "")}</textarea></label><div class="form-actions"><button type="button" class="button button-outline" data-cancel-form>Cancelar</button><button type="button" class="button button-dark" data-save-status="rascunho">Salvar rascunho</button><button type="submit" class="button button-yellow">${state.editingId ? "Atualizar recebimento" : "Salvar recebimento"}</button></div></article></form></section>`;
 }
 
@@ -700,7 +736,7 @@ function bindFormEvents() {
   form.addEventListener("submit", (event) => { event.preventDefault(); saveCurrent("concluido"); });
   form.querySelectorAll('[name="invoiceQuantity"]').forEach((input) => input.addEventListener("input", updateFormTotal));
   form.querySelectorAll("[data-material]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.material = button.dataset.material; if (!state.draft.supplier) state.draft.supplier = button.dataset.material === "dormente" ? "Cavan / Arauco" : "Arauco"; render(); }));
-  form.querySelector("[data-add-invoice]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.push({ number: "", quantity: "" }); render(); });
+  form.querySelector("[data-add-invoice]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.push(blankInvoiceItem(state.draft.material)); render(); });
   form.querySelectorAll("[data-remove-invoice]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.splice(number(button.dataset.removeInvoice), 1); render(); }));
   form.querySelector("[data-add-rejection]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); const firstInvoice = state.draft.invoiceItems.find((item) => item.number)?.number || ""; state.draft.rejections = rejectionRows(state.draft); state.draft.rejections.push({ id: crypto.randomUUID(), invoiceNumber: firstInvoice, mold: "", cavity: "", reasonId: "", reason: "" }); state.draft.quality.reprovados = state.draft.rejections.length; render(); });
   form.querySelectorAll("[data-remove-rejection]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.rejections.splice(number(button.dataset.removeRejection), 1); state.draft.quality.reprovados = state.draft.rejections.length; render(); }));
@@ -732,7 +768,7 @@ function newRecord(material = "dormente") { state.draft = defaultDraft(material)
 function editRecord(id) {
   const record = state.records.find((item) => item.id === id);
   if (!record || !canEdit()) return;
-  state.draft = structuredClone({ ...record, receivedDate: record.receivedDate || String(record.receivedAt).slice(0, 10), receivedTime: record.receivedTime || "", invoiceItems: invoiceItems(record), quality: { ...Object.fromEntries([...state.categories, ...RAIL_QUALITY_CATEGORIES].map((category) => [category.id, 0])), ...(record.quality || {}) } });
+  state.draft = reconcileInvoiceQuality(structuredClone({ ...record, receivedDate: record.receivedDate || String(record.receivedAt).slice(0, 10), receivedTime: record.receivedTime || "", invoiceItems: invoiceItems(record), quality: { ...Object.fromEntries([...state.categories, ...RAIL_QUALITY_CATEGORIES].map((category) => [category.id, 0])), ...(record.quality || {}) } }));
   state.editingId = id; navigate("form");
 }
 
@@ -774,7 +810,7 @@ async function addCategory(rawName) {
   const palette = ["#ef8d32", "#15b7a5", "#ec5f78", "#806bff", "#25a8e0", "#9cbf33"];
   const category = { id, label, color: palette[state.categories.length % palette.length] };
   try { const { data, error } = await supabaseClient.from("quality_categories").upsert({ ...category, active: true, created_by: state.user.email, updated_at: new Date().toISOString() }, { onConflict: "id" }).select("id,label,color").single(); if (error) throw error; state.categories.push(data); } catch { return toast("Não foi possível adicionar a classificação no Supabase.", "error"); }
-  if (state.draft) { const formDraft = formRecordFromDom(); state.draft = { ...formDraft, quality: { ...formDraft.quality, [id]: 0 } }; }
+  if (state.draft) { const formDraft = formRecordFromDom(); state.draft = { ...formDraft, invoiceItems: formDraft.invoiceItems.map((item) => ({ ...item, quality: { ...(item.quality || {}), [id]: 0 } })), quality: { ...formDraft.quality, [id]: 0 } }; }
   render(); toast(`Classificação “${label}” adicionada.`, "success");
 }
 

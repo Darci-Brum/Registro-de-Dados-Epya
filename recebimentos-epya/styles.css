@@ -272,6 +272,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .invoice-total strong { font-size: 1.55rem; letter-spacing: -.04em; }
 .invoice-total small { align-self: end; padding-bottom: 4px; color: var(--muted); }
 .quality-input-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.invoice-quality-list { display: grid; gap: 14px; }
+.invoice-quality-card { padding: 17px; background: color-mix(in srgb, var(--yellow) 3%, var(--surface-2)); border: 1px solid var(--line-strong); border-radius: 13px; }
+.invoice-quality-card > header { margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.invoice-quality-card > header div { display: grid; gap: 3px; }
+.invoice-quality-card > header span, .invoice-quality-card > header small { color: var(--muted); font-size: .68rem; }
+.invoice-quality-card > header strong { font-size: 1rem; }
 .quality-input-grid label { padding: 13px; grid-template-columns: 9px 1fr; align-items: center; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
 .quality-input-grid label i { width: 8px; height: 8px; background: var(--category); border-radius: 50%; }
 .quality-input-grid label span { color: var(--ink); font-size: .77rem; }
@@ -570,6 +576,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .invoice-row { grid-template-columns: 1fr 120px 36px; }
   .invoice-row label > span { display: block; }
   .invoice-total { width: 100%; margin-top: 20px; }
+  .invoice-quality-card { padding: 13px; }
+  .invoice-quality-card > header { align-items: flex-start; flex-direction: column; }
   .new-category-inline, .category-add-form, .email-fields { grid-template-columns: 1fr; }
   .nf-quality-search, .rejection-fields, .rejection-reason-manager { grid-template-columns: 1fr; }
   .nf-quality-kpis { grid-template-columns: 1fr 1fr; }
