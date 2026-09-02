@@ -135,6 +135,23 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .metric-card.remaining .metric-line { background: linear-gradient(90deg, var(--orange) 0 30%, var(--line) 30%); }
 .metric-card.quality .metric-line { background: linear-gradient(90deg, var(--purple) 0 12%, var(--line) 12%); }
 
+.pera-milestone { margin-bottom: 22px; padding: 20px 22px; display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 16px 20px; background: linear-gradient(135deg, color-mix(in srgb, var(--yellow) 8%, var(--surface)), var(--surface) 62%); border: 1px solid color-mix(in srgb, var(--yellow) 38%, var(--line)); border-radius: 16px; box-shadow: var(--shadow-soft); }
+.pera-milestone-icon { width: 52px; height: 52px; display: grid; place-items: center; color: #17191c; font-size: 1.25rem; font-weight: 900; background: var(--yellow); border-radius: 14px; }
+.pera-milestone-copy h2 { margin: 3px 0 4px; font-size: clamp(1.05rem, 1.6vw, 1.35rem); letter-spacing: -.03em; }
+.pera-milestone-copy p { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.45; }
+.pera-milestone-total { min-width: 155px; display: grid; text-align: right; }
+.pera-milestone-total span, .pera-milestone-total small { color: var(--muted); font-size: .7rem; }
+.pera-milestone-total strong { margin: 2px 0; font-size: 1.65rem; line-height: 1; letter-spacing: -.045em; }
+.pera-milestone-progress { height: 7px; grid-column: 2 / -1; overflow: hidden; background: var(--line); border-radius: 999px; }
+.pera-milestone-progress i { height: 100%; display: block; background: linear-gradient(90deg, var(--yellow), #ff9f2f); border-radius: inherit; transition: width .35s ease; }
+.pera-milestone.warning { background: linear-gradient(135deg, color-mix(in srgb, var(--orange) 13%, var(--surface)), var(--surface) 64%); border-color: color-mix(in srgb, var(--orange) 55%, var(--line)); }
+.pera-milestone.warning .pera-milestone-icon { background: var(--orange); }
+.pera-milestone.warning .pera-milestone-progress i { background: var(--orange); }
+.pera-milestone.next { border-color: color-mix(in srgb, var(--blue) 48%, var(--line)); }
+.pera-milestone.next .pera-milestone-icon, .pera-milestone.next .pera-milestone-progress i { background: var(--blue); }
+.pera-milestone.reached { border-color: color-mix(in srgb, var(--green) 55%, var(--line)); }
+.pera-milestone.reached .pera-milestone-icon, .pera-milestone.reached .pera-milestone-progress i { color: white; background: var(--green); }
+
 .dashboard-grid { margin-bottom: 16px; display: grid; gap: 16px; }
 .charts-main { grid-template-columns: 1.45fr .8fr; }
 .charts-secondary { grid-template-columns: 1.15fr .85fr .85fr; }
@@ -514,12 +531,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .main-nav { display: none; }
   .top-actions { justify-content: flex-end; }
   .top-actions .button-dark, .status-pill { display: none; }
-  .mobile-nav { height: 64px; padding: 5px 8px; position: fixed; right: 9px; bottom: 9px; left: 9px; z-index: 50; display: grid; grid-template-columns: repeat(4, 1fr); background: color-mix(in srgb, var(--surface) 94%, transparent); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 12px 38px rgba(0, 0, 0, .17); backdrop-filter: blur(18px); }
-  .mobile-nav .nav-button { min-width: 0; padding: 5px; flex-direction: column; gap: 1px; border-radius: 9px; }
+  .mobile-nav { height: 72px; padding: 6px 8px; position: fixed; right: 9px; bottom: calc(8px + env(safe-area-inset-bottom)); left: 9px; z-index: 50; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: color-mix(in srgb, var(--surface) 94%, transparent); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 12px 38px rgba(0, 0, 0, .17); backdrop-filter: blur(18px); }
+  .mobile-nav .nav-button { min-width: 0; min-height: 58px; padding: 5px 2px; flex-direction: column; gap: 1px; border-radius: 9px; }
   .mobile-nav .nav-button::after { right: 24%; bottom: -5px; left: 24%; }
   .mobile-nav .nav-button span { font-size: 1rem; }
   .mobile-nav .nav-button b { font-size: .67rem; }
-  .app-main { padding-bottom: 95px; }
+  .user-chip { width: 46px; height: 46px; min-width: 46px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; }
+  .user-chip::before { content: "Sair"; font-size: .62rem; font-weight: 850; }
+  .user-chip strong, .user-chip small { display: none; }
+  .app-main { padding-bottom: calc(108px + env(safe-area-inset-bottom)); }
   .dashboard-hero { min-height: 510px; padding: 28px; align-items: flex-end; background: linear-gradient(0deg, rgba(8, 10, 13, .96) 0%, rgba(8, 10, 13, .72) 54%, rgba(8, 10, 13, .1) 100%), url("./hero-recebimento-epya.png") 60% center / cover; }
   .hero-corner-brand { width: 245px; min-height: 74px; top: 18px; right: 18px; grid-template-columns: 50px 1fr; gap: 11px; }
   .hero-corner-brand img { width: 50px; max-height: 50px; }
@@ -552,29 +572,36 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 }
 
 @media (max-width: 620px) {
-  .app-main { padding: 14px 12px 92px; }
-  .brand-lockup img { width: 78px; }
-  .dashboard-hero { min-height: 570px; padding: 23px; border-radius: 18px; }
-  .dashboard-hero h1 { font-size: clamp(2.7rem, 14vw, 4.3rem); }
+  .topbar { padding: 0 10px; }
+  .app-main { padding: 12px 10px calc(108px + env(safe-area-inset-bottom)); }
+  .brand-lockup img { width: 72px; }
+  .control-owner-chip { display: none; }
+  .dashboard-hero { min-height: 480px; padding: 20px; border-radius: 18px; }
+  .dashboard-hero h1 { font-size: clamp(2.15rem, 11vw, 3rem); }
+  .hero-corner-brand { width: 210px; right: 14px; }
   .hero-kicker { flex-wrap: wrap; }
   .hero-actions { align-items: stretch; flex-direction: column; }
   .hero-actions .button, .hero-actions .sync-badge { width: 100%; }
   .metrics-grid { grid-template-columns: 1fr; }
   .metric-card { min-height: 140px; }
-  .panel { border-radius: 14px; }
+  .panel, .form-panel { padding: 18px 15px; border-radius: 14px; }
+  input, select, textarea, .button { min-height: 50px; font-size: 1rem; }
+  .text-button, .back-link, .add-row-button { min-height: 44px; display: inline-flex; align-items: center; }
   .chart-card, .quality-card { min-height: 350px; }
   .comparison-chart { grid-auto-columns: minmax(67px, 1fr); }
   .quality-card .quality-summary, .quality-summary, .modal-quality .quality-summary { grid-template-columns: 1fr; }
   .quality-donut { width: 160px; }
-  .table-wrap { margin-right: -10px; }
-  .page-heading h1 { font-size: 2.45rem; }
+  .table-wrap { margin-right: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .data-table { min-width: 760px; }
+  .page-heading h1 { font-size: 2rem; }
   .material-selector, .field-grid.four, .quality-input-grid { grid-template-columns: 1fr; }
   .span-two { grid-column: auto; }
   .material-option { min-height: 88px; grid-template-columns: 48px 1fr auto; }
   .material-option > i { width: 46px; }
   .invoice-head { display: none; }
-  .invoice-row { grid-template-columns: 1fr 120px 36px; }
+  .invoice-row { grid-template-columns: minmax(0, 1fr) minmax(92px, .5fr) 44px; gap: 8px; }
   .invoice-row label > span { display: block; }
+  .remove-row { width: 44px; height: 50px; }
   .invoice-total { width: 100%; margin-top: 20px; }
   .invoice-quality-card { padding: 13px; }
   .invoice-quality-card > header { align-items: flex-start; flex-direction: column; }
@@ -612,6 +639,18 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .login-card { padding: 24px 20px; }
   .login-brands { grid-template-columns: 85px 1px 1fr; }
   .toast { right: 15px; bottom: 82px; }
+  .pera-milestone { padding: 17px; grid-template-columns: 44px minmax(0, 1fr); gap: 13px; }
+  .pera-milestone-icon { width: 44px; height: 44px; border-radius: 12px; }
+  .pera-milestone-total { min-width: 0; grid-column: 1 / -1; text-align: left; }
+  .pera-milestone-progress { grid-column: 1 / -1; }
+}
+
+@media (max-width: 390px) {
+  .invoice-row { grid-template-columns: minmax(0, 1fr) 44px; }
+  .invoice-row label:first-child { grid-column: 1 / -1; }
+  .invoice-row label:nth-child(2) { grid-column: 1; }
+  .invoice-row .remove-row { grid-column: 2; }
+  .mobile-nav .nav-button b { font-size: .59rem; }
 }
 
 @page { size: A4 portrait; margin: 10mm; }

@@ -36,6 +36,10 @@ const MATERIALS = {
   trilho: { label: "Trilhos", singular: "Trilho", unit: "barras", color: "#39b8ff" },
 };
 
+const PERA_WARNING_START = 14000;
+const PERA_FIRST_MILESTONE = 15000;
+const PERA_FINAL_MILESTONE = 20000;
+
 const state = {
   view: ["dashboard", "form", "history", "quality", "reports", "team"].includes(requestedView)
     ? requestedView
@@ -275,6 +279,9 @@ function metrics(records = state.records) {
   const sleeperOccurrences = dorm.reduce((sum, record) => sum + qualityOccurrences(record), 0);
   const railRejected = rail.reduce((sum, record) => sum + qualityRejected(record), 0);
   const railOccurrences = rail.reduce((sum, record) => sum + qualityCategories("trilho").reduce((total, category) => total + number(record.quality?.[category.id]), 0), 0);
+  const peraSleepers = dorm
+    .filter((record) => String(record.location || "").trim().toLocaleLowerCase("pt-BR") === "pera")
+    .reduce((sum, record) => sum + recordQuantity(record), 0);
   return {
     sleepers,
     rails,
@@ -288,6 +295,7 @@ function metrics(records = state.records) {
     sleeperOccurrences,
     railRejected,
     railOccurrences,
+    peraSleepers,
     records: records.length,
   };
 }
@@ -318,10 +326,10 @@ function render() {
       <header class="topbar no-print">
         <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel EPYA"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Controle diário de materiais</small></span></button>
         <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("reports", "Relatórios", "▤")}${state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
-        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><button class="user-chip" type="button" data-sign-out title="Sair"><strong>${escapeHtml(state.user.fullName || state.user.email.split("@")[0])}</strong><small>${state.user.role === "admin" ? "Administrador" : state.user.role === "viewer" ? "Consulta" : "Operação"}</small></button></div>
+        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><button class="user-chip" type="button" data-sign-out title="Sair" aria-label="Sair do sistema"><strong>${escapeHtml(state.user.fullName || state.user.email.split("@")[0])}</strong><small>${state.user.role === "admin" ? "Administrador" : state.user.role === "viewer" ? "Consulta" : "Operação"}</small></button></div>
       </header>
       <main class="app-main">${renderCurrentView()}</main>
-      <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("reports", "Relatórios", "▤")}</footer>
+      <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("reports", "Relatórios", "▤")}</footer>
       ${state.tvMode ? '<button class="exit-tv no-print" data-tv-toggle>Sair do modo TV</button>' : ""}
       ${renderModal()}<div class="toast" role="status" aria-live="polite"></div>
     </div>`;
@@ -475,11 +483,39 @@ function renderReportQuality(records, material = state.reportFilters.material) {
   return `<div class="report-quality-pair"><div><h3>Dormentes</h3>${renderQualityDonut("dormente", records)}</div><div><h3>Trilhos</h3>${renderQualityDonut("trilho", records)}</div></div>`;
 }
 
+function renderPeraMilestone(value) {
+  const total = value.peraSleepers;
+  let status = "monitor";
+  let title = "Monitoramento da Pera";
+  let milestone = PERA_FIRST_MILESTONE;
+  let detail = `Faltam ${formatNumber(PERA_FIRST_MILESTONE - total)} dormentes para o primeiro lembrete.`;
+
+  if (total >= PERA_FINAL_MILESTONE) {
+    status = "reached";
+    title = "Marco atingido: 20.000 dormentes na Pera";
+    milestone = PERA_FINAL_MILESTONE;
+    detail = `O total registrado chegou a ${formatNumber(total)} dormentes.`;
+  } else if (total >= PERA_FIRST_MILESTONE) {
+    status = "next";
+    title = "Primeiro marco atingido: 15.000 dormentes";
+    milestone = PERA_FINAL_MILESTONE;
+    detail = `Faltam ${formatNumber(PERA_FINAL_MILESTONE - total)} dormentes para o lembrete de 20.000.`;
+  } else if (total >= PERA_WARNING_START) {
+    status = "warning";
+    title = "Atenção: próximo de 15.000 na Pera";
+    detail = `Faltam somente ${formatNumber(PERA_FIRST_MILESTONE - total)} dormentes para o primeiro marco.`;
+  }
+
+  const progress = Math.min(100, (total / milestone) * 100);
+  const liveRole = status === "warning" || status === "reached" ? "alert" : "status";
+  return `<article class="pera-milestone ${status}" role="${liveRole}" aria-live="polite"><span class="pera-milestone-icon" aria-hidden="true">${status === "reached" ? "✓" : "!"}</span><div class="pera-milestone-copy"><span class="eyebrow">Controle de descarga</span><h2>${title}</h2><p>${detail}</p></div><div class="pera-milestone-total"><span>Total na Pera</span><strong>${formatNumber(total)}</strong><small>dormentes</small></div><div class="pera-milestone-progress" aria-label="${progress.toFixed(1).replace(".", ",")}% do marco de ${formatNumber(milestone)} dormentes"><i style="width:${progress}%"></i></div></article>`;
+}
+
 function renderDashboard() {
   const value = metrics();
   const recent = state.records.slice(0, 6);
   return `<section class="view dashboard-view"><article class="dashboard-hero"><div class="hero-copy"><div class="hero-kicker"><span>Controle de recebimentos</span></div><h1>Controle diário de<br />dormentes e trilhos.</h1><p>Notas fiscais, quantidades, qualidade e avanço físico reunidos em uma visão clara da obra.</p><div class="hero-actions no-print">${renderSyncBadge()}${canEdit() ? '<button class="button button-yellow" data-new-record>+ Novo recebimento</button>' : ""}<button class="button button-glass" data-nav="reports">Gerar relatório</button></div></div><div class="hero-corner-brand"><img src="./arauco-sucuriu-logo.svg" alt="Símbolo do Projeto Sucuriú" /><span><strong>ARAUCO</strong><small>Projeto Sucuriú</small></span></div></article>
-    <div class="section-heading"><div><span class="eyebrow">Visão executiva</span><h2>Panorama acumulado</h2></div><span class="updated-label">Atualizado com ${value.totalNfs} notas fiscais</span></div><div class="metrics-grid"><article class="metric-card sleeper"><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs • meta ${formatNumber(TARGET_SLEEPERS)}</small><div class="metric-progress"><i style="width:${value.progress}%"></i></div></article><article class="metric-card rail"><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs • meta ainda não definida</small><div class="metric-line"></div></article><article class="metric-card remaining"><span>Saldo de dormentes</span><strong>${formatNumber(value.remaining)}</strong><small>${value.progress.toFixed(2).replace(".", ",")}% da meta concluída</small><div class="metric-line"></div></article><article class="metric-card quality"><span>Ocorrências de qualidade</span><strong>${formatNumber(value.sleeperOccurrences + value.railOccurrences)}</strong><small>${formatNumber(value.sleeperOccurrences)} em dormentes • ${formatNumber(value.railOccurrences)} em trilhos</small><div class="metric-line"></div></article></div>
+    <div class="section-heading"><div><span class="eyebrow">Visão executiva</span><h2>Panorama acumulado</h2></div><span class="updated-label">Atualizado com ${value.totalNfs} notas fiscais</span></div><div class="metrics-grid"><article class="metric-card sleeper"><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs • meta ${formatNumber(TARGET_SLEEPERS)}</small><div class="metric-progress"><i style="width:${value.progress}%"></i></div></article><article class="metric-card rail"><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs • meta ainda não definida</small><div class="metric-line"></div></article><article class="metric-card remaining"><span>Saldo de dormentes</span><strong>${formatNumber(value.remaining)}</strong><small>${value.progress.toFixed(2).replace(".", ",")}% da meta concluída</small><div class="metric-line"></div></article><article class="metric-card quality"><span>Ocorrências de qualidade</span><strong>${formatNumber(value.sleeperOccurrences + value.railOccurrences)}</strong><small>${formatNumber(value.sleeperOccurrences)} em dormentes • ${formatNumber(value.railOccurrences)} em trilhos</small><div class="metric-line"></div></article></div>${renderPeraMilestone(value)}
     <div class="dashboard-grid charts-main"><article class="panel chart-card clickable" data-chart-modal="week" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação semanal</span><h2>Entradas por semana</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("week")}</article><article class="panel chart-card clickable" data-chart-modal="month" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação mensal</span><h2>Evolução por mês</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("month")}</article></div>
     <div class="dashboard-grid charts-secondary"><article class="panel chart-card clickable" data-chart-modal="daily" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Ritmo da operação</span><h2>Volume diário</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderDailyChart()}</article><article class="panel quality-card clickable" data-chart-modal="quality-dormente" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Classificações</span><h2>Qualidade dos dormentes</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("dormente")}</article><article class="panel quality-card clickable" data-chart-modal="quality-trilho" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Inspeção ferroviária</span><h2>Qualidade dos trilhos</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("trilho")}</article></div>
     ${renderNfQualityPanel()}
