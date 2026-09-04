@@ -1143,7 +1143,7 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js" : "/service-worker.js").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=27" : "/service-worker.js?v=27").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
 }
 
