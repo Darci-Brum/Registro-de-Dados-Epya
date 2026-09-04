@@ -49,6 +49,7 @@ const state = {
   rejectionReasons: readRejectionReasons(),
   draft: null,
   editingId: "",
+  editingInvoiceIndex: -1,
   loading: true,
   authLoading: true,
   authenticated: false,
@@ -571,7 +572,7 @@ function renderForm() {
   return `<section class="view form-view"><div class="page-heading"><div><button class="back-link" data-nav="dashboard">← Voltar ao painel</button><span class="eyebrow">${state.editingId ? "Editar lançamento" : "Novo recebimento"}</span><h1>${state.editingId ? "Atualizar recebimento" : "Registrar chegada do dia"}</h1><p>Informe as NFs e as quantidades. O total é calculado automaticamente.</p></div><div class="heading-summary"><span>Total deste lançamento</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></div><form id="receiving-form" class="receiving-form">
     <article class="panel form-panel"><div class="form-section-title"><span>01</span><div><h2>Material recebido</h2><p>Escolha o tipo antes de preencher as notas.</p></div></div><div class="material-selector"><button type="button" class="material-option ${isSleeper ? "active" : ""}" data-material="dormente"><i class="sleeper-icon"></i><span><strong>Dormentes</strong><small>Meta: ${formatNumber(TARGET_SLEEPERS)} unidades</small></span><b>${isSleeper ? "✓" : ""}</b></button><button type="button" class="material-option ${!isSleeper ? "active" : ""}" data-material="trilho"><i class="rail-icon"></i><span><strong>Trilhos</strong><small>Meta aberta para definição</small></span><b>${!isSleeper ? "✓" : ""}</b></button></div><input type="hidden" name="material" value="${draft.material}" /></article>
     <article class="panel form-panel"><div class="form-section-title"><span>02</span><div><h2>Data, horário e local</h2><p>O horário pode ficar vazio quando ainda não foi confirmado.</p></div></div><div class="field-grid four"><label><span>Data do recebimento *</span><input type="date" name="receivedDate" value="${escapeHtml(draft.receivedDate)}" required /></label><label><span>Horário</span><input type="time" name="receivedTime" value="${escapeHtml(draft.receivedTime || "")}" /></label><label class="span-two"><span>Local / ponto de descarga *</span><input name="location" value="${escapeHtml(draft.location)}" placeholder="Ex.: Frente Norte, pátio ou ponto de descarga" required /></label><label class="span-two"><span>Fornecedor / origem</span><input name="supplier" value="${escapeHtml(draft.supplier)}" /></label><label><span>Placa do veículo</span><input name="vehiclePlate" value="${escapeHtml(draft.vehiclePlate || "")}" placeholder="ABC-1D23" /></label><label><span>Responsável</span><input name="inspectorName" value="${escapeHtml(draft.inspectorName || "")}" /></label></div></article>
-    <article class="panel form-panel invoice-panel"><div class="form-section-title"><span>03</span><div><h2>Notas fiscais e quantidades</h2><p>Adicione quantas NFs chegaram juntas. A soma aparece no topo.</p></div></div><div class="invoice-head"><span>Nota fiscal</span><span>Quantidade</span><span></span></div><div class="invoice-list">${items.map((item, index) => `<div class="invoice-row" data-invoice-row="${index}"><label><span>NF ${index + 1}</span><input name="invoiceNumber" value="${escapeHtml(item.number)}" inputmode="numeric" placeholder="Número da NF" required /></label><label><span>Quantidade</span><input type="number" min="0" name="invoiceQuantity" value="${item.quantity || ""}" placeholder="0" required /></label><button type="button" class="remove-row" data-remove-invoice="${index}" aria-label="Remover nota" ${items.length === 1 ? "disabled" : ""}>×</button></div>`).join("")}</div><button type="button" class="add-row-button" data-add-invoice>＋ Adicionar outra NF</button><div class="invoice-total"><span>Total automático</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></article>
+    <article class="panel form-panel invoice-panel"><div class="form-section-title"><span>03</span><div><h2>Notas fiscais e quantidades</h2><p>Adicione quantas NFs chegaram juntas. A soma aparece no topo.</p></div></div><div class="invoice-head"><span>Nota fiscal</span><span>Quantidade</span><span></span></div><div class="invoice-list">${items.map((item, index) => `<div class="invoice-row ${state.editingInvoiceIndex === index ? "edit-target" : ""}" data-invoice-row="${index}"><label><span>NF ${index + 1}</span><input name="invoiceNumber" value="${escapeHtml(item.number)}" inputmode="numeric" placeholder="Número da NF" required /></label><label><span>Quantidade</span><input type="number" min="0" name="invoiceQuantity" value="${item.quantity || ""}" placeholder="0" required /></label><button type="button" class="remove-row" data-remove-invoice="${index}" aria-label="Remover nota" ${items.length === 1 ? "disabled" : ""}>×</button></div>`).join("")}</div><button type="button" class="add-row-button" data-add-invoice>＋ Adicionar outra NF</button><div class="invoice-total"><span>Total automático</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></article>
     <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Qualidade por nota fiscal</h2><p>Cada NF tem seus próprios defeitos. Ao adicionar outra nota, estes campos começam zerados.</p></div></div>${renderInvoiceQualityCards(draft, items, rejections)}${isSleeper ? `<p id="rejected-help" class="rejected-help">Os reprovados são calculados por NF a partir dos registros individuais abaixo.</p><div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div>${renderRejectionSection(draft, items, rejections)}` : '<p class="rail-quality-note">Registre em cada NF o empenamento, a corrosão e os danos no boleto, alma ou patim.</p>'}</article>
     <article class="panel form-panel final-form-panel"><div class="form-section-title"><span>05</span><div><h2>Observações e confirmação</h2><p>Registre qualquer ressalva importante para o relatório.</p></div></div><label><span>Observações</span><textarea name="observations" rows="4" placeholder="Condições da descarga, divergências ou informações complementares">${escapeHtml(draft.observations || "")}</textarea></label><div class="form-actions"><button type="button" class="button button-outline" data-cancel-form>Cancelar</button><button type="button" class="button button-dark" data-save-status="rascunho">Salvar rascunho</button><button type="submit" class="button button-yellow">${state.editingId ? "Atualizar recebimento" : "Salvar recebimento"}</button></div></article></form></section>`;
 }
@@ -633,8 +634,115 @@ function reportInvoiceRows(records) {
   return records.flatMap((record) => invoiceItems(record).map((item, index) => ({
     record,
     item,
+    index,
     quality: invoiceQuality(record, item, index),
   })));
+}
+
+function invoiceRejectedCount(row) {
+  if (row.record.material === "dormente") return Math.max(number(row.quality.reprovados), rejectionsForInvoice(row.record, row.item.number).length);
+  return number(row.quality["trilho-reprovados"] ?? row.quality.reprovados);
+}
+
+function invoiceDefectCount(row) {
+  return qualityCategories(row.record.material).reduce((sum, category) => sum + number(row.quality[category.id]), 0);
+}
+
+function invoiceCompletion(row) {
+  const qualityWasRecorded = row.item.quality && qualityCategories(row.record.material).some((category) => Object.prototype.hasOwnProperty.call(row.item.quality, category.id));
+  const checks = [
+    { label: "número da NF", ok: Boolean(String(row.item.number || "").trim()) },
+    { label: "data", ok: Boolean(row.record.receivedDate || row.record.receivedAt) },
+    { label: "quantidade recebida", ok: number(row.item.quantity) > 0 },
+    { label: "defeitos", ok: Boolean(qualityWasRecorded) },
+    { label: "local da entrega", ok: Boolean(String(row.record.location || "").trim()) },
+  ];
+  const completed = checks.filter((check) => check.ok).length;
+  return {
+    percentage: Math.round((completed / checks.length) * 100),
+    missing: checks.filter((check) => !check.ok).map((check) => check.label),
+  };
+}
+
+function joinTextParts(parts) {
+  if (!parts.length) return "";
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(", ")} e ${parts.at(-1)}`;
+}
+
+function materialQuantityLabel(material, quantity) {
+  if (material === "trilho") return quantity === 1 ? "trilho" : "trilhos";
+  return quantity === 1 ? "dormente" : "dormentes";
+}
+
+function qualityTextForRows(rows, material) {
+  const totals = Object.fromEntries(qualityCategories(material).map((category) => [category.id, 0]));
+  rows.forEach((row) => qualityCategories(material).forEach((category) => { totals[category.id] += number(row.quality[category.id]); }));
+  const parts = qualityCategories(material)
+    .map((category) => ({ label: category.label.toLocaleLowerCase("pt-BR"), value: totals[category.id] }))
+    .filter((entry) => entry.value > 0)
+    .map((entry) => `${formatNumber(entry.value)} ${entry.label}`);
+  return parts.length ? joinTextParts(parts) : "nenhuma ocorrência registrada";
+}
+
+function descriptiveReportText(records = reportRecords()) {
+  const rows = reportInvoiceRows(records).sort((a, b) => {
+    const dateOrder = String(a.record.receivedDate || a.record.receivedAt).localeCompare(String(b.record.receivedDate || b.record.receivedAt));
+    if (dateOrder) return dateOrder;
+    const materialOrder = a.record.material.localeCompare(b.record.material);
+    if (materialOrder) return materialOrder;
+    return String(a.item.number).localeCompare(String(b.item.number), "pt-BR", { numeric: true });
+  });
+  const material = state.reportFilters.material;
+  const materialTitle = material === "todos" ? "DORMENTES E TRILHOS" : MATERIALS[material].label.toLocaleUpperCase("pt-BR");
+  const lines = [
+    `*RELATÓRIO DESCRITIVO — ${materialTitle}*`,
+    `Período: ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}`,
+  ];
+  if (!rows.length) return `${lines.join("\n")}\n\nNenhum recebimento encontrado para os filtros escolhidos.`;
+
+  const groups = new Map();
+  rows.forEach((row) => {
+    const date = row.record.receivedDate || String(row.record.receivedAt).slice(0, 10);
+    const key = `${date}|${row.record.material}`;
+    if (!groups.has(key)) groups.set(key, { date, material: row.record.material, rows: [] });
+    groups.get(key).rows.push(row);
+  });
+
+  groups.forEach((group) => {
+    const total = group.rows.reduce((sum, row) => sum + number(row.item.quantity), 0);
+    const groupHeading = material === "todos" ? `${formatDate(group.date)} — ${MATERIALS[group.material].label}` : formatDate(group.date);
+    lines.push("", `*${groupHeading}*`);
+    lines.push(`Foram recebidos *${formatNumber(total)} ${materialQuantityLabel(group.material, total)}*, distribuídos em *${formatNumber(group.rows.length)} ${group.rows.length === 1 ? "nota fiscal" : "notas fiscais"}*:`);
+    group.rows.forEach((row) => lines.push(`• NF ${row.item.number || "não informada"} — ${formatNumber(row.item.quantity)} ${materialQuantityLabel(group.material, number(row.item.quantity))}`));
+    lines.push(`Qualidade: ${qualityTextForRows(group.rows, group.material)}.`);
+    group.rows.forEach((row) => {
+      rejectionsForInvoice(row.record, row.item.number).forEach((rejection) => {
+        const reason = rejection.reason || state.rejectionReasons.find((item) => item.id === rejection.reasonId)?.label || "motivo não informado";
+        lines.push(`• Reprovação na NF ${row.item.number}: ${reason}, molde ${rejection.mold || "não informado"} e cavidade ${rejection.cavity || "não informada"}.`);
+      });
+    });
+  });
+
+  const value = metrics(records);
+  lines.push("", "*RESUMO DO PERÍODO*");
+  if (material === "todos" || material === "dormente") lines.push(`• Dormentes recebidos: ${formatNumber(value.sleepers)} em ${formatNumber(value.sleeperNfs)} NFs`);
+  if (material === "todos" || material === "trilho") lines.push(`• Trilhos recebidos: ${formatNumber(value.rails)} em ${formatNumber(value.railNfs)} NFs`);
+  if (material === "todos") lines.push(`• Total de notas fiscais: ${formatNumber(value.totalNfs)}`);
+  if (material === "dormente") lines.push(`• Qualidade acumulada: ${qualityTextForRows(rows, "dormente")}`);
+  if (material === "trilho") lines.push(`• Qualidade acumulada: ${qualityTextForRows(rows, "trilho")}`);
+  if (material === "todos") {
+    const sleeperRows = rows.filter((row) => row.record.material === "dormente");
+    const railRows = rows.filter((row) => row.record.material === "trilho");
+    lines.push(`• Qualidade dos dormentes: ${qualityTextForRows(sleeperRows, "dormente")}`);
+    lines.push(`• Qualidade dos trilhos: ${qualityTextForRows(railRows, "trilho")}`);
+  }
+  return lines.join("\n");
+}
+
+function renderTextReport(records) {
+  const text = descriptiveReportText(records);
+  return `<article class="panel report-text-panel no-print"><div class="report-text-heading"><div><span class="eyebrow">Pronto para mensagem</span><h2>Relatório em texto conforme os filtros</h2><p>O conteúdo abaixo usa o período e o material selecionados. Copie ou envie diretamente pelo WhatsApp.</p></div><div class="report-text-actions"><button class="button button-outline" type="button" data-copy-report-text>Copiar texto</button><button class="button button-dark" type="button" data-whatsapp-report>Enviar no WhatsApp</button></div></div><pre class="report-text-preview" data-report-text tabindex="0">${escapeHtml(text)}</pre></article>`;
 }
 
 function reportRejectionRows(records) {
@@ -656,10 +764,21 @@ function renderReportKpis(records) {
 
 function renderReportTable(records) {
   const rows = reportInvoiceRows(records);
-  const baseCells = ({ record, item }) => `<td>${formatDate(record.receivedDate)}</td><td>${escapeHtml(item.number)}</td><td>${escapeHtml(record.location)}</td><td>${formatNumber(item.quantity)}</td>`;
-  if (state.reportFilters.material === "dormente") return `<h2 class="report-table-title">Detalhamento por nota fiscal — dormentes</h2><div class="report-table"><table><thead><tr><th>Data</th><th>NF</th><th>Local</th><th>Qtd.</th><th>PQ</th><th>R</th><th>B</th><th>Quebras</th><th>Reprovados</th></tr></thead><tbody>${rows.map((row) => { const summary = sleeperQualitySummary(row.quality); return `<tr>${baseCells(row)}<td>${formatNumber(summary.smallBreaks)}</td><td>${formatNumber(summary.repaired)}</td><td>${formatNumber(summary.bubbles)}</td><td>${formatNumber(summary.breaks)}</td><td>${formatNumber(Math.max(summary.rejected, rejectionsForInvoice(row.record, row.item.number).length))}</td></tr>`; }).join("")}</tbody></table></div>`;
-  if (state.reportFilters.material === "trilho") return `<h2 class="report-table-title">Detalhamento por nota fiscal — trilhos</h2><div class="report-table"><table><thead><tr><th>Data</th><th>NF</th><th>Local</th><th>Qtd.</th><th>Empeno</th><th>Oxidação</th><th>Boleto</th><th>Alma</th><th>Patim</th><th>Reprovados</th></tr></thead><tbody>${rows.map((row) => { const summary = railQualitySummary(row.quality); return `<tr>${baseCells(row)}<td>${formatNumber(summary.bending)}</td><td>${formatNumber(summary.oxidation)}</td><td>${formatNumber(summary.head)}</td><td>${formatNumber(summary.web)}</td><td>${formatNumber(summary.foot)}</td><td>${formatNumber(summary.rejected)}</td></tr>`; }).join("")}</tbody></table></div>`;
-  return `<h2 class="report-table-title">Detalhamento por nota fiscal — visão conjunta</h2><div class="report-table"><table><thead><tr><th>Data</th><th>Material</th><th>NF</th><th>Local</th><th>Qtd.</th><th>Ocorrências de qualidade</th></tr></thead><tbody>${rows.map(({ record, item, quality }) => { const details = qualityCategories(record.material).map((category) => ({ label: category.label, value: number(quality[category.id]) })).filter((entry) => entry.value > 0).map((entry) => `${entry.label}: ${formatNumber(entry.value)}`).join(" • ") || "Sem ocorrências"; return `<tr><td>${formatDate(record.receivedDate)}</td><td>${MATERIALS[record.material].label}</td><td>${escapeHtml(item.number)}</td><td>${escapeHtml(record.location)}</td><td>${formatNumber(item.quantity)}</td><td class="report-quality-cell">${escapeHtml(details)}</td></tr>`; }).join("")}</tbody></table></div>`;
+  const meta = (row) => {
+    const rejected = invoiceRejectedCount(row);
+    const completion = invoiceCompletion(row);
+    const status = rejected > 0 ? "is-rejected" : "is-ok";
+    const statusLabel = rejected > 0 ? `${formatNumber(rejected)} reprovado${rejected === 1 ? "" : "s"}` : "OK";
+    const missing = completion.missing.length ? `Falta: ${completion.missing.join(", ")}` : "Dados essenciais completos";
+    const nfCell = `<td class="report-nf-cell"><strong>NF ${escapeHtml(row.item.number || "—")}</strong><span class="invoice-status-pill ${status}">${statusLabel}</span></td>`;
+    const completionCell = `<td class="report-completion-cell" title="${escapeHtml(missing)}"><div><strong>${completion.percentage}%</strong><small>${escapeHtml(missing)}</small></div><span class="invoice-completion-track" role="progressbar" aria-label="Preenchimento da NF ${escapeHtml(row.item.number || "não informada")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${completion.percentage}"><i style="width:${completion.percentage}%"></i></span></td>`;
+    const actionsCell = `<td class="report-row-actions no-print"><button type="button" data-view-invoice="${row.record.id}" data-invoice-index="${row.index}">Ver</button>${canEdit() ? `<button type="button" data-edit-invoice="${row.record.id}" data-invoice-index="${row.index}">Editar</button>` : ""}</td>`;
+    return { rejected, completion, status, nfCell, completionCell, actionsCell };
+  };
+  const baseCells = (row, rowMeta) => `<td>${formatDate(row.record.receivedDate)}</td>${rowMeta.nfCell}<td>${escapeHtml(row.record.location || "—")}</td><td>${formatNumber(row.item.quantity)}</td>`;
+  if (state.reportFilters.material === "dormente") return `<h2 class="report-table-title">Detalhamento por nota fiscal — dormentes</h2><div class="report-table"><table><thead><tr><th>Data</th><th>NF / situação</th><th>Local</th><th>Qtd.</th><th>PQ</th><th>R</th><th>B</th><th>Quebras</th><th>Reprovados</th><th>Preenchimento</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => { const summary = sleeperQualitySummary(row.quality); const rowMeta = meta(row); return `<tr class="report-invoice-row ${rowMeta.status}">${baseCells(row, rowMeta)}<td>${formatNumber(summary.smallBreaks)}</td><td>${formatNumber(summary.repaired)}</td><td>${formatNumber(summary.bubbles)}</td><td>${formatNumber(summary.breaks)}</td><td>${formatNumber(rowMeta.rejected)}</td>${rowMeta.completionCell}${rowMeta.actionsCell}</tr>`; }).join("")}</tbody></table></div>`;
+  if (state.reportFilters.material === "trilho") return `<h2 class="report-table-title">Detalhamento por nota fiscal — trilhos</h2><div class="report-table"><table><thead><tr><th>Data</th><th>NF / situação</th><th>Local</th><th>Qtd.</th><th>Empeno</th><th>Oxidação</th><th>Boleto</th><th>Alma</th><th>Patim</th><th>Reprovados</th><th>Preenchimento</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => { const summary = railQualitySummary(row.quality); const rowMeta = meta(row); return `<tr class="report-invoice-row ${rowMeta.status}">${baseCells(row, rowMeta)}<td>${formatNumber(summary.bending)}</td><td>${formatNumber(summary.oxidation)}</td><td>${formatNumber(summary.head)}</td><td>${formatNumber(summary.web)}</td><td>${formatNumber(summary.foot)}</td><td>${formatNumber(rowMeta.rejected)}</td>${rowMeta.completionCell}${rowMeta.actionsCell}</tr>`; }).join("")}</tbody></table></div>`;
+  return `<h2 class="report-table-title">Detalhamento por nota fiscal — visão conjunta</h2><div class="report-table"><table><thead><tr><th>Data</th><th>Material</th><th>NF / situação</th><th>Local</th><th>Qtd.</th><th>Ocorrências de qualidade</th><th>Preenchimento</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => { const details = qualityCategories(row.record.material).map((category) => ({ label: category.label, value: number(row.quality[category.id]) })).filter((entry) => entry.value > 0).map((entry) => `${entry.label}: ${formatNumber(entry.value)}`).join(" • ") || "Sem ocorrências"; const rowMeta = meta(row); return `<tr class="report-invoice-row ${rowMeta.status}"><td>${formatDate(row.record.receivedDate)}</td><td>${MATERIALS[row.record.material].label}</td>${rowMeta.nfCell}<td>${escapeHtml(row.record.location || "—")}</td><td>${formatNumber(row.item.quantity)}</td><td class="report-quality-cell">${escapeHtml(details)}</td>${rowMeta.completionCell}${rowMeta.actionsCell}</tr>`; }).join("")}</tbody></table></div>`;
 }
 
 function renderReports() {
@@ -668,16 +787,17 @@ function renderReports() {
   const materialLabel = material === "todos" ? "Dormentes e trilhos" : MATERIALS[material].label;
   const pdfLabel = material === "todos" ? "Gerar PDF: Ambos" : `Gerar PDF: ${MATERIALS[material].label}`;
   return `<section class="view reports-view">
-    <div class="page-heading no-print"><div><span class="eyebrow">Relatório semanal e por período</span><h1>Relatórios da obra</h1><p>Escolha dormentes, trilhos ou a visão conjunta. O PDF e a planilha respeitam exatamente essa seleção.</p></div><div class="heading-actions"><button class="button button-outline" data-report-week>Últimos 7 dias</button><button class="button button-outline" data-export-report>Exportar Excel</button><button class="button button-yellow" data-print-report>${pdfLabel}</button></div></div>
+    <div class="page-heading no-print"><div><span class="eyebrow">Relatório semanal e por período</span><h1>Relatórios da obra</h1><p>Escolha o período e o material. O PDF, a planilha e o texto para mensagem respeitam exatamente os filtros selecionados.</p></div><div class="heading-actions"><button class="button button-outline" data-report-week>Últimos 7 dias</button><button class="button button-outline" data-export-report>Exportar Excel</button><button class="button button-outline" data-copy-report-text>Copiar texto</button><button class="button button-yellow" data-print-report>${pdfLabel}</button></div></div>
     ${renderReportMaterialSwitch()}
     <article class="panel report-filters no-print"><label><span>Data inicial</span><input type="date" name="reportFrom" value="${state.reportFilters.from}" /></label><label><span>Data final</span><input type="date" name="reportTo" value="${state.reportFilters.to}" /></label><label><span>Material selecionado</span><select name="reportMaterial"><option value="todos">Todos os materiais</option><option value="dormente" ${state.reportFilters.material === "dormente" ? "selected" : ""}>Dormentes</option><option value="trilho" ${state.reportFilters.material === "trilho" ? "selected" : ""}>Trilhos</option></select></label><button class="button button-dark" data-apply-report>Atualizar relatório</button></article>
+    ${renderTextReport(records)}
     ${renderReportImageControls()}
     <article class="print-report"><header class="report-header"><img src="./epya-logo-oficial.png" alt="EPYA" /><div><span>RELATÓRIO DE RECEBIMENTO DE MATERIAIS</span><h1>ARAUCO / Projeto Sucuriú</h1><p>Material: <strong>${materialLabel}</strong></p><p>Período: ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}</p><p>Responsável pelo controle: <strong>${CONTROL_OWNER}</strong></p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header>
       ${renderReportKpis(records)}
       <div class="report-charts"><section class="clickable" data-chart-modal="report-week" tabindex="0"><div class="report-chart-heading"><h2>Comparação semanal</h2><span>Ampliar ↗</span></div>${renderComparisonChart("week", records)}</section><section class="clickable" data-chart-modal="report-quality" tabindex="0"><div class="report-chart-heading"><h2>Qualidade — ${materialLabel}</h2><span>Ampliar ↗</span></div>${renderReportQuality(records, material)}</section></div>
       ${renderReportTable(records)}
       ${renderReportRejections(records)}${renderReportPhotoSection()}<footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle diário de recebimentos</span></footer></article>
-    <article class="panel email-report no-print"><div><span class="eyebrow">Compartilhamento</span><h2>Enviar relatório</h2><p>Gere o PDF e depois abra o WhatsApp para anexar o arquivo salvo. Você também pode preparar o envio por e-mail.</p></div><div class="email-fields"><input type="email" name="reportEmail" value="${OWNER_EMAIL}" placeholder="destinatario@empresa.com" /><button class="button button-outline" data-email-report>Preparar e-mail</button><button class="button button-dark" data-whatsapp-report>Abrir WhatsApp</button></div></article>
+    <article class="panel email-report no-print"><div><span class="eyebrow">Compartilhamento</span><h2>Enviar relatório</h2><p>Envie o mesmo texto descritivo dos filtros por e-mail ou WhatsApp. O PDF continua disponível quando precisar do documento completo.</p></div><div class="email-fields"><input type="email" name="reportEmail" value="${OWNER_EMAIL}" placeholder="destinatario@empresa.com" /><button class="button button-outline" data-email-report>Preparar e-mail</button><button class="button button-dark" data-whatsapp-report>Enviar texto no WhatsApp</button></div></article>
   </section>`;
 }
 
@@ -691,6 +811,7 @@ function renderModal() {
   let title = "Detalhes";
   let subtitle = "Dados do painel";
   let body = "";
+  let footer = '<button class="button button-outline" data-modal-close>Fechar</button><button class="button button-dark" data-print-report>Gerar PDF do painel</button>';
   if (["week", "month", "report-week", "report-month"].includes(state.modal.type)) {
     const reportMode = state.modal.type.startsWith("report-");
     const period = state.modal.type.replace("report-", "");
@@ -720,6 +841,24 @@ function renderModal() {
     title = "Qualidade dos materiais";
     subtitle = "Dormentes e trilhos no período selecionado";
     body = `<div class="modal-quality">${renderReportQuality(records)}</div>`;
+  } else if (state.modal.type === "invoice") {
+    const record = state.records.find((item) => item.id === state.modal.id);
+    if (!record) return "";
+    const index = number(state.modal.index);
+    const item = invoiceItems(record)[index];
+    if (!item) return "";
+    const row = { record, item, index, quality: invoiceQuality(record, item, index) };
+    const rejected = invoiceRejectedCount(row);
+    const completion = invoiceCompletion(row);
+    const statusClass = rejected > 0 ? "is-rejected" : "is-ok";
+    const statusLabel = rejected > 0 ? `${formatNumber(rejected)} reprovado${rejected === 1 ? "" : "s"}` : "NF sem reprovação";
+    title = `NF ${item.number || "não informada"}`;
+    subtitle = `${MATERIALS[record.material].label} • ${formatDate(record.receivedDate)} • ${record.location || "local não informado"}`;
+    const qualityDetails = qualityCategories(record.material).map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(row.quality[category.id])}</strong></span>`).join("");
+    const invoiceRejections = rejectionsForInvoice(record, item.number);
+    const completionDetail = completion.missing.length ? `Falta preencher: ${completion.missing.join(", ")}.` : "Todos os dados essenciais estão preenchidos.";
+    body = `<div class="invoice-modal-overview ${statusClass}"><span class="invoice-status-pill ${statusClass}">${statusLabel}</span><div><strong>${completion.percentage}% preenchido</strong><small>${escapeHtml(completionDetail)}</small><span class="invoice-completion-track" role="progressbar" aria-label="Preenchimento da NF" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${completion.percentage}"><i style="width:${completion.percentage}%"></i></span></div></div><div class="record-modal-summary"><div><span>Quantidade recebida</span><strong>${formatNumber(item.quantity)}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Defeitos encontrados</span><strong>${formatNumber(invoiceDefectCount(row))}</strong><small>ocorrências nesta NF</small></div><div><span>Local da entrega</span><strong>${escapeHtml(record.location || "—")}</strong><small>${escapeHtml(record.supplier || "Fornecedor não informado")}</small></div><div><span>Data</span><strong>${formatDate(record.receivedDate)}</strong><small>${record.receivedTime || "Horário não informado"}</small></div></div><div class="record-quality-list">${qualityDetails}</div>${invoiceRejections.length ? `<div class="record-rejections"><h3>Detalhes da reprovação</h3><div class="modal-table"><table><thead><tr><th>Molde</th><th>Cavidade</th><th>Motivo</th></tr></thead><tbody>${invoiceRejections.map((rejection) => `<tr><td>${escapeHtml(rejection.mold || "—")}</td><td>${escapeHtml(rejection.cavity || "—")}</td><td>${escapeHtml(rejection.reason || state.rejectionReasons.find((reason) => reason.id === rejection.reasonId)?.label || "—")}</td></tr>`).join("")}</tbody></table></div></div>` : ""}<p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>`;
+    footer = `<button class="button button-outline" data-modal-close>Fechar</button>${canEdit() ? `<button class="button button-dark" data-edit-invoice="${record.id}" data-invoice-index="${index}">Editar esta NF</button>` : ""}`;
   } else if (state.modal.type === "record") {
     const record = state.records.find((item) => item.id === state.modal.id);
     if (!record) return "";
@@ -730,7 +869,7 @@ function renderModal() {
     const rejectedRows = rejectionRows(record);
     body = `<div class="record-modal-summary"><div><span>Total recebido</span><strong>${formatNumber(recordQuantity(record))}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Fornecedor</span><strong>${escapeHtml(record.supplier || "—")}</strong><small>${escapeHtml(record.vehiclePlate || "Sem placa")}</small></div></div><div class="modal-table"><table><thead><tr><th>Nota fiscal</th><th>Quantidade</th>${sleeperColumns}</tr></thead><tbody>${items.map((item, index) => { const summary = sleeperQualitySummary(invoiceQuality(record, item, index)); return `<tr><td>NF ${escapeHtml(item.number)}</td><td>${formatNumber(item.quantity)} ${MATERIALS[record.material].unit}</td>${record.material === "dormente" ? `<td>${formatNumber(summary.smallBreaks)}</td><td>${formatNumber(summary.repaired)}</td><td>${formatNumber(summary.bubbles)}</td><td>${formatNumber(summary.breaks)}</td>` : ""}</tr>`; }).join("")}</tbody></table></div><div class="record-quality-list">${qualityCategories(record.material).map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(record.quality?.[category.id])}</strong></span>`).join("")}</div>${rejectedRows.length ? `<div class="record-rejections"><h3>Dormentes reprovados</h3><div class="modal-table"><table><thead><tr><th>NF</th><th>Molde</th><th>Cavidade</th><th>Motivo</th></tr></thead><tbody>${rejectedRows.map((rejection) => `<tr><td>${escapeHtml(rejection.invoiceNumber || "—")}</td><td>${escapeHtml(rejection.mold || "—")}</td><td>${escapeHtml(rejection.cavity || "—")}</td><td>${escapeHtml(rejection.reason || state.rejectionReasons.find((reason) => reason.id === rejection.reasonId)?.label || "—")}</td></tr>`).join("")}</tbody></table></div></div>` : ""}<p class="record-observation"><strong>Responsável:</strong> ${escapeHtml(record.inspectorName || CONTROL_OWNER)}</p><p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>`;
   }
-  return `<div class="modal-backdrop" data-modal-close><section class="chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" onclick="event.stopPropagation()"><header><div><span class="eyebrow">${escapeHtml(subtitle)}</span><h2>${escapeHtml(title)}</h2></div><button data-modal-close aria-label="Fechar">×</button></header>${body}<footer><button class="button button-outline" data-modal-close>Fechar</button><button class="button button-dark" data-print-report>Gerar PDF do painel</button></footer></section></div>`;
+  return `<div class="modal-backdrop" data-modal-close><section class="chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" onclick="event.stopPropagation()"><header><div><span class="eyebrow">${escapeHtml(subtitle)}</span><h2>${escapeHtml(title)}</h2></div><button data-modal-close aria-label="Fechar">×</button></header>${body}<footer>${footer}</footer></section></div>`;
 }
 
 function bindEvents() {
@@ -745,13 +884,16 @@ function bindEvents() {
   document.querySelectorAll("[data-chart-modal]").forEach((card) => { const open = () => { state.modal = { type: card.dataset.chartModal }; render(); }; card.addEventListener("click", open); card.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") open(); }); });
   document.querySelectorAll("[data-modal-close]").forEach((button) => button.addEventListener("click", () => { state.modal = null; render(); }));
   document.querySelectorAll("[data-view-record]").forEach((button) => button.addEventListener("click", () => { state.modal = { type: "record", id: button.dataset.viewRecord }; render(); }));
+  document.querySelectorAll("[data-view-invoice]").forEach((button) => button.addEventListener("click", () => { state.modal = { type: "invoice", id: button.dataset.viewInvoice, index: number(button.dataset.invoiceIndex) }; render(); }));
   document.querySelectorAll("[data-edit-record]").forEach((button) => button.addEventListener("click", () => editRecord(button.dataset.editRecord)));
+  document.querySelectorAll("[data-edit-invoice]").forEach((button) => button.addEventListener("click", () => editRecord(button.dataset.editInvoice, number(button.dataset.invoiceIndex))));
   document.querySelectorAll("[data-delete-record]").forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord)));
   document.querySelector("[data-export-csv]")?.addEventListener("click", () => exportCsv(filteredHistory()));
-  document.querySelector("[data-export-report]")?.addEventListener("click", () => exportCsv(reportRecords()));
+  document.querySelector("[data-export-report]")?.addEventListener("click", () => { syncReportFiltersFromDom(); exportCsv(reportRecords()); });
   document.querySelectorAll("[data-print-report]").forEach((button) => button.addEventListener("click", printReport));
   document.querySelector("[data-email-report]")?.addEventListener("click", emailReport);
-  document.querySelector("[data-whatsapp-report]")?.addEventListener("click", whatsappReport);
+  document.querySelectorAll("[data-whatsapp-report]").forEach((button) => button.addEventListener("click", whatsappReport));
+  document.querySelectorAll("[data-copy-report-text]").forEach((button) => button.addEventListener("click", copyReportText));
   document.querySelector("[data-add-user]")?.addEventListener("click", addTeamMember);
   document.querySelectorAll("[data-remove-user]").forEach((button) => button.addEventListener("click", () => removeTeamMember(button.dataset.removeUser)));
   document.querySelector("[data-apply-history]")?.addEventListener("click", applyHistoryFilters);
@@ -778,7 +920,7 @@ function bindFormEvents() {
   form.querySelectorAll("[data-remove-rejection]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.rejections.splice(number(button.dataset.removeRejection), 1); state.draft.quality.reprovados = state.draft.rejections.length; render(); }));
   form.querySelector("[data-add-rejection-reason]")?.addEventListener("click", () => addRejectionReason(form.querySelector('[name="newRejectionReason"]')?.value));
   form.querySelector("[data-save-status]")?.addEventListener("click", () => saveCurrent("rascunho"));
-  form.querySelector("[data-cancel-form]")?.addEventListener("click", () => navigate("dashboard"));
+  form.querySelector("[data-cancel-form]")?.addEventListener("click", () => { state.editingInvoiceIndex = -1; navigate("dashboard"); });
 }
 
 function bindCategoryEvents() {
@@ -799,13 +941,16 @@ function navigate(view) {
   render(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function newRecord(material = "dormente") { state.draft = defaultDraft(material); state.editingId = ""; navigate("form"); }
+function newRecord(material = "dormente") { state.draft = defaultDraft(material); state.editingId = ""; state.editingInvoiceIndex = -1; navigate("form"); }
 
-function editRecord(id) {
+function editRecord(id, invoiceIndex = -1) {
   const record = state.records.find((item) => item.id === id);
   if (!record || !canEdit()) return;
   state.draft = reconcileInvoiceQuality(structuredClone({ ...record, receivedDate: record.receivedDate || String(record.receivedAt).slice(0, 10), receivedTime: record.receivedTime || "", invoiceItems: invoiceItems(record), quality: { ...Object.fromEntries([...state.categories, ...RAIL_QUALITY_CATEGORIES].map((category) => [category.id, 0])), ...(record.quality || {}) } }));
-  state.editingId = id; navigate("form");
+  state.editingId = id;
+  state.editingInvoiceIndex = Number.isInteger(invoiceIndex) && invoiceIndex >= 0 && invoiceIndex < state.draft.invoiceItems.length ? invoiceIndex : -1;
+  navigate("form");
+  if (state.editingInvoiceIndex >= 0) requestAnimationFrame(() => { const row = document.querySelector(`[data-invoice-row="${state.editingInvoiceIndex}"]`); row?.scrollIntoView({ behavior: "smooth", block: "center" }); row?.querySelector('[name="invoiceNumber"]')?.focus(); });
 }
 
 async function saveCurrent(status) {
@@ -825,7 +970,7 @@ async function saveCurrent(status) {
   } catch {
     replaceRecord(record); writeLocalRecords(); queueForSync(record); state.storageMode = "local";
   }
-  state.draft = null; state.editingId = ""; state.view = "dashboard"; render(); toast(status === "rascunho" ? "Rascunho salvo." : "Recebimento salvo e painel atualizado.", "success");
+  state.draft = null; state.editingId = ""; state.editingInvoiceIndex = -1; state.view = "dashboard"; render(); toast(status === "rascunho" ? "Rascunho salvo." : "Recebimento salvo e painel atualizado.", "success");
 }
 
 function replaceRecord(record) { const index = state.records.findIndex((item) => item.id === record.id); if (index >= 0) state.records[index] = record; else state.records.push(record); state.records.sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))); }
@@ -862,7 +1007,12 @@ async function addRejectionReason(rawName) {
 }
 
 function applyHistoryFilters() { state.historyFilters = { search: document.querySelector('[name="historySearch"]')?.value || "", material: document.querySelector('[name="historyMaterial"]')?.value || "todos", from: document.querySelector('[name="historyFrom"]')?.value || "", to: document.querySelector('[name="historyTo"]')?.value || "" }; render(); }
-function applyReportFilters() { state.reportFilters = { from: document.querySelector('[name="reportFrom"]')?.value || "", to: document.querySelector('[name="reportTo"]')?.value || "", material: document.querySelector('[name="reportMaterial"]')?.value || "todos" }; render(); }
+function syncReportFiltersFromDom() {
+  if (!document.querySelector('[name="reportMaterial"]')) return state.reportFilters;
+  state.reportFilters = { from: document.querySelector('[name="reportFrom"]')?.value || "", to: document.querySelector('[name="reportTo"]')?.value || "", material: document.querySelector('[name="reportMaterial"]')?.value || "todos" };
+  return state.reportFilters;
+}
+function applyReportFilters() { syncReportFiltersFromDom(); render(); }
 function selectLatestReportWeek() { const material = document.querySelector('[name="reportMaterial"]')?.value || state.reportFilters.material; const dates = state.records.filter((record) => material === "todos" || record.material === material).map((record) => record.receivedDate || String(record.receivedAt).slice(0, 10)).filter(Boolean).sort(); const to = dates.at(-1) || todayInput(); state.reportFilters = { material, from: addDays(to, -6), to }; render(); }
 function selectReportMaterial(material) { if (!["todos", "dormente", "trilho"].includes(material)) return; state.reportFilters = { ...state.reportFilters, from: document.querySelector('[name="reportFrom"]')?.value || state.reportFilters.from, to: document.querySelector('[name="reportTo"]')?.value || state.reportFilters.to, material }; render(); }
 
@@ -890,21 +1040,33 @@ function exportCsv(records) {
   const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); link.download = `relatorio-epya-${suffix}.csv`; link.click(); URL.revokeObjectURL(link.href); toast("Planilha para Excel gerada.", "success");
 }
 
-function printReport() { state.modal = null; state.view = "reports"; render(); setTimeout(() => window.print(), 250); }
+function printReport() { syncReportFiltersFromDom(); state.modal = null; state.view = "reports"; render(); setTimeout(() => window.print(), 250); }
 
 function emailReport() {
   const recipient = document.querySelector('[name="reportEmail"]')?.value.trim();
   if (!recipient || !/^\S+@\S+\.\S+$/.test(recipient)) return toast("Informe um e-mail válido.", "error");
-  const value = metrics(reportRecords()); const subject = `Relatório EPYA • Recebimentos ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}`; const body = `Olá,\n\nSegue o relatório de recebimentos do Projeto Sucuriú.\n\nDormentes: ${formatNumber(value.sleepers)}\nTrilhos: ${formatNumber(value.rails)}\nNotas fiscais: ${formatNumber(value.totalNfs)}\n\nAnexe o PDF gerado pelo painel antes de enviar.`; window.location.href = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  syncReportFiltersFromDom();
+  const subject = `Relatório EPYA • Recebimentos ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}`;
+  window.location.href = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(descriptiveReportText())}`;
 }
 
 function whatsappReport() {
-  const records = reportRecords();
-  const value = metrics(records);
-  const quality = qualityTotals("dormente", records);
-  const message = `Relatório EPYA — Projeto Sucuriú\nPeríodo: ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}\nDormentes: ${formatNumber(value.sleepers)}\nNotas fiscais: ${formatNumber(value.sleeperNfs)}\nPequenas quebras: ${formatNumber(quality["pequenas-quebras"])}\nReparados: ${formatNumber(quality.reparados)}\nBolhas: ${formatNumber(quality.bolhas)}\nQuebras: ${formatNumber(quality.quebras)}\n\nAnexe o PDF gerado pelo painel antes de enviar.`;
-  window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
-  toast("WhatsApp aberto. Agora anexe o PDF salvo.", "success");
+  syncReportFiltersFromDom();
+  window.open(`https://wa.me/?text=${encodeURIComponent(descriptiveReportText())}`, "_blank", "noopener,noreferrer");
+  toast("Texto filtrado aberto no WhatsApp.", "success");
+}
+
+async function copyReportText() {
+  syncReportFiltersFromDom();
+  const message = descriptiveReportText();
+  try {
+    await navigator.clipboard.writeText(message);
+  } catch {
+    const input = document.createElement("textarea");
+    input.value = message; input.setAttribute("readonly", ""); input.style.position = "fixed"; input.style.opacity = "0";
+    document.body.appendChild(input); input.select(); document.execCommand("copy"); input.remove();
+  }
+  toast("Relatório filtrado copiado para enviar por mensagem.", "success");
 }
 
 function toggleTheme() { state.theme = state.theme === "dark" ? "light" : "dark"; localStorage.setItem(THEME_KEY, state.theme); render(); }
