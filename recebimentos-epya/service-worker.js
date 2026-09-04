@@ -1,4 +1,4 @@
-const CACHE_NAME = "epya-recebimentos-v27";
+const CACHE_NAME = "epya-recebimentos-v28";
 const APP_SHELL = [
   "./",
   "./index.html",

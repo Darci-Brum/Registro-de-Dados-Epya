@@ -66,6 +66,7 @@ const state = {
   tvMode: false,
   modal: null,
   reportImages: [],
+  reportTextDraft: "",
   nfQualityFilter: "",
   historyFilters: { search: "", material: "todos", from: "", to: "" },
   reportFilters: { from: "2026-08-18", to: "2026-08-24", material: "dormente" },
@@ -740,9 +741,9 @@ function descriptiveReportText(records = reportRecords()) {
   return lines.join("\n");
 }
 
-function renderTextReport(records) {
-  const text = descriptiveReportText(records);
-  return `<article class="panel report-text-panel no-print"><div class="report-text-heading"><div><span class="eyebrow">Pronto para mensagem</span><h2>Relatório em texto conforme os filtros</h2><p>O conteúdo abaixo usa o período e o material selecionados. Copie ou envie diretamente pelo WhatsApp.</p></div><div class="report-text-actions"><button class="button button-outline" type="button" data-copy-report-text>Copiar texto</button><button class="button button-dark" type="button" data-whatsapp-report>Enviar no WhatsApp</button></div></div><pre class="report-text-preview" data-report-text tabindex="0">${escapeHtml(text)}</pre></article>`;
+function renderTextReportEditor() {
+  const text = state.reportTextDraft || descriptiveReportText();
+  return `<div class="report-text-editor-wrap"><label class="report-text-editor-label"><span>Texto do relatório</span><textarea class="report-text-editor" name="reportTextEditor" spellcheck="true" aria-label="Editar texto do relatório">${escapeHtml(text)}</textarea></label><div class="report-text-editor-options"><label><span>E-mail do destinatário</span><input type="email" name="reportEmail" value="${OWNER_EMAIL}" placeholder="destinatario@empresa.com" /></label><p>Você pode corrigir, acrescentar ou retirar qualquer informação acima antes de copiar ou enviar.</p></div></div>`;
 }
 
 function reportRejectionRows(records) {
@@ -787,17 +788,16 @@ function renderReports() {
   const materialLabel = material === "todos" ? "Dormentes e trilhos" : MATERIALS[material].label;
   const pdfLabel = material === "todos" ? "Gerar PDF: Ambos" : `Gerar PDF: ${MATERIALS[material].label}`;
   return `<section class="view reports-view">
-    <div class="page-heading no-print"><div><span class="eyebrow">Relatório semanal e por período</span><h1>Relatórios da obra</h1><p>Escolha o período e o material. O PDF, a planilha e o texto para mensagem respeitam exatamente os filtros selecionados.</p></div><div class="heading-actions"><button class="button button-outline" data-report-week>Últimos 7 dias</button><button class="button button-outline" data-export-report>Exportar Excel</button><button class="button button-outline" data-copy-report-text>Copiar texto</button><button class="button button-yellow" data-print-report>${pdfLabel}</button></div></div>
+    <div class="page-heading no-print"><div><span class="eyebrow">Relatório semanal e por período</span><h1>Relatórios da obra</h1><p>Escolha o período e o material. O PDF, a planilha e o texto para mensagem respeitam exatamente os filtros selecionados.</p></div><div class="heading-actions"><button class="button button-outline" data-report-week>Últimos 7 dias</button><button class="button button-outline" data-export-report>Exportar Excel</button><button class="button button-outline" data-open-report-text>Gerar texto</button><button class="button button-yellow" data-print-report>${pdfLabel}</button></div></div>
     ${renderReportMaterialSwitch()}
     <article class="panel report-filters no-print"><label><span>Data inicial</span><input type="date" name="reportFrom" value="${state.reportFilters.from}" /></label><label><span>Data final</span><input type="date" name="reportTo" value="${state.reportFilters.to}" /></label><label><span>Material selecionado</span><select name="reportMaterial"><option value="todos">Todos os materiais</option><option value="dormente" ${state.reportFilters.material === "dormente" ? "selected" : ""}>Dormentes</option><option value="trilho" ${state.reportFilters.material === "trilho" ? "selected" : ""}>Trilhos</option></select></label><button class="button button-dark" data-apply-report>Atualizar relatório</button></article>
-    ${renderTextReport(records)}
     ${renderReportImageControls()}
     <article class="print-report"><header class="report-header"><img src="./epya-logo-oficial.png" alt="EPYA" /><div><span>RELATÓRIO DE RECEBIMENTO DE MATERIAIS</span><h1>ARAUCO / Projeto Sucuriú</h1><p>Material: <strong>${materialLabel}</strong></p><p>Período: ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}</p><p>Responsável pelo controle: <strong>${CONTROL_OWNER}</strong></p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header>
       ${renderReportKpis(records)}
       <div class="report-charts"><section class="clickable" data-chart-modal="report-week" tabindex="0"><div class="report-chart-heading"><h2>Comparação semanal</h2><span>Ampliar ↗</span></div>${renderComparisonChart("week", records)}</section><section class="clickable" data-chart-modal="report-quality" tabindex="0"><div class="report-chart-heading"><h2>Qualidade — ${materialLabel}</h2><span>Ampliar ↗</span></div>${renderReportQuality(records, material)}</section></div>
       ${renderReportTable(records)}
       ${renderReportRejections(records)}${renderReportPhotoSection()}<footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle diário de recebimentos</span></footer></article>
-    <article class="panel email-report no-print"><div><span class="eyebrow">Compartilhamento</span><h2>Enviar relatório</h2><p>Envie o mesmo texto descritivo dos filtros por e-mail ou WhatsApp. O PDF continua disponível quando precisar do documento completo.</p></div><div class="email-fields"><input type="email" name="reportEmail" value="${OWNER_EMAIL}" placeholder="destinatario@empresa.com" /><button class="button button-outline" data-email-report>Preparar e-mail</button><button class="button button-dark" data-whatsapp-report>Enviar texto no WhatsApp</button></div></article>
+    <article class="panel email-report no-print"><div><span class="eyebrow">Compartilhamento</span><h2>Relatório para mensagem</h2><p>Abra o texto somente quando precisar. Você poderá editar todo o conteúdo antes de copiar, enviar por e-mail ou WhatsApp.</p></div><button class="button button-dark" data-open-report-text>Abrir e editar texto</button></article>
   </section>`;
 }
 
@@ -812,7 +812,12 @@ function renderModal() {
   let subtitle = "Dados do painel";
   let body = "";
   let footer = '<button class="button button-outline" data-modal-close>Fechar</button><button class="button button-dark" data-print-report>Gerar PDF do painel</button>';
-  if (["week", "month", "report-week", "report-month"].includes(state.modal.type)) {
+  if (state.modal.type === "report-text") {
+    title = "Relatório em texto";
+    subtitle = "Edite antes de copiar ou enviar";
+    body = renderTextReportEditor();
+    footer = '<button class="button button-outline" data-modal-close>Fechar</button><button class="button button-outline" data-copy-report-text>Copiar texto</button><button class="button button-outline" data-email-report>Preparar e-mail</button><button class="button button-dark" data-whatsapp-report>Enviar no WhatsApp</button>';
+  } else if (["week", "month", "report-week", "report-month"].includes(state.modal.type)) {
     const reportMode = state.modal.type.startsWith("report-");
     const period = state.modal.type.replace("report-", "");
     const records = reportMode ? reportRecords() : state.records;
@@ -891,6 +896,7 @@ function bindEvents() {
   document.querySelector("[data-export-csv]")?.addEventListener("click", () => exportCsv(filteredHistory()));
   document.querySelector("[data-export-report]")?.addEventListener("click", () => { syncReportFiltersFromDom(); exportCsv(reportRecords()); });
   document.querySelectorAll("[data-print-report]").forEach((button) => button.addEventListener("click", printReport));
+  document.querySelectorAll("[data-open-report-text]").forEach((button) => button.addEventListener("click", openReportText));
   document.querySelector("[data-email-report]")?.addEventListener("click", emailReport);
   document.querySelectorAll("[data-whatsapp-report]").forEach((button) => button.addEventListener("click", whatsappReport));
   document.querySelectorAll("[data-copy-report-text]").forEach((button) => button.addEventListener("click", copyReportText));
@@ -1042,23 +1048,39 @@ function exportCsv(records) {
 
 function printReport() { syncReportFiltersFromDom(); state.modal = null; state.view = "reports"; render(); setTimeout(() => window.print(), 250); }
 
+function openReportText() {
+  syncReportFiltersFromDom();
+  state.reportTextDraft = descriptiveReportText();
+  state.modal = { type: "report-text" };
+  render();
+  requestAnimationFrame(() => document.querySelector('[name="reportTextEditor"]')?.focus());
+}
+
+function editedReportText() {
+  const editor = document.querySelector('[name="reportTextEditor"]');
+  state.reportTextDraft = editor?.value ?? state.reportTextDraft ?? descriptiveReportText();
+  return state.reportTextDraft.trim();
+}
+
 function emailReport() {
   const recipient = document.querySelector('[name="reportEmail"]')?.value.trim();
   if (!recipient || !/^\S+@\S+\.\S+$/.test(recipient)) return toast("Informe um e-mail válido.", "error");
-  syncReportFiltersFromDom();
+  const message = editedReportText();
+  if (!message) return toast("O texto do relatório está vazio.", "error");
   const subject = `Relatório EPYA • Recebimentos ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}`;
-  window.location.href = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(descriptiveReportText())}`;
+  window.location.href = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
 }
 
 function whatsappReport() {
-  syncReportFiltersFromDom();
-  window.open(`https://wa.me/?text=${encodeURIComponent(descriptiveReportText())}`, "_blank", "noopener,noreferrer");
-  toast("Texto filtrado aberto no WhatsApp.", "success");
+  const message = editedReportText();
+  if (!message) return toast("O texto do relatório está vazio.", "error");
+  window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  toast("Texto editado aberto no WhatsApp.", "success");
 }
 
 async function copyReportText() {
-  syncReportFiltersFromDom();
-  const message = descriptiveReportText();
+  const message = editedReportText();
+  if (!message) return toast("O texto do relatório está vazio.", "error");
   try {
     await navigator.clipboard.writeText(message);
   } catch {
@@ -1066,7 +1088,7 @@ async function copyReportText() {
     input.value = message; input.setAttribute("readonly", ""); input.style.position = "fixed"; input.style.opacity = "0";
     document.body.appendChild(input); input.select(); document.execCommand("copy"); input.remove();
   }
-  toast("Relatório filtrado copiado para enviar por mensagem.", "success");
+  toast("Texto editado copiado para enviar por mensagem.", "success");
 }
 
 function toggleTheme() { state.theme = state.theme === "dark" ? "light" : "dark"; localStorage.setItem(THEME_KEY, state.theme); render(); }
@@ -1143,7 +1165,7 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=27" : "/service-worker.js?v=27").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=28" : "/service-worker.js?v=28").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
 }
 
