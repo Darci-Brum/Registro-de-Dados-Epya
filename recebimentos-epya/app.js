@@ -69,7 +69,7 @@ const state = {
   reportTextDraft: "",
   nfQualityFilter: "",
   historyFilters: { search: "", material: "todos", from: "", to: "" },
-  reportFilters: { from: "2026-08-18", to: "2026-08-24", material: "dormente" },
+  reportFilters: { from: "2026-08-18", to: "2026-08-24", material: "dormente", location: "" },
 };
 
 function escapeHtml(value) {
@@ -167,6 +167,35 @@ function defaultDraft(material = "dormente") {
     observations: "",
     _cleanupMolde57Cav1: true,
   };
+}
+
+function normalizeMaterialSupplier(record) {
+  if (!record || record.material !== "trilho" || !/\bcavan\b/i.test(record.supplier || "")) return record;
+  const supplier = String(record.supplier).replace(/\bcavan\b/gi, "").replace(/^[\s/,&;+|–—-]+|[\s/,&;+|–—-]+$/g, "").trim();
+  return { ...record, supplier: supplier || "Arauco" };
+}
+
+function locationKey(location) {
+  const label = String(location || "").trim().replace(/\s+/g, " ");
+  return label ? `local:${label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR")}` : "missing";
+}
+
+function locationGroups(records = state.records) {
+  const groups = new Map();
+  records.forEach((record) => {
+    const key = locationKey(record.location);
+    if (!groups.has(key)) groups.set(key, { key, label: String(record.location || "").trim().replace(/\s+/g, " ") || "Local não informado", records: [] });
+    groups.get(key).records.push(record);
+  });
+  return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label, "pt-BR", { numeric: true }));
+}
+
+function reportLocationLabel() {
+  return locationGroups().find((group) => group.key === state.reportFilters.location)?.label || (state.reportFilters.location ? "Local não informado" : "Todos os locais");
+}
+
+function renderLocationOptions(selected = "") {
+  return `<option value="">Todos os locais</option>${locationGroups().map((group) => `<option value="${escapeHtml(group.key)}" ${group.key === selected ? "selected" : ""}>${escapeHtml(group.label)}</option>`).join("")}`;
 }
 
 function invoiceItems(record) {
@@ -513,6 +542,22 @@ function renderPeraMilestone(value) {
   return `<article class="pera-milestone ${status}" role="${liveRole}" aria-live="polite"><span class="pera-milestone-icon" aria-hidden="true">${status === "reached" ? "✓" : "!"}</span><div class="pera-milestone-copy"><span class="eyebrow">Controle de descarga</span><h2>${title}</h2><p>${detail}</p></div><div class="pera-milestone-total"><span>Total na Pera</span><strong>${formatNumber(total)}</strong><small>dormentes</small></div><div class="pera-milestone-progress" aria-label="${progress.toFixed(1).replace(".", ",")}% do marco de ${formatNumber(milestone)} dormentes"><i style="width:${progress}%"></i></div></article>`;
 }
 
+function renderLocationDashboards() {
+  const groups = locationGroups();
+  if (!groups.length) return "";
+  return `<section class="location-dashboards"><div class="section-heading"><div><span class="eyebrow">Locais de descarga</span><h2>Painel por local</h2></div><span class="updated-label">${groups.length} locais registrados</span></div><div class="location-dashboard-grid">${groups.map((group) => {
+    const value = metrics(group.records);
+    const dates = group.records.map((record) => record.receivedDate || String(record.receivedAt || "").slice(0, 10)).filter(Boolean).sort();
+    return `<article class="panel location-dashboard"><div class="panel-heading"><div><h3>${escapeHtml(group.label)}</h3><p>Último recebimento: ${formatDate(dates.at(-1))}</p></div></div><div class="location-totals"><div class="location-sleepers"><span>Dormentes</span><strong>${formatNumber(value.sleepers)}</strong><small>${formatNumber(value.sleeperNfs)} NFs</small></div><div class="location-rails"><span>Trilhos</span><strong>${formatNumber(value.rails)}</strong><small>${formatNumber(value.railNfs)} NFs</small></div></div><dl class="location-quality"><div><dt>Notas fiscais</dt><dd>${formatNumber(value.totalNfs)}</dd></div><div><dt>Ocorrências de qualidade</dt><dd>${formatNumber(value.sleeperOccurrences + value.railOccurrences)}</dd></div><div><dt>Reprovados</dt><dd>${formatNumber(value.rejected)} dormentes · ${formatNumber(value.railRejected)} trilhos</dd></div></dl><h4>Entradas por semana</h4><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("week", group.records)}<button class="button button-outline no-print" data-location-report="${escapeHtml(group.key)}">Gerar relatório deste local</button></article>`;
+  }).join("")}</div></section>`;
+}
+
+function openLocationReport(location) {
+  if (!locationGroups().some((group) => group.key === location)) return;
+  state.reportFilters = { from: "", to: "", material: "todos", location };
+  navigate("reports");
+}
+
 function renderDashboard() {
   const value = metrics();
   const recent = state.records.slice(0, 6);
@@ -520,6 +565,7 @@ function renderDashboard() {
     <div class="section-heading"><div><span class="eyebrow">Visão executiva</span><h2>Panorama acumulado</h2></div><span class="updated-label">Atualizado com ${value.totalNfs} notas fiscais</span></div><div class="metrics-grid"><article class="metric-card sleeper"><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs • meta ${formatNumber(TARGET_SLEEPERS)}</small><div class="metric-progress"><i style="width:${value.progress}%"></i></div></article><article class="metric-card rail"><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs • meta ainda não definida</small><div class="metric-line"></div></article><article class="metric-card remaining"><span>Saldo de dormentes</span><strong>${formatNumber(value.remaining)}</strong><small>${value.progress.toFixed(2).replace(".", ",")}% da meta concluída</small><div class="metric-line"></div></article><article class="metric-card quality"><span>Ocorrências de qualidade</span><strong>${formatNumber(value.sleeperOccurrences + value.railOccurrences)}</strong><small>${formatNumber(value.sleeperOccurrences)} em dormentes • ${formatNumber(value.railOccurrences)} em trilhos</small><div class="metric-line"></div></article></div>${renderPeraMilestone(value)}
     <div class="dashboard-grid charts-main"><article class="panel chart-card clickable" data-chart-modal="week" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação semanal</span><h2>Entradas por semana</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("week")}</article><article class="panel chart-card clickable" data-chart-modal="month" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação mensal</span><h2>Evolução por mês</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("month")}</article></div>
     <div class="dashboard-grid charts-secondary"><article class="panel chart-card clickable" data-chart-modal="daily" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Ritmo da operação</span><h2>Volume diário</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderDailyChart()}</article><article class="panel quality-card clickable" data-chart-modal="quality-dormente" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Classificações</span><h2>Qualidade dos dormentes</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("dormente")}</article><article class="panel quality-card clickable" data-chart-modal="quality-trilho" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Inspeção ferroviária</span><h2>Qualidade dos trilhos</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("trilho")}</article></div>
+    ${renderLocationDashboards()}
     ${renderNfQualityPanel()}
     <article class="panel recent-panel"><div class="panel-heading"><div><span class="eyebrow">Últimos lançamentos</span><h2>Recebimentos recentes</h2></div><button class="text-button" data-nav="history">Abrir histórico →</button></div>${renderRecordsTable(recent, true)}</article></section>`;
 }
@@ -609,8 +655,8 @@ function renderQuality() {
 }
 
 function reportRecords() {
-  const { from, to, material } = state.reportFilters;
-  return state.records.filter((record) => { const date = record.receivedDate || String(record.receivedAt).slice(0, 10); return (!from || date >= from) && (!to || date <= to) && (material === "todos" || record.material === material); });
+  const { from, to, material, location } = state.reportFilters;
+  return state.records.filter((record) => { const date = record.receivedDate || String(record.receivedAt).slice(0, 10); return (!from || date >= from) && (!to || date <= to) && (material === "todos" || record.material === material) && (!location || locationKey(record.location) === location); });
 }
 
 function renderReportImageControls() {
@@ -698,15 +744,16 @@ function descriptiveReportText(records = reportRecords()) {
   const materialTitle = material === "todos" ? "DORMENTES E TRILHOS" : MATERIALS[material].label.toLocaleUpperCase("pt-BR");
   const lines = [
     `*RELATÓRIO DESCRITIVO — ${materialTitle}*`,
-    `Período: ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}`,
+    `Período: ${state.reportFilters.from ? formatDate(state.reportFilters.from) : "Início dos registros"} a ${state.reportFilters.to ? formatDate(state.reportFilters.to) : "último recebimento"}`,
+    `Local de descarga: ${reportLocationLabel()}`,
   ];
   if (!rows.length) return `${lines.join("\n")}\n\nNenhum recebimento encontrado para os filtros escolhidos.`;
 
   const groups = new Map();
   rows.forEach((row) => {
     const date = row.record.receivedDate || String(row.record.receivedAt).slice(0, 10);
-    const key = `${date}|${row.record.material}`;
-    if (!groups.has(key)) groups.set(key, { date, material: row.record.material, rows: [] });
+    const key = `${date}|${row.record.material}|${locationKey(row.record.location)}`;
+    if (!groups.has(key)) groups.set(key, { date, material: row.record.material, location: String(row.record.location || "").trim() || "Local não informado", rows: [] });
     groups.get(key).rows.push(row);
   });
 
@@ -714,6 +761,7 @@ function descriptiveReportText(records = reportRecords()) {
     const total = group.rows.reduce((sum, row) => sum + number(row.item.quantity), 0);
     const groupHeading = material === "todos" ? `${formatDate(group.date)} — ${MATERIALS[group.material].label}` : formatDate(group.date);
     lines.push("", `*${groupHeading}*`);
+    if (!state.reportFilters.location) lines.push(`Local de descarga: ${group.location}`);
     lines.push(`Foram recebidos *${formatNumber(total)} ${materialQuantityLabel(group.material, total)}*, distribuídos em *${formatNumber(group.rows.length)} ${group.rows.length === 1 ? "nota fiscal" : "notas fiscais"}*:`);
     group.rows.forEach((row) => lines.push(`• NF ${row.item.number || "não informada"} — ${formatNumber(row.item.quantity)} ${materialQuantityLabel(group.material, number(row.item.quantity))}`));
     lines.push(`Qualidade: ${qualityTextForRows(group.rows, group.material)}.`);
@@ -788,11 +836,11 @@ function renderReports() {
   const materialLabel = material === "todos" ? "Dormentes e trilhos" : MATERIALS[material].label;
   const pdfLabel = material === "todos" ? "Gerar PDF: Ambos" : `Gerar PDF: ${MATERIALS[material].label}`;
   return `<section class="view reports-view">
-    <div class="page-heading no-print"><div><span class="eyebrow">Relatório semanal e por período</span><h1>Relatórios da obra</h1><p>Escolha o período e o material. O PDF, a planilha e o texto para mensagem respeitam exatamente os filtros selecionados.</p></div><div class="heading-actions"><button class="button button-outline" data-report-week>Últimos 7 dias</button><button class="button button-outline" data-export-report>Exportar Excel</button><button class="button button-outline" data-open-report-text>Gerar texto</button><button class="button button-yellow" data-print-report>${pdfLabel}</button></div></div>
+    <div class="page-heading no-print"><div><span class="eyebrow">Relatório semanal e por período</span><h1>Relatórios da obra</h1><p>Escolha o período, o material e o local de descarga. O PDF, a planilha e o texto para mensagem respeitam exatamente os filtros selecionados.</p></div><div class="heading-actions"><button class="button button-outline" data-report-week>Últimos 7 dias</button><button class="button button-outline" data-export-report>Exportar Excel</button><button class="button button-outline" data-open-report-text>Gerar texto</button><button class="button button-yellow" data-print-report>${pdfLabel}</button></div></div>
     ${renderReportMaterialSwitch()}
-    <article class="panel report-filters no-print"><label><span>Data inicial</span><input type="date" name="reportFrom" value="${state.reportFilters.from}" /></label><label><span>Data final</span><input type="date" name="reportTo" value="${state.reportFilters.to}" /></label><label><span>Material selecionado</span><select name="reportMaterial"><option value="todos">Todos os materiais</option><option value="dormente" ${state.reportFilters.material === "dormente" ? "selected" : ""}>Dormentes</option><option value="trilho" ${state.reportFilters.material === "trilho" ? "selected" : ""}>Trilhos</option></select></label><button class="button button-dark" data-apply-report>Atualizar relatório</button></article>
+    <article class="panel report-filters no-print"><label><span>Data inicial</span><input type="date" name="reportFrom" value="${state.reportFilters.from}" /></label><label><span>Data final</span><input type="date" name="reportTo" value="${state.reportFilters.to}" /></label><label><span>Material selecionado</span><select name="reportMaterial"><option value="todos">Todos os materiais</option><option value="dormente" ${state.reportFilters.material === "dormente" ? "selected" : ""}>Dormentes</option><option value="trilho" ${state.reportFilters.material === "trilho" ? "selected" : ""}>Trilhos</option></select></label><label><span>Local de descarga</span><select name="reportLocation">${renderLocationOptions(state.reportFilters.location)}</select></label><button class="button button-dark" data-apply-report>Atualizar relatório</button></article>
     ${renderReportImageControls()}
-    <article class="print-report"><header class="report-header"><img src="./epya-logo-oficial.png" alt="EPYA" /><div><span>RELATÓRIO DE RECEBIMENTO DE MATERIAIS</span><h1>ARAUCO / Projeto Sucuriú</h1><p>Material: <strong>${materialLabel}</strong></p><p>Período: ${formatDate(state.reportFilters.from)} a ${formatDate(state.reportFilters.to)}</p><p>Responsável pelo controle: <strong>${CONTROL_OWNER}</strong></p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header>
+    <article class="print-report"><header class="report-header"><img src="./epya-logo-oficial.png" alt="EPYA" /><div><span>RELATÓRIO DE RECEBIMENTO DE MATERIAIS</span><h1>ARAUCO / Projeto Sucuriú</h1><p>Material: <strong>${materialLabel}</strong></p><p>Período: ${state.reportFilters.from ? formatDate(state.reportFilters.from) : "Início dos registros"} a ${state.reportFilters.to ? formatDate(state.reportFilters.to) : "último recebimento"}</p><p>Local de descarga: <strong>${escapeHtml(reportLocationLabel())}</strong></p><p>Responsável pelo controle: <strong>${CONTROL_OWNER}</strong></p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header>
       ${renderReportKpis(records)}
       <div class="report-charts"><section class="clickable" data-chart-modal="report-week" tabindex="0"><div class="report-chart-heading"><h2>Comparação semanal</h2><span>Ampliar ↗</span></div>${renderComparisonChart("week", records)}</section><section class="clickable" data-chart-modal="report-quality" tabindex="0"><div class="report-chart-heading"><h2>Qualidade — ${materialLabel}</h2><span>Ampliar ↗</span></div>${renderReportQuality(records, material)}</section></div>
       ${renderReportTable(records)}
@@ -878,6 +926,7 @@ function renderModal() {
 }
 
 function bindEvents() {
+  document.querySelectorAll("[data-location-report]").forEach((button) => button.addEventListener("click", () => openLocationReport(button.dataset.locationReport)));
   document.querySelector("[data-sign-out]")?.addEventListener("click", signOut);
   document.querySelectorAll("[data-nav]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.nav)));
   document.querySelectorAll("[data-new-record]").forEach((button) => button.addEventListener("click", () => newRecord()));
@@ -919,7 +968,7 @@ function bindFormEvents() {
   if (!form) return;
   form.addEventListener("submit", (event) => { event.preventDefault(); saveCurrent("concluido"); });
   form.querySelectorAll('[name="invoiceQuantity"]').forEach((input) => input.addEventListener("input", updateFormTotal));
-  form.querySelectorAll("[data-material]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.material = button.dataset.material; if (!state.draft.supplier) state.draft.supplier = button.dataset.material === "dormente" ? "Cavan / Arauco" : "Arauco"; render(); }));
+  form.querySelectorAll("[data-material]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.material = button.dataset.material; if (!state.draft.supplier) state.draft.supplier = button.dataset.material === "dormente" ? "Cavan / Arauco" : "Arauco"; state.draft = normalizeMaterialSupplier(state.draft); render(); }));
   form.querySelector("[data-add-invoice]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.push(blankInvoiceItem(state.draft.material)); render(); });
   form.querySelectorAll("[data-remove-invoice]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.splice(number(button.dataset.removeInvoice), 1); render(); }));
   form.querySelector("[data-add-rejection]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); const firstInvoice = state.draft.invoiceItems.find((item) => item.number)?.number || ""; state.draft.rejections = rejectionRows(state.draft); state.draft.rejections.push({ id: crypto.randomUUID(), invoiceNumber: firstInvoice, mold: "", cavity: "", reasonId: "", reason: "" }); state.draft.quality.reprovados = state.draft.rejections.length; render(); });
@@ -961,7 +1010,7 @@ function editRecord(id, invoiceIndex = -1) {
 
 async function saveCurrent(status) {
   if (!canEdit()) return toast("Seu acesso é somente para consulta.", "error");
-  const record = formRecordFromDom();
+  const record = normalizeMaterialSupplier(formRecordFromDom());
   const validItems = record.invoiceItems.filter((item) => item.number && number(item.quantity));
   if (status !== "rascunho" && !record.receivedDate) return toast("Informe a data do recebimento.", "error");
   if (status !== "rascunho" && !validItems.length) return toast("Informe ao menos uma NF com quantidade.", "error");
@@ -979,7 +1028,7 @@ async function saveCurrent(status) {
   state.draft = null; state.editingId = ""; state.editingInvoiceIndex = -1; state.view = "dashboard"; render(); toast(status === "rascunho" ? "Rascunho salvo." : "Recebimento salvo e painel atualizado.", "success");
 }
 
-function replaceRecord(record) { const index = state.records.findIndex((item) => item.id === record.id); if (index >= 0) state.records[index] = record; else state.records.push(record); state.records.sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))); }
+function replaceRecord(record) { record = normalizeMaterialSupplier(record); const index = state.records.findIndex((item) => item.id === record.id); if (index >= 0) state.records[index] = record; else state.records.push(record); state.records.sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))); }
 
 async function deleteRecord(id) {
   if (!canEdit()) return;
@@ -1015,12 +1064,12 @@ async function addRejectionReason(rawName) {
 function applyHistoryFilters() { state.historyFilters = { search: document.querySelector('[name="historySearch"]')?.value || "", material: document.querySelector('[name="historyMaterial"]')?.value || "todos", from: document.querySelector('[name="historyFrom"]')?.value || "", to: document.querySelector('[name="historyTo"]')?.value || "" }; render(); }
 function syncReportFiltersFromDom() {
   if (!document.querySelector('[name="reportMaterial"]')) return state.reportFilters;
-  state.reportFilters = { from: document.querySelector('[name="reportFrom"]')?.value || "", to: document.querySelector('[name="reportTo"]')?.value || "", material: document.querySelector('[name="reportMaterial"]')?.value || "todos" };
+  state.reportFilters = { from: document.querySelector('[name="reportFrom"]')?.value || "", to: document.querySelector('[name="reportTo"]')?.value || "", material: document.querySelector('[name="reportMaterial"]')?.value || "todos", location: document.querySelector('[name="reportLocation"]')?.value || "" };
   return state.reportFilters;
 }
 function applyReportFilters() { syncReportFiltersFromDom(); render(); }
-function selectLatestReportWeek() { const material = document.querySelector('[name="reportMaterial"]')?.value || state.reportFilters.material; const dates = state.records.filter((record) => material === "todos" || record.material === material).map((record) => record.receivedDate || String(record.receivedAt).slice(0, 10)).filter(Boolean).sort(); const to = dates.at(-1) || todayInput(); state.reportFilters = { material, from: addDays(to, -6), to }; render(); }
-function selectReportMaterial(material) { if (!["todos", "dormente", "trilho"].includes(material)) return; state.reportFilters = { ...state.reportFilters, from: document.querySelector('[name="reportFrom"]')?.value || state.reportFilters.from, to: document.querySelector('[name="reportTo"]')?.value || state.reportFilters.to, material }; render(); }
+function selectLatestReportWeek() { syncReportFiltersFromDom(); const { material, location } = state.reportFilters; const dates = state.records.filter((record) => (material === "todos" || record.material === material) && (!location || locationKey(record.location) === location)).map((record) => record.receivedDate || String(record.receivedAt).slice(0, 10)).filter(Boolean).sort(); const to = dates.at(-1) || todayInput(); state.reportFilters = { material, location, from: addDays(to, -6), to }; render(); }
+function selectReportMaterial(material) { if (!["todos", "dormente", "trilho"].includes(material)) return; syncReportFiltersFromDom(); state.reportFilters = { ...state.reportFilters, material }; render(); }
 
 function addReportImages(fileList) {
   const available = Math.max(0, 6 - state.reportImages.length);
@@ -1097,6 +1146,7 @@ async function installApp() { if (state.installPrompt) { state.installPrompt.pro
 function toast(message, type = "success") { const node = document.querySelector(".toast"); if (!node) return; node.textContent = message; node.className = `toast show ${type}`; clearTimeout(toast.timer); toast.timer = setTimeout(() => { node.className = "toast"; }, 4200); }
 
 function sanitizeLegacyMoldEntry(record) {
+  record = normalizeMaterialSupplier(record);
   if (!record || record._cleanupMolde57Cav1) return record;
   const cleaned = structuredClone(record);
   cleaned.observations = String(cleaned.observations || "").replace(/\bmolde\s*:?\s*57\s*[,;\/-]?\s*cav(?:idade)?\.?\s*:?\s*1\b/gi, "").replace(/\s{2,}/g, " ").trim();
@@ -1165,7 +1215,7 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=28" : "/service-worker.js?v=28").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=29" : "/service-worker.js?v=29").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
 }
 

@@ -346,7 +346,27 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .category-manager p { margin: 0; color: var(--muted); }
 .category-add-form { min-width: min(460px, 50%); display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 
-.report-filters { grid-template-columns: 1fr 1fr 1.2fr auto; }
+.report-filters { grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 1.2fr) minmax(0, 1.4fr) auto; }
+.report-filters label { min-width: 0; }
+.location-dashboards { margin-bottom: 24px; }
+.location-dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; }
+.location-dashboard { min-width: 0; padding: 24px; }
+.location-dashboard h3 { margin: 0 0 8px; font-size: 1.15rem; overflow-wrap: anywhere; }
+.location-dashboard h4 { margin: 24px 0 12px; font-size: .8rem; }
+.location-dashboard .panel-heading { padding: 0; }
+.location-dashboard .panel-heading p { margin: 0; color: var(--muted); font-size: .7rem; }
+.location-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.location-totals > div { display: grid; gap: 4px; border-left: 4px solid var(--yellow); padding-left: 12px; }
+.location-totals > .location-rails { border-color: var(--blue); }
+.location-totals span, .location-totals small { font-size: .7rem; color: var(--muted); }
+.location-totals strong { font-size: 1.8rem; line-height: 1.2; }
+.location-quality { display: grid; gap: 10px; margin: 0; }
+.location-quality > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; font-size: .7rem; }
+.location-quality dt { color: var(--muted); }
+.location-quality dd { margin: 0; font-weight: 750; }
+.location-dashboard > .button { width: 100%; margin-top: 18px; white-space: normal; }
+@media (max-width: 1200px) { .report-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .location-dashboard { padding: 18px; } }
 .report-material-panel { margin-bottom: 14px; display: grid; grid-template-columns: minmax(240px, .6fr) minmax(520px, 1.4fr); align-items: center; gap: 24px; }
 .report-material-panel h2 { margin: 0 0 5px; }
 .report-material-panel p { margin: 0; color: var(--muted); }
