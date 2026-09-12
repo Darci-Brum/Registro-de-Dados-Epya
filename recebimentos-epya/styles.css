@@ -750,12 +750,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 }
 
 /* Recebimentos: consulta rápida e lançamento em campo. */
-.dashboard-hero.dashboard-compact { min-height: 156px; padding: 24px 30px; display: flex; justify-content: space-between; align-items: center; gap: 24px; }
-.dashboard-compact .hero-copy { max-width: 650px; }
-.dashboard-compact .hero-copy h1 { font-size: clamp(1.5rem, 2.6vw, 2.1rem); line-height: 1.15; margin: 8px 0; }
-.dashboard-compact .hero-copy p { margin: 0; font-size: .8rem; }
-.dashboard-compact .eyebrow { color: #f7d84e; }
-.dashboard-compact .hero-actions { margin: 0; display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
 .dashboard-tabs { display: flex; gap: 8px; margin: 20px 0; border-bottom: 1px solid var(--line); }
 .dashboard-tabs button { min-height: 48px; padding: 12px 22px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--muted); font-weight: 750; cursor: pointer; }
 .dashboard-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--yellow); }
@@ -811,17 +805,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .invoice-photo-report-toggle { flex: 1 1 100%; order: 2; }
 .report-image-control > .report-image-previews, .report-image-control > .report-image-empty { order: 3; width: 100%; }
 @media (max-width: 900px) {
-  .dashboard-hero.dashboard-compact { align-items: flex-start; flex-direction: column; gap: 16px; }
-  .dashboard-compact .hero-actions { justify-content: flex-start; }
   .location-picker, .pending-summary { align-items: stretch; flex-direction: column; gap: 12px; }
 }
 @media (max-width: 620px) {
-  .dashboard-hero.dashboard-compact { min-height: 0; padding: 18px; border-radius: 14px; }
-  .dashboard-compact .hero-copy h1 { font-size: 1.45rem; }
-  .dashboard-compact .hero-copy p { font-size: .75rem; }
-  .dashboard-compact .hero-actions { width: 100%; flex-direction: row; }
-  .dashboard-compact .hero-actions .button { flex: 1 1 130px; width: auto; font-size: .75rem; min-height: 46px; padding: 10px; }
-  .dashboard-compact .hero-actions .sync-badge { width: 100%; min-height: 0; }
   .dashboard-view .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .dashboard-view .metric-card { min-width: 0; min-height: 145px; padding: 16px 12px; }
   .dashboard-view .metric-card > strong { font-size: 1.6rem; letter-spacing: -.03em; }
