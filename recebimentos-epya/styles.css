@@ -472,6 +472,58 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .email-report p { margin: 0; color: var(--muted); }
 .email-fields { min-width: min(680px, 58%); display: grid; grid-template-columns: 1fr auto auto; gap: 8px; }
 
+.goals-section { margin: 6px 0 24px; }
+.goals-section .section-heading { align-items: center; margin-top: 24px; }
+.goals-section .section-heading p { margin: 5px 0 0; color: var(--muted); font-size: .74rem; }
+.goal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 315px), 1fr)); gap: 14px; }
+.goal-card { min-width: 0; padding: 21px; background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--yellow); border-radius: 15px; box-shadow: var(--shadow-soft); }
+.goal-card.trilho { border-top-color: var(--blue); }
+.goal-card.completed { border-top-color: var(--green); }
+.goal-card header, .goal-card footer, .goal-numbers { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.goal-card h3 { margin: 17px 0 5px; font-size: 1rem; overflow-wrap: anywhere; }
+.goal-card > p { min-height: 2.7em; margin-bottom: 18px; color: var(--muted); font-size: .66rem; line-height: 1.45; }
+.goal-numbers { justify-content: flex-start; align-items: baseline; }
+.goal-numbers strong { font-size: 1.8rem; letter-spacing: -.04em; }
+.goal-numbers span { color: var(--muted); font-size: .69rem; }
+.goal-progress { height: 9px; margin: 12px 0 10px; overflow: hidden; background: var(--surface-2); border-radius: 999px; }
+.goal-progress i { height: 100%; display: block; background: var(--yellow); border-radius: inherit; }
+.goal-card.trilho .goal-progress i { background: var(--blue); }
+.goal-card.completed .goal-progress i { background: var(--green); }
+.goal-card footer { color: var(--muted); font-size: .64rem; }
+.goal-card footer b { color: var(--ink); }
+.empty-goals { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-style: dashed; }
+.empty-goals p { margin: 5px 0 0; color: var(--muted); font-size: .74rem; }
+.goal-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.goal-form label { min-width: 0; display: grid; gap: 7px; }
+.goal-form label > small { color: var(--muted); font-size: .64rem; }
+.goal-form .span-two { grid-column: 1 / -1; }
+
+.rejection-filters { margin-bottom: 14px; display: grid; grid-template-columns: minmax(250px, 1.7fr) repeat(4, minmax(140px, .8fr)) auto auto; align-items: end; gap: 10px; }
+.rejection-filters label { min-width: 0; }
+.rejection-report { border-top: 5px solid var(--red); }
+.rejection-kpis div:first-child strong, .rejection-kpis div:last-child strong { color: var(--red); }
+.rejection-table { overflow-x: auto; border: 1px solid var(--line); border-radius: 11px; }
+.rejection-table table { width: 100%; min-width: 1380px; border-collapse: collapse; }
+.rejection-table th, .rejection-table td { padding: 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.rejection-table th { color: var(--muted); font-size: .58rem; text-transform: uppercase; }
+.rejection-table td { font-size: .67rem; }
+.rejection-table td strong, .rejection-table td small { display: block; }
+.rejection-table td small { margin-top: 4px; color: var(--muted); font-size: .58rem; }
+.rejection-table tbody tr { background: color-mix(in srgb, var(--red) 4%, var(--surface)); box-shadow: inset 4px 0 0 color-mix(in srgb, var(--red) 65%, transparent); }
+.rejection-reason-cell { min-width: 180px; font-weight: 740; }
+.rejection-observation-cell { min-width: 210px; line-height: 1.45; }
+.rejection-cards { display: none; }
+.rejection-empty { min-height: 230px; }
+.rejection-card { padding: 18px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--red); border-radius: 13px; }
+.rejection-card header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.rejection-card time { color: var(--muted); font-size: .7rem; }
+.rejection-card h3 { margin: 16px 0 7px; font-size: 1rem; }
+.rejection-card-reason { margin-bottom: 16px; color: var(--red); font-size: .78rem; font-weight: 760; }
+.rejection-card dl { margin: 0 0 16px; display: grid; gap: 10px; }
+.rejection-card dl > div { padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+.rejection-card dt { color: var(--muted); font-size: .62rem; }
+.rejection-card dd { margin: 3px 0 0; font-size: .73rem; overflow-wrap: anywhere; }
+
 .team-grid { display: grid; grid-template-columns: minmax(300px, .65fr) minmax(520px, 1.35fr); gap: 14px; }
 .team-form-panel { align-content: start; display: grid; gap: 13px; }
 .team-form-panel h2 { margin: 0 0 5px; }
@@ -576,6 +628,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .rejection-reason-manager { grid-template-columns: 1fr 1fr; }
   .rejection-reason-manager > div { grid-column: 1 / -1; }
   .report-charts { grid-template-columns: 1fr; }
+  .rejection-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rejection-filters .search-field { grid-column: 1 / -1; }
 }
 
 @media (max-width: 900px) {
@@ -622,6 +676,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .report-kpis { grid-template-columns: 1fr 1fr; }
   .team-grid { grid-template-columns: 1fr; }
   .team-list-panel { min-width: 0; }
+  .goal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 620px) {
@@ -670,7 +725,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .report-text-editor { min-height: 320px; padding: 14px; }
   .form-actions { align-items: stretch; flex-direction: column-reverse; }
   .filters-panel, .report-filters { grid-template-columns: 1fr; }
+  .rejection-filters { grid-template-columns: 1fr; }
   .filters-panel .search-field { grid-column: auto; }
+  .rejection-filters .search-field { grid-column: auto; }
   .history-summary { grid-template-columns: 1fr 1fr; }
   .quality-category-grid { grid-template-columns: 1fr 1fr; }
   .quality-kpis { grid-template-columns: 1fr 1fr; }
@@ -697,6 +754,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .pera-milestone-icon { width: 44px; height: 44px; border-radius: 12px; }
   .pera-milestone-total { min-width: 0; grid-column: 1 / -1; text-align: left; }
   .pera-milestone-progress { grid-column: 1 / -1; }
+  .goal-grid { grid-template-columns: 1fr; }
+  .goals-section .section-heading, .empty-goals { align-items: stretch; flex-direction: column; }
+  .goal-form { grid-template-columns: 1fr; }
+  .goal-form .span-two { grid-column: auto; }
+  .rejection-table { display: none; }
+  .rejection-cards { display: grid; gap: 12px; }
+  .mobile-nav .nav-button { padding-inline: 1px; }
+  .mobile-nav .nav-button b { font-size: .58rem; }
 }
 
 @media (max-width: 390px) {
@@ -747,6 +812,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .report-photo-grid img { max-height: 70mm; border-radius: 2mm; }
   .report-photo-grid figcaption { font-size: 6pt; }
   .report-footer { position: fixed; right: 0; bottom: 0; left: 0; }
+  .rejection-report { border-top: 0; }
+  .rejection-table { overflow: visible; border: 0; }
+  .rejection-table table { min-width: 0; page-break-inside: auto; }
+  .rejection-table tr { page-break-inside: avoid; }
+  .rejection-table th, .rejection-table td { padding: 1.35mm; font-size: 5.7pt; }
+  .rejection-table td small { font-size: 5pt; }
+  .rejection-reason-cell, .rejection-observation-cell { min-width: 0; }
+  .rejection-cards { display: none !important; }
 }
 
 /* Recebimentos: consulta rápida e lançamento em campo. */

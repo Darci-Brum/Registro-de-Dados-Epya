@@ -20,6 +20,8 @@ const AUTH_CACHE_KEY = "epya-recebimentos-access-v2";
 const CATEGORY_KEY = "epya-recebimentos-categories-v1";
 const REJECTION_REASON_KEY = "epya-recebimentos-rejection-reasons-v1";
 const LOCATION_KEY = "epya-recebimentos-locations-v1";
+const GOAL_KEY = "epya-recebimentos-goals-v1";
+const GOAL_OUTBOX_KEY = "epya-recebimentos-goals-outbox-v1";
 const PHOTO_BUCKET = "recebimento-nf-photos";
 const MAX_INVOICE_PHOTOS = 6;
 const pendingPhotoFiles = new Map();
@@ -46,7 +48,7 @@ const PERA_FIRST_MILESTONE = 15000;
 const PERA_FINAL_MILESTONE = 20000;
 
 const state = {
-  view: ["dashboard", "form", "history", "quality", "reports", "team"].includes(requestedView)
+  view: ["dashboard", "form", "history", "quality", "rejections", "reports", "team"].includes(requestedView)
     ? requestedView
     : "dashboard",
   records: [],
@@ -76,12 +78,14 @@ const state = {
   dashboardTab: "overview",
   dashboardLocation: "",
   locations: [],
+  goals: readGoals(),
   saving: false,
   photoBusy: false,
   includeInvoicePhotos: false,
   newLocationMode: false,
   historyFilters: { search: "", material: "todos", from: "", to: "", pending: false },
   reportFilters: { from: "2026-08-18", to: "2026-08-24", material: "dormente", location: "" },
+  rejectionFilters: { search: "", location: "", reason: "", from: "", to: "" },
 };
 
 function escapeHtml(value) {
@@ -149,6 +153,51 @@ function saveRejectionReasonsLocal() {
   localStorage.setItem(REJECTION_REASON_KEY, JSON.stringify(state.rejectionReasons));
 }
 
+function defaultGoals() {
+  return [{ id: "meta-contrato-dormentes", title: "Meta contratual de dormentes", material: "dormente", target: TARGET_SLEEPERS, location: "", startDate: "", dueDate: "", createdAt: "2026-01-01T00:00:00.000Z" }];
+}
+
+function normalizeGoal(goal) {
+  return {
+    id: String(goal?.id || `meta-${crypto.randomUUID()}`),
+    title: String(goal?.title || "Meta sem nome").trim(),
+    material: goal?.material === "trilho" ? "trilho" : "dormente",
+    target: number(goal?.target ?? goal?.target_quantity),
+    location: String(goal?.location || "").trim(),
+    startDate: String(goal?.startDate ?? goal?.start_date ?? ""),
+    dueDate: String(goal?.dueDate ?? goal?.due_date ?? ""),
+    createdAt: String(goal?.createdAt ?? goal?.created_at ?? new Date().toISOString()),
+  };
+}
+
+function readGoals() {
+  try {
+    const raw = localStorage.getItem(GOAL_KEY);
+    if (raw === null) return defaultGoals();
+    const goals = JSON.parse(raw);
+    return Array.isArray(goals) ? goals.map(normalizeGoal).filter((goal) => goal.target > 0) : defaultGoals();
+  } catch {
+    return defaultGoals();
+  }
+}
+
+function saveGoalsLocal() {
+  localStorage.setItem(GOAL_KEY, JSON.stringify(state.goals));
+}
+
+function readGoalOutbox() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(GOAL_OUTBOX_KEY) || "null");
+    return { upserts: Array.isArray(stored?.upserts) ? stored.upserts.map(normalizeGoal) : [], deletes: Array.isArray(stored?.deletes) ? stored.deletes.map(String) : [] };
+  } catch {
+    return { upserts: [], deletes: [] };
+  }
+}
+
+function writeGoalOutbox(changes) {
+  localStorage.setItem(GOAL_OUTBOX_KEY, JSON.stringify(changes));
+}
+
 function qualityCategories(material) {
   return material === "trilho" ? RAIL_QUALITY_CATEGORIES : state.categories;
 }
@@ -208,6 +257,10 @@ function reportLocationLabel() {
 
 function renderLocationOptions(selected = "") {
   return `<option value="">Todos os locais</option>${locationGroups().map((group) => `<option value="${escapeHtml(group.key)}" ${group.key === selected ? "selected" : ""}>${escapeHtml(group.label)}</option>`).join("")}`;
+}
+
+function renderGoalLocationOptions() {
+  return `<option value="">Todos os locais</option>${knownLocations().map((label) => `<option value="${escapeHtml(locationKey(label))}">${escapeHtml(label)}</option>`).join("")}`;
 }
 
 function invoiceItems(record) {
@@ -368,11 +421,11 @@ function render() {
     <div class="app-shell">
       <header class="topbar no-print">
         <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel EPYA"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Controle diário de materiais</small></span></button>
-        <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("reports", "Relatórios", "▤")}${state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
+        <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprovados", "!")}${navButton("reports", "Relatórios", "▤")}${state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
         <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><button class="user-chip" type="button" data-sign-out title="Sair" aria-label="Sair do sistema"><strong>${escapeHtml(state.user.fullName || state.user.email.split("@")[0])}</strong><small>${state.user.role === "admin" ? "Administrador" : state.user.role === "viewer" ? "Consulta" : "Operação"}</small></button></div>
       </header>
       <main class="app-main">${renderCurrentView()}</main>
-      <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("reports", "Relatórios", "▤")}</footer>
+      <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprov.", "!")}${navButton("reports", "Relatórios", "▤")}</footer>
       ${state.tvMode ? '<button class="exit-tv no-print" data-tv-toggle>Sair do modo TV</button>' : ""}
       ${renderModal()}<div class="toast" role="status" aria-live="polite"></div>
     </div>`;
@@ -398,6 +451,7 @@ function renderCurrentView() {
   if (state.view === "form") return renderForm();
   if (state.view === "history") return renderHistory();
   if (state.view === "quality") return renderQuality();
+  if (state.view === "rejections") return renderRejections();
   if (state.view === "reports") return renderReports();
   if (state.view === "team") return renderTeam();
   return renderDashboard();
@@ -555,6 +609,96 @@ function renderPeraMilestone(value) {
   return `<article class="pera-milestone ${status}" role="${liveRole}" aria-live="polite"><span class="pera-milestone-icon" aria-hidden="true">${status === "reached" ? "✓" : "!"}</span><div class="pera-milestone-copy"><span class="eyebrow">Controle de descarga</span><h2>${title}</h2><p>${detail}</p></div><div class="pera-milestone-total"><span>Total na Pera</span><strong>${formatNumber(total)}</strong><small>dormentes</small></div><div class="pera-milestone-progress" aria-label="${progress.toFixed(1).replace(".", ",")}% do marco de ${formatNumber(milestone)} dormentes"><i style="width:${progress}%"></i></div></article>`;
 }
 
+function goalRecords(goal) {
+  return state.records.filter((record) => {
+    const date = record.receivedDate || String(record.receivedAt || "").slice(0, 10);
+    return record.material === goal.material
+      && (!goal.location || locationKey(record.location) === locationKey(goal.location))
+      && (!goal.startDate || date >= goal.startDate);
+  });
+}
+
+function goalProgress(goal) {
+  const current = goalRecords(goal).reduce((sum, record) => sum + recordQuantity(record), 0);
+  const percentage = goal.target ? (current / goal.target) * 100 : 0;
+  return { current, percentage, remaining: Math.max(0, goal.target - current) };
+}
+
+function renderGoalsPanel() {
+  const cards = state.goals.map((goal) => {
+    const value = goalProgress(goal);
+    const scope = goal.location || "Todos os locais";
+    const period = goal.startDate ? `Desde ${formatDate(goal.startDate)}` : "Desde o primeiro registro";
+    const due = goal.dueDate ? `Prazo ${formatDate(goal.dueDate)}` : "Sem prazo definido";
+    const completed = value.current >= goal.target;
+    return `<article class="goal-card ${goal.material} ${completed ? "completed" : ""}"><header>${materialBadge(goal.material)}${canEdit() ? `<button class="danger-link no-print" data-delete-goal="${escapeHtml(goal.id)}" aria-label="Excluir a meta ${escapeHtml(goal.title)}">Excluir</button>` : ""}</header><h3>${escapeHtml(goal.title)}</h3><p>${escapeHtml(scope)} • ${period} • ${due}</p><div class="goal-numbers"><strong>${formatNumber(value.current)}</strong><span>de ${formatNumber(goal.target)} ${MATERIALS[goal.material].unit}</span></div><div class="goal-progress" role="progressbar" aria-label="${escapeHtml(goal.title)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, value.percentage).toFixed(0)}"><i style="width:${Math.min(100, value.percentage)}%"></i></div><footer><b>${value.percentage.toFixed(1).replace(".", ",")}% concluída</b><span>${completed ? "Meta atingida" : `Faltam ${formatNumber(value.remaining)}`}</span></footer></article>`;
+  }).join("");
+  return `<section class="goals-section"><div class="section-heading"><div><span class="eyebrow">Planejamento</span><h2>Metas da obra</h2><p>Acompanhe automaticamente o avanço total ou por local de descarga.</p></div>${canEdit() ? '<button class="button button-outline no-print" data-add-goal>+ Adicionar meta</button>' : ""}</div>${cards ? `<div class="goal-grid">${cards}</div>` : `<article class="panel empty-goals"><div><strong>Nenhuma meta cadastrada</strong><p>Crie uma meta para dormentes ou trilhos e acompanhe o progresso pelos lançamentos.</p></div>${canEdit() ? '<button class="button button-yellow no-print" data-add-goal>Criar primeira meta</button>' : ""}</article>`}</section>`;
+}
+
+function supabaseGoalRow(goal) {
+  return { id: goal.id, title: goal.title, material: goal.material, target_quantity: number(goal.target), location: goal.location || "", start_date: goal.startDate || null, due_date: goal.dueDate || null, created_by: state.user?.email || OWNER_EMAIL, created_at: goal.createdAt || new Date().toISOString(), updated_at: new Date().toISOString() };
+}
+
+async function syncGoalChanges() {
+  if (!supabaseClient || !state.online || !state.authorized) return false;
+  const pending = readGoalOutbox();
+  const remaining = { upserts: [], deletes: [] };
+  for (const goal of pending.upserts) {
+    try {
+      const { error } = await supabaseClient.from("receiving_goals").upsert(supabaseGoalRow(goal), { onConflict: "id" });
+      if (error) throw error;
+    } catch {
+      remaining.upserts.push(goal);
+    }
+  }
+  for (const id of pending.deletes) {
+    try {
+      const { error } = await supabaseClient.from("receiving_goals").delete().eq("id", id);
+      if (error) throw error;
+    } catch {
+      remaining.deletes.push(id);
+    }
+  }
+  writeGoalOutbox(remaining);
+  return !remaining.upserts.length && !remaining.deletes.length;
+}
+
+async function saveGoal() {
+  if (!canEdit()) return toast("Seu acesso é somente para consulta.", "error");
+  const title = String(document.querySelector('[name="goalTitle"]')?.value || "").trim();
+  const material = document.querySelector('[name="goalMaterial"]')?.value === "trilho" ? "trilho" : "dormente";
+  const target = number(document.querySelector('[name="goalTarget"]')?.value);
+  const locationValue = document.querySelector('[name="goalLocation"]')?.value || "";
+  const location = knownLocations().find((label) => locationKey(label) === locationValue) || "";
+  const startDate = document.querySelector('[name="goalStart"]')?.value || "";
+  const dueDate = document.querySelector('[name="goalDue"]')?.value || "";
+  if (!title) return toast("Informe um nome para a meta.", "error");
+  if (!target) return toast("Informe uma quantidade maior que zero.", "error");
+  if (startDate && dueDate && startDate > dueDate) return toast("O prazo deve ser posterior ao início da meta.", "error");
+  const goal = normalizeGoal({ id: `meta-${crypto.randomUUID()}`, title, material, target, location, startDate, dueDate, createdAt: new Date().toISOString() });
+  state.goals.push(goal); saveGoalsLocal();
+  const pending = readGoalOutbox();
+  pending.upserts = [...pending.upserts.filter((item) => item.id !== goal.id), goal];
+  pending.deletes = pending.deletes.filter((id) => id !== goal.id);
+  writeGoalOutbox(pending);
+  state.modal = null; render();
+  const synced = await syncGoalChanges();
+  toast(synced ? "Meta adicionada e sincronizada." : "Meta adicionada neste aparelho. Será sincronizada quando o banco estiver disponível.", synced ? "success" : "warning");
+}
+
+async function deleteGoal(id) {
+  const goal = state.goals.find((item) => item.id === id);
+  if (!goal || !canEdit() || !confirm(`Excluir a meta “${goal.title}”?`)) return;
+  state.goals = state.goals.filter((item) => item.id !== id); saveGoalsLocal();
+  const pending = readGoalOutbox();
+  pending.upserts = pending.upserts.filter((item) => item.id !== id);
+  if (!pending.deletes.includes(id)) pending.deletes.push(id);
+  writeGoalOutbox(pending); render();
+  const synced = await syncGoalChanges();
+  toast(synced ? "Meta excluída." : "Meta excluída neste aparelho. A remoção será sincronizada quando houver conexão.", synced ? "success" : "warning");
+}
+
 function renderLocationDashboards() {
   const groups = locationGroups().filter((group) => !state.dashboardLocation || group.key === state.dashboardLocation);
   if (!groups.length) return "";
@@ -576,7 +720,7 @@ function renderDashboard() {
   const value = metrics();
   const recent = state.records.slice(0, 6);
   return `<section class="view dashboard-view">${renderDashboardHeader()}${renderDashboardTabs()}
-    <div class="section-heading"><div><span class="eyebrow">Visão executiva</span><h2>Panorama acumulado</h2></div><span class="updated-label">Atualizado com ${value.totalNfs} notas fiscais</span></div><div class="metrics-grid"><article class="metric-card sleeper"><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs • meta ${formatNumber(TARGET_SLEEPERS)}</small><div class="metric-progress"><i style="width:${value.progress}%"></i></div></article><article class="metric-card rail"><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs • meta ainda não definida</small><div class="metric-line"></div></article><article class="metric-card remaining"><span>Saldo de dormentes</span><strong>${formatNumber(value.remaining)}</strong><small>${value.progress.toFixed(2).replace(".", ",")}% da meta concluída</small><div class="metric-line"></div></article><article class="metric-card quality"><span>Ocorrências de qualidade</span><strong>${formatNumber(value.sleeperOccurrences + value.railOccurrences)}</strong><small>${formatNumber(value.sleeperOccurrences)} em dormentes • ${formatNumber(value.railOccurrences)} em trilhos</small><div class="metric-line"></div></article></div>${renderPeraMilestone(value)}
+    <div class="section-heading"><div><span class="eyebrow">Visão executiva</span><h2>Panorama acumulado</h2></div><span class="updated-label">Atualizado com ${value.totalNfs} notas fiscais</span></div><div class="metrics-grid"><article class="metric-card sleeper"><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs • meta ${formatNumber(TARGET_SLEEPERS)}</small><div class="metric-progress"><i style="width:${value.progress}%"></i></div></article><article class="metric-card rail"><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs • acompanhe pelas metas</small><div class="metric-line"></div></article><article class="metric-card remaining"><span>Saldo de dormentes</span><strong>${formatNumber(value.remaining)}</strong><small>${value.progress.toFixed(2).replace(".", ",")}% da meta concluída</small><div class="metric-line"></div></article><article class="metric-card quality"><span>Ocorrências de qualidade</span><strong>${formatNumber(value.sleeperOccurrences + value.railOccurrences)}</strong><small>${formatNumber(value.sleeperOccurrences)} em dormentes • ${formatNumber(value.railOccurrences)} em trilhos</small><div class="metric-line"></div></article></div>${renderGoalsPanel()}${renderPeraMilestone(value)}
     <div class="dashboard-grid charts-main"><article class="panel chart-card clickable" data-chart-modal="week" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação semanal</span><h2>Entradas por semana</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("week")}</article><article class="panel chart-card clickable" data-chart-modal="month" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação mensal</span><h2>Evolução por mês</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("month")}</article></div>
     <div class="dashboard-grid charts-secondary"><article class="panel chart-card clickable" data-chart-modal="daily" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Ritmo da operação</span><h2>Volume diário</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderDailyChart()}</article><article class="panel quality-card clickable" data-chart-modal="quality-dormente" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Classificações</span><h2>Qualidade dos dormentes</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("dormente")}</article><article class="panel quality-card clickable" data-chart-modal="quality-trilho" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Inspeção ferroviária</span><h2>Qualidade dos trilhos</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("trilho")}</article></div>
     ${renderPendingSummary()}
@@ -910,6 +1054,51 @@ function renderQuality() {
   return `<section class="view quality-view"><div class="page-heading"><div><span class="eyebrow">Inspeção e segregação</span><h1>Qualidade de dormentes e trilhos</h1><p>Acompanhe ocorrências dos dois materiais e registre cada inspeção de campo.</p></div>${canEdit() ? '<div class="heading-actions"><button class="button button-yellow" data-new-sleeper>+ Lançar dormentes</button><button class="button button-outline" data-new-rail>+ Lançar trilhos</button></div>' : ""}</div><div class="quality-hero-grid"><article class="panel quality-overview clickable" data-chart-modal="quality-dormente" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Dormentes</span><h2>Ocorrências acumuladas</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("dormente", sleeperRecords)}</article><article class="panel quality-overview clickable" data-chart-modal="quality-trilho" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Trilhos</span><h2>Inspeções e avarias</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("trilho", railRecords)}</article></div><article class="panel quality-kpis quality-kpis-wide"><div><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong></div><div><span>Dormentes reprovados</span><strong class="danger-text">${formatNumber(value.rejected)}</strong></div><div><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong></div><div><span>Trilhos reprovados</span><strong class="danger-text">${formatNumber(value.railRejected)}</strong></div></article><div class="quality-section-heading"><span class="eyebrow">Separação de dormentes</span><h2>Classificações cadastradas</h2></div><div class="quality-category-grid">${state.categories.map((category) => `<article class="category-card" style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><strong>${formatNumber(sleeperTotals[category.id])}</strong><small>ocorrências acumuladas</small></article>`).join("")}</div><div class="quality-section-heading"><span class="eyebrow">Inspeção dos trilhos</span><h2>Classificações ferroviárias</h2></div><div class="quality-category-grid rail-categories">${RAIL_QUALITY_CATEGORIES.map((category) => `<article class="category-card" style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><strong>${formatNumber(railTotals[category.id])}</strong><small>ocorrências acumuladas</small></article>`).join("")}</div>${canEdit() ? `<article class="panel category-manager"><div><span class="eyebrow">Personalizar dormentes</span><h2>Adicionar nova classificação</h2><p>Ex.: fissuras, ombreira danificada ou cordoalha aparente.</p></div><div class="category-add-form"><input name="qualityNewCategory" placeholder="Nome da classificação" /><button class="button button-dark" data-add-category-page>Adicionar</button></div></article>` : ""}<article class="panel"><div class="panel-heading"><div><span class="eyebrow">Lançamentos</span><h2>Últimas inspeções de materiais</h2></div></div>${renderRecordsTable(state.records.slice(0, 12), true)}</article></section>`;
 }
 
+function rejectionReasonLabel(rejection) {
+  return String(rejection.reason || state.rejectionReasons.find((reason) => reason.id === rejection.reasonId)?.label || "Motivo não informado");
+}
+
+function rejectedSleeperRows(records = state.records) {
+  return records.filter((record) => record.material === "dormente").flatMap((record) => rejectionRows(record).map((rejection, rejectionIndex) => {
+    const items = invoiceItems(record);
+    let invoiceIndex = items.findIndex((item) => String(item.number) === String(rejection.invoiceNumber));
+    if (invoiceIndex < 0) invoiceIndex = 0;
+    const item = items[invoiceIndex] || { number: rejection.invoiceNumber || "", quantity: 0, photos: [] };
+    return { record, rejection, rejectionIndex, item, invoiceIndex, reason: rejectionReasonLabel(rejection) };
+  })).sort((a, b) => String(b.record.receivedAt || b.record.receivedDate).localeCompare(String(a.record.receivedAt || a.record.receivedDate)));
+}
+
+function filteredRejectedSleepers() {
+  const { search, location, reason, from, to } = state.rejectionFilters;
+  const needle = search.trim().toLocaleLowerCase("pt-BR");
+  return rejectedSleeperRows().filter((row) => {
+    const date = row.record.receivedDate || String(row.record.receivedAt || "").slice(0, 10);
+    const searchable = [row.item.number, row.record.location, row.record.supplier, row.record.vehiclePlate, row.record.inspectorName, row.rejection.mold, row.rejection.cavity, row.reason, row.record.observations].join(" ").toLocaleLowerCase("pt-BR");
+    return (!from || date >= from) && (!to || date <= to) && (!location || locationKey(row.record.location) === location) && (!reason || row.reason === reason) && (!needle || searchable.includes(needle));
+  });
+}
+
+function renderRejectedSleeperTable(rows) {
+  if (!rows.length) return '<div class="empty-state rejection-empty"><span>✓</span><h3>Nenhum dormente reprovado encontrado</h3><p>Não há reprovações com os filtros escolhidos.</p></div>';
+  return `<div class="rejection-table"><table><thead><tr><th>Data / horário</th><th>NF / quantidade</th><th>Local</th><th>Identificação</th><th>Motivo</th><th>Rastreabilidade</th><th>Observações</th><th>Fotos</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => `<tr><td><strong>${formatDate(row.record.receivedDate || row.record.receivedAt)}</strong><small>${escapeHtml(row.record.receivedTime || "Horário não informado")}</small></td><td><strong>NF ${escapeHtml(row.item.number || row.rejection.invoiceNumber || "—")}</strong><small>${formatNumber(row.item.quantity)} dormentes recebidos</small></td><td><strong>${escapeHtml(row.record.location || "Não informado")}</strong><small>${escapeHtml(row.record.supplier || "Fornecedor não informado")}</small></td><td><strong>Molde ${escapeHtml(row.rejection.mold || "—")}</strong><small>Cavidade ${escapeHtml(row.rejection.cavity || "—")}</small></td><td class="rejection-reason-cell">${escapeHtml(row.reason)}</td><td><strong>${escapeHtml(row.record.vehiclePlate || "Placa não informada")}</strong><small>${escapeHtml(row.record.inspectorName || CONTROL_OWNER)}</small></td><td class="rejection-observation-cell">${escapeHtml(row.record.observations || "Sem observações")}</td><td><strong>${formatNumber(row.item.photos?.length || 0)}</strong><small>foto(s) da NF</small></td><td class="report-row-actions no-print"><button data-view-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Ver NF</button>${canEdit() ? `<button data-edit-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function renderRejectedSleeperCards(rows) {
+  return `<div class="rejection-cards">${rows.map((row) => `<article class="rejection-card"><header><span class="invoice-status-pill is-rejected">Reprovado</span><time>${formatDate(row.record.receivedDate || row.record.receivedAt)}</time></header><h3>Molde ${escapeHtml(row.rejection.mold || "—")} • Cavidade ${escapeHtml(row.rejection.cavity || "—")}</h3><p class="rejection-card-reason">${escapeHtml(row.reason)}</p><dl><div><dt>Nota fiscal</dt><dd>NF ${escapeHtml(row.item.number || row.rejection.invoiceNumber || "—")} • ${formatNumber(row.item.quantity)} recebidos</dd></div><div><dt>Local</dt><dd>${escapeHtml(row.record.location || "Não informado")}</dd></div><div><dt>Fornecedor / placa</dt><dd>${escapeHtml(row.record.supplier || "—")} • ${escapeHtml(row.record.vehiclePlate || "placa não informada")}</dd></div><div><dt>Responsável</dt><dd>${escapeHtml(row.record.inspectorName || CONTROL_OWNER)}</dd></div><div><dt>Observações</dt><dd>${escapeHtml(row.record.observations || "Sem observações")}</dd></div><div><dt>Fotos da NF</dt><dd>${formatNumber(row.item.photos?.length || 0)}</dd></div></dl><div class="receiving-card-actions no-print"><button class="button button-dark" data-view-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Ver NF completa</button>${canEdit() ? `<button class="button button-outline" data-edit-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Editar</button>` : ""}</div></article>`).join("")}</div>`;
+}
+
+function renderRejections() {
+  const rows = filteredRejectedSleepers();
+  const allRows = rejectedSleeperRows();
+  const affectedInvoices = new Set(rows.map((row) => `${row.record.id}:${row.item.number}`)).size;
+  const affectedLocations = new Set(rows.map((row) => locationKey(row.record.location))).size;
+  const pendingDetails = rows.filter((row) => !row.rejection.invoiceNumber || !row.rejection.mold || !row.rejection.cavity || row.reason === "Motivo não informado").length;
+  const reasons = [...new Set(allRows.map((row) => row.reason))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const period = `${state.rejectionFilters.from ? formatDate(state.rejectionFilters.from) : "Início dos registros"} a ${state.rejectionFilters.to ? formatDate(state.rejectionFilters.to) : "último recebimento"}`;
+  const locationLabel = locationGroups().find((group) => group.key === state.rejectionFilters.location)?.label || "Todos os locais";
+  return `<section class="view rejections-view"><div class="page-heading no-print"><div><span class="eyebrow">Rastreabilidade de não conformidades</span><h1>Dormentes reprovados</h1><p>Veja somente as peças reprovadas, com identificação, origem, responsável, observações e fotos da nota fiscal.</p></div><div class="heading-actions"><button class="button button-outline" data-export-rejections>Exportar Excel</button><button class="button button-yellow" data-print-rejections>Gerar PDF</button></div></div><article class="panel rejection-filters no-print"><label class="search-field"><span>Buscar NF, molde, cavidade, placa ou motivo</span><input name="rejectionSearch" value="${escapeHtml(state.rejectionFilters.search)}" placeholder="Digite para pesquisar" /></label><label><span>Local</span><select name="rejectionLocation">${renderLocationOptions(state.rejectionFilters.location)}</select></label><label><span>Motivo</span><select name="rejectionReason"><option value="">Todos os motivos</option>${reasons.map((reason) => `<option value="${escapeHtml(reason)}" ${reason === state.rejectionFilters.reason ? "selected" : ""}>${escapeHtml(reason)}</option>`).join("")}</select></label><label><span>De</span><input type="date" name="rejectionFrom" value="${state.rejectionFilters.from}" /></label><label><span>Até</span><input type="date" name="rejectionTo" value="${state.rejectionFilters.to}" /></label><button class="button button-dark" data-apply-rejections>Filtrar</button><button class="text-button" data-clear-rejections>Limpar</button></article><article class="print-report rejection-report"><header class="report-header"><img src="./epya-logo-oficial.png" alt="EPYA" /><div><span>RELATÓRIO DE NÃO CONFORMIDADES</span><h1>Dormentes reprovados</h1><p>Período: ${period}</p><p>Local: <strong>${escapeHtml(locationLabel)}</strong></p><p>Responsável pelo controle: <strong>${CONTROL_OWNER}</strong></p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header><div class="report-kpis rejection-kpis"><div><span>Dormentes reprovados</span><strong>${formatNumber(rows.length)}</strong><small>peças individualizadas</small></div><div><span>Notas fiscais afetadas</span><strong>${formatNumber(affectedInvoices)}</strong><small>no filtro selecionado</small></div><div><span>Locais afetados</span><strong>${formatNumber(affectedLocations)}</strong><small>pontos de descarga</small></div><div><span>Dados pendentes</span><strong>${formatNumber(pendingDetails)}</strong><small>identificações incompletas</small></div></div>${renderRejectedSleeperTable(rows)}${renderRejectedSleeperCards(rows)}<footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle de dormentes reprovados</span></footer></article></section>`;
+}
+
 function reportRecords() {
   const { from, to, material, location } = state.reportFilters;
   return state.records.filter((record) => { const date = record.receivedDate || String(record.receivedAt).slice(0, 10); return (!from || date >= from) && (!to || date <= to) && (material === "todos" || record.material === material) && (!location || locationKey(record.location) === location); });
@@ -1117,7 +1306,12 @@ function renderModal() {
   let subtitle = "Dados do painel";
   let body = "";
   let footer = '<button class="button button-outline" data-modal-close>Fechar</button><button class="button button-dark" data-print-report>Gerar PDF do painel</button>';
-  if (state.modal.type === "invoice-photos") {
+  if (state.modal.type === "goal-form") {
+    title = "Adicionar meta";
+    subtitle = "Planejamento da obra";
+    body = `<form class="goal-form" data-goal-form><label class="span-two"><span>Nome da meta *</span><input name="goalTitle" maxlength="120" required placeholder="Ex.: Meta de trilhos da Pera" /></label><label><span>Material *</span><select name="goalMaterial"><option value="dormente">Dormentes</option><option value="trilho">Trilhos</option></select></label><label><span>Quantidade da meta *</span><input type="number" min="1" name="goalTarget" required placeholder="Ex.: 20000" /></label><label class="span-two"><span>Local de descarga</span><select name="goalLocation">${renderGoalLocationOptions()}</select><small>Deixe “Todos os locais” para uma meta geral.</small></label><label><span>Contar lançamentos desde</span><input type="date" name="goalStart" /></label><label><span>Prazo da meta</span><input type="date" name="goalDue" /></label></form>`;
+    footer = '<button class="button button-outline" data-modal-close>Cancelar</button><button class="button button-yellow" data-save-goal>Salvar meta</button>';
+  } else if (state.modal.type === "invoice-photos") {
     const record = state.records.find((item) => item.id === state.modal.id);
     if (!record) return "";
     const item = invoiceItems(record)[number(state.modal.index)];
@@ -1203,6 +1397,10 @@ function bindEvents() {
   document.querySelector('[name="includeInvoicePhotos"]')?.addEventListener("change", (event) => { syncReportFiltersFromDom(); state.includeInvoicePhotos = event.target.checked; render(); });
   document.querySelectorAll("[data-retry-photos]").forEach((button) => button.addEventListener("click", () => loadVisiblePhotos(true)));
   document.querySelectorAll("[data-location-report]").forEach((button) => button.addEventListener("click", () => openLocationReport(button.dataset.locationReport)));
+  document.querySelectorAll("[data-add-goal]").forEach((button) => button.addEventListener("click", () => { state.modal = { type: "goal-form" }; render(); requestAnimationFrame(() => document.querySelector('[name="goalTitle"]')?.focus()); }));
+  document.querySelector("[data-save-goal]")?.addEventListener("click", saveGoal);
+  document.querySelector("[data-goal-form]")?.addEventListener("submit", (event) => { event.preventDefault(); saveGoal(); });
+  document.querySelectorAll("[data-delete-goal]").forEach((button) => button.addEventListener("click", () => deleteGoal(button.dataset.deleteGoal)));
   document.querySelector("[data-sign-out]")?.addEventListener("click", signOut);
   document.querySelectorAll("[data-nav]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.nav)));
   document.querySelectorAll("[data-new-record]").forEach((button) => button.addEventListener("click", () => newRecord()));
@@ -1219,6 +1417,8 @@ function bindEvents() {
   document.querySelectorAll("[data-edit-invoice]").forEach((button) => button.addEventListener("click", () => editRecord(button.dataset.editInvoice, number(button.dataset.invoiceIndex))));
   document.querySelectorAll("[data-delete-record]").forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord)));
   document.querySelector("[data-export-csv]")?.addEventListener("click", () => exportCsv(filteredHistory()));
+  document.querySelector("[data-export-rejections]")?.addEventListener("click", exportRejectedCsv);
+  document.querySelector("[data-print-rejections]")?.addEventListener("click", printRejectedReport);
   document.querySelector("[data-export-report]")?.addEventListener("click", () => { syncReportFiltersFromDom(); exportCsv(reportRecords()); });
   document.querySelectorAll("[data-print-report]").forEach((button) => button.addEventListener("click", printReport));
   document.querySelectorAll("[data-open-report-text]").forEach((button) => button.addEventListener("click", openReportText));
@@ -1229,6 +1429,8 @@ function bindEvents() {
   document.querySelectorAll("[data-remove-user]").forEach((button) => button.addEventListener("click", () => removeTeamMember(button.dataset.removeUser)));
   document.querySelector("[data-apply-history]")?.addEventListener("click", applyHistoryFilters);
   document.querySelector("[data-clear-history]")?.addEventListener("click", () => { state.historyFilters = { search: "", material: "todos", from: "", to: "", pending: false }; render(); });
+  document.querySelector("[data-apply-rejections]")?.addEventListener("click", applyRejectionFilters);
+  document.querySelector("[data-clear-rejections]")?.addEventListener("click", clearRejectionFilters);
   document.querySelector("[data-apply-report]")?.addEventListener("click", applyReportFilters);
   document.querySelector("[data-report-week]")?.addEventListener("click", selectLatestReportWeek);
   document.querySelector("[data-nf-quality-form]")?.addEventListener("submit", (event) => { event.preventDefault(); state.nfQualityFilter = document.querySelector('[name="nfQualitySearch"]')?.value.trim() || ""; render(); });
@@ -1388,6 +1590,19 @@ async function addRejectionReason(rawName) {
 }
 
 function applyHistoryFilters() { state.historyFilters = { search: document.querySelector('[name="historySearch"]')?.value || "", material: document.querySelector('[name="historyMaterial"]')?.value || "todos", from: document.querySelector('[name="historyFrom"]')?.value || "", to: document.querySelector('[name="historyTo"]')?.value || "", pending: Boolean(document.querySelector('[name="historyPending"]')?.checked) }; render(); }
+function syncRejectionFiltersFromDom() {
+  if (!document.querySelector('[name="rejectionSearch"]')) return state.rejectionFilters;
+  state.rejectionFilters = {
+    search: document.querySelector('[name="rejectionSearch"]')?.value || "",
+    location: document.querySelector('[name="rejectionLocation"]')?.value || "",
+    reason: document.querySelector('[name="rejectionReason"]')?.value || "",
+    from: document.querySelector('[name="rejectionFrom"]')?.value || "",
+    to: document.querySelector('[name="rejectionTo"]')?.value || "",
+  };
+  return state.rejectionFilters;
+}
+function applyRejectionFilters() { syncRejectionFiltersFromDom(); render(); }
+function clearRejectionFilters() { state.rejectionFilters = { search: "", location: "", reason: "", from: "", to: "" }; render(); }
 function syncReportFiltersFromDom() {
   if (!document.querySelector('[name="reportMaterial"]')) return state.reportFilters;
   state.reportFilters = { from: document.querySelector('[name="reportFrom"]')?.value || "", to: document.querySelector('[name="reportTo"]')?.value || "", material: document.querySelector('[name="reportMaterial"]')?.value || "todos", location: document.querySelector('[name="reportLocation"]')?.value || "" };
@@ -1419,6 +1634,20 @@ function exportCsv(records) {
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
   const suffix = `${state.reportFilters.from || "inicio"}-a-${state.reportFilters.to || "fim"}`;
   const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); link.download = `relatorio-epya-${suffix}.csv`; link.click(); URL.revokeObjectURL(link.href); toast("Planilha para Excel gerada.", "success");
+}
+
+function exportRejectedCsv() {
+  syncRejectionFiltersFromDom();
+  const rows = [["Data", "Horário", "Nota Fiscal", "Quantidade da NF", "Local", "Fornecedor", "Placa", "Molde", "Cavidade", "Motivo da reprovação", "Responsável", "Observações", "Fotos da NF"]];
+  filteredRejectedSleepers().forEach((row) => rows.push([formatDate(row.record.receivedDate || row.record.receivedAt), row.record.receivedTime || "não informado", row.item.number || row.rejection.invoiceNumber || "", row.item.quantity, row.record.location || "", row.record.supplier || "", row.record.vehiclePlate || "", row.rejection.mold || "", row.rejection.cavity || "", row.reason, row.record.inspectorName || CONTROL_OWNER, row.record.observations || "", row.item.photos?.length || 0]));
+  const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
+  const suffix = `${state.rejectionFilters.from || "inicio"}-a-${state.rejectionFilters.to || "fim"}`;
+  const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); link.download = `dormentes-reprovados-epya-${suffix}.csv`; link.click(); URL.revokeObjectURL(link.href); toast("Planilha de dormentes reprovados gerada.", "success");
+}
+
+function printRejectedReport() {
+  syncRejectionFiltersFromDom(); state.modal = null; state.view = "rejections"; render();
+  requestAnimationFrame(() => window.print());
 }
 
 async function printReport() {
@@ -1498,7 +1727,7 @@ function sanitizeLegacyMoldEntry(record) {
 }
 
 function supabaseRecordRow(record) { return { id: record.id, status: record.status, received_at: record.receivedAt, invoice_numbers: record.invoiceNumbers || "", supplier: record.supplier || "", quantity: number(record.quantity), approved: number(record.approved), rejected: number(record.rejected), truckloads: 1, payload: record, created_at: record.createdAt || new Date().toISOString(), updated_at: record.updatedAt || new Date().toISOString() }; }
-function clearProtectedLocalData() { [STORAGE_KEY, OUTBOX_KEY, AUTH_CACHE_KEY, CATEGORY_KEY, REJECTION_REASON_KEY, LOCATION_KEY].forEach((key) => localStorage.removeItem(key)); }
+function clearProtectedLocalData() { [STORAGE_KEY, OUTBOX_KEY, AUTH_CACHE_KEY, CATEGORY_KEY, REJECTION_REASON_KEY, LOCATION_KEY, GOAL_KEY, GOAL_OUTBOX_KEY].forEach((key) => localStorage.removeItem(key)); }
 function readLocalRecords() { try { const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); return Array.isArray(stored) ? stored.map(sanitizeLegacyMoldEntry).sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))) : []; } catch { return []; } }
 function writeLocalRecords() { if (state.authorized) localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records)); }
 function readOutbox() { try { const records = JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]"); return Array.isArray(records) ? records : []; } catch { return []; } }
@@ -1538,10 +1767,38 @@ async function loadSession() {
 function authFields() { return { email: document.querySelector('[name="authEmail"]')?.value.trim().toLowerCase() || "", password: document.querySelector('[name="authPassword"]')?.value || "" }; }
 async function signInWithEmail(event) { event?.preventDefault(); const { email, password } = authFields(); if (!email || password.length < 8) return; state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.signInWithPassword({ email, password }); if (error) { state.authLoading = false; state.authMessage = "E-mail ou senha inválidos, ou confirmação ainda pendente."; render(); return; } await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); }
 async function createFirstAccess() { const { email, password } = authFields(); if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 8) return toast("Informe um e-mail válido e uma senha de pelo menos 8 caracteres.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { data, error } = await supabaseClient.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}` } }); state.authLoading = false; if (error) { state.authMessage = error.message || "Não foi possível criar o primeiro acesso."; render(); return; } if (data.session) { await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); return; } state.authMessage = "Confira seu e-mail e use o link de confirmação para concluir o primeiro acesso."; render(); }
-async function signOut() { if (state.saving || state.photoBusy) return; if (pendingPhotoFiles.size && !confirm("Há fotos ainda não salvas. Deseja sair e descartá-las?")) return; photoSessionEpoch++; await supabaseClient?.auth.signOut(); releasePendingPhotos(); photoUrls.clear(); state.draft = null; state.editingId = ""; state.editingInvoiceIndex = -1; state.newLocationMode = false; state.locations = []; clearProtectedLocalData(); state.authenticated = false; state.authorized = false; state.user = null; state.records = []; state.team = []; state.teamLoaded = false; state.authMessage = "Sessão encerrada com segurança."; render(); }
+async function signOut() { if (state.saving || state.photoBusy) return; if (pendingPhotoFiles.size && !confirm("Há fotos ainda não salvas. Deseja sair e descartá-las?")) return; photoSessionEpoch++; await supabaseClient?.auth.signOut(); releasePendingPhotos(); photoUrls.clear(); state.draft = null; state.editingId = ""; state.editingInvoiceIndex = -1; state.newLocationMode = false; state.locations = []; state.goals = []; clearProtectedLocalData(); state.authenticated = false; state.authorized = false; state.user = null; state.records = []; state.team = []; state.teamLoaded = false; state.authMessage = "Sessão encerrada com segurança."; render(); }
 
 async function loadRecordsAndCategories() {
-  try { const [recordsResult, categoriesResult, reasonsResult, locationsResult] = await Promise.all([supabaseClient.from("crm_records").select("payload").order("received_at", { ascending: false }), supabaseClient.from("quality_categories").select("id,label,color").eq("active", true).order("label"), supabaseClient.from("rejection_reasons").select("id,label").eq("active", true).order("label"), supabaseClient.from("receiving_locations").select("id,label").order("label")]); if (recordsResult.error) throw recordsResult.error; state.records = (recordsResult.data || []).map((row) => row.payload).filter(Boolean).map(sanitizeLegacyMoldEntry); if (!categoriesResult.error && categoriesResult.data?.length) state.categories = categoriesResult.data; if (!reasonsResult.error) state.rejectionReasons = reasonsResult.data || []; if (!locationsResult.error) { state.locations = locationsResult.data || []; localStorage.setItem(LOCATION_KEY, JSON.stringify(state.locations)); } readOutbox().forEach(replaceRecord); state.storageMode = "cloud"; writeLocalRecords(); saveCategoriesLocal(); saveRejectionReasonsLocal(); } catch { state.records = readLocalRecords(); try { state.locations = JSON.parse(localStorage.getItem(LOCATION_KEY) || "[]"); } catch { state.locations = []; } state.storageMode = "local"; }
+  try {
+    await syncGoalChanges();
+    const [recordsResult, categoriesResult, reasonsResult, locationsResult, goalsResult] = await Promise.all([
+      supabaseClient.from("crm_records").select("payload").order("received_at", { ascending: false }),
+      supabaseClient.from("quality_categories").select("id,label,color").eq("active", true).order("label"),
+      supabaseClient.from("rejection_reasons").select("id,label").eq("active", true).order("label"),
+      supabaseClient.from("receiving_locations").select("id,label").order("label"),
+      supabaseClient.from("receiving_goals").select("id,title,material,target_quantity,location,start_date,due_date,created_at").order("created_at"),
+    ]);
+    if (recordsResult.error) throw recordsResult.error;
+    state.records = (recordsResult.data || []).map((row) => row.payload).filter(Boolean).map(sanitizeLegacyMoldEntry);
+    if (!categoriesResult.error && categoriesResult.data?.length) state.categories = categoriesResult.data;
+    if (!reasonsResult.error) state.rejectionReasons = reasonsResult.data || [];
+    if (!locationsResult.error) { state.locations = locationsResult.data || []; localStorage.setItem(LOCATION_KEY, JSON.stringify(state.locations)); }
+    if (!goalsResult.error) {
+      const pending = readGoalOutbox();
+      const merged = new Map((goalsResult.data || []).map((goal) => { const normalized = normalizeGoal(goal); return [normalized.id, normalized]; }));
+      pending.upserts.forEach((goal) => merged.set(goal.id, normalizeGoal(goal)));
+      pending.deletes.forEach((id) => merged.delete(id));
+      state.goals = [...merged.values()]; saveGoalsLocal();
+    } else {
+      state.goals = readGoals();
+    }
+    readOutbox().forEach(replaceRecord); state.storageMode = "cloud"; writeLocalRecords(); saveCategoriesLocal(); saveRejectionReasonsLocal();
+  } catch {
+    state.records = readLocalRecords(); state.goals = readGoals();
+    try { state.locations = JSON.parse(localStorage.getItem(LOCATION_KEY) || "[]"); } catch { state.locations = []; }
+    state.storageMode = "local";
+  }
   state.pendingSync = readOutbox().length;
 }
 
@@ -1562,13 +1819,13 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=31" : "/service-worker.js?v=31").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=32" : "/service-worker.js?v=32").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
 }
 
 window.addEventListener("beforeunload", (event) => { if (pendingPhotoFiles.size || state.saving || state.photoBusy) { event.preventDefault(); event.returnValue = ""; } });
 window.addEventListener("beforeinstallprompt", (event) => { event.preventDefault(); state.installPrompt = event; if (state.view === "form" && !state.saving && !state.photoBusy) state.draft = formRecordFromDom(); render(); });
-window.addEventListener("online", async () => { state.online = true; if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); await loadSession(); if (state.authorized) await syncOutbox(); if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); render(); });
+window.addEventListener("online", async () => { state.online = true; if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); await loadSession(); if (state.authorized) { await syncOutbox(); await syncGoalChanges(); } if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); render(); });
 window.addEventListener("offline", () => { state.online = false; state.storageMode = "local"; if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); render(); });
 window.addEventListener("keydown", (event) => { if (event.key === "Escape" && state.modal) { state.modal = null; render(); } });
 
