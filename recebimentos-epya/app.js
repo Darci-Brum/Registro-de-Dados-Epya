@@ -6,6 +6,7 @@ import {
 
 const app = document.querySelector("#app");
 const GITHUB_PAGES_MODE = window.location.hostname.endsWith("github.io");
+const INITIAL_RECOVERY_MODE = new URLSearchParams(String(window.location.hash || "").slice(1)).get("type") === "recovery";
 const SUPABASE_URL = "https://raaridhgnjrbmvrxdmtu.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ziP1cObIqUagG2opAALnGw_5ncCXDEg";
 const supabaseClient = window.supabase?.createClient
@@ -63,6 +64,7 @@ const state = {
   authorized: false,
   user: null,
   authMessage: "",
+  recoveryMode: INITIAL_RECOVERY_MODE,
   team: [],
   teamLoaded: false,
   online: navigator.onLine,
@@ -412,7 +414,7 @@ function navButton(view, label, icon) {
 function render() {
   document.documentElement.dataset.theme = state.theme;
   document.body.classList.toggle("tv-mode", state.tvMode);
-  if (state.authLoading || !state.user || !state.authorized) {
+  if (state.recoveryMode || state.authLoading || !state.user || !state.authorized) {
     app.innerHTML = renderAccessScreen();
     bindAccessEvents();
     return;
@@ -434,15 +436,21 @@ function render() {
 }
 
 function renderAccessScreen() {
-  const unauthorized = state.authenticated && !state.authorized;
-  const form = `<form class="login-form" data-auth-form><label><span>E-mail autorizado</span><input type="email" name="authEmail" autocomplete="email" required placeholder="nome@empresa.com" /></label><label><span>Senha</span><input type="password" name="authPassword" autocomplete="current-password" minlength="8" required placeholder="Mínimo de 8 caracteres" /></label><button class="button button-yellow full" type="submit">Entrar com segurança</button><button class="button button-outline full" type="button" data-create-account>Primeiro acesso</button><small>No primeiro acesso, o Supabase enviará a confirmação ao e-mail previamente autorizado.</small></form>`;
-  return `<main class="login-screen"><section class="login-card"><div class="login-brands"><img src="./epya-logo-oficial.png" alt="EPYA" /><span></span><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></div><span class="eyebrow">Controle diário • Projeto Sucuriú</span><h1>${state.authLoading ? "Preparando seu acesso" : unauthorized ? "E-mail não liberado" : "Recebimentos sob controle"}</h1><p>${state.authLoading ? "Validando sua sessão protegida pelo Supabase…" : unauthorized ? `O e-mail <strong>${escapeHtml(state.user?.email || "")}</strong> foi autenticado, mas não está na lista autorizada por ${OWNER_EMAIL}.` : "Entre com um e-mail autorizado para consultar ou registrar recebimentos."}</p>${state.authLoading ? '<span class="login-loading"><i></i> Aguarde um instante</span>' : unauthorized ? '<button class="button button-outline full" type="button" data-sign-out>Entrar com outro e-mail</button>' : state.online ? form : '<button class="button button-dark full" disabled>O acesso exige conexão</button>'}${state.authMessage ? `<p class="login-message">${escapeHtml(state.authMessage)}</p>` : ""}<button class="install-link" data-install>＋ Adicionar à tela inicial</button><div class="login-benefits"><span><b>✓</b> Supabase Auth</span><span><b>✓</b> RLS por e-mail</span><span><b>✓</b> PDF e relatórios</span></div></section></main>`;
+  const unauthorized = !state.recoveryMode && state.authenticated && !state.authorized;
+  const loginForm = `<form class="login-form" data-auth-form><label><span>E-mail autorizado</span><input type="email" name="authEmail" autocomplete="email" required placeholder="nome@empresa.com" /></label><label><span>Senha</span><input type="password" name="authPassword" autocomplete="current-password" minlength="8" required placeholder="Mínimo de 8 caracteres" /></label><button class="button button-yellow full" type="submit">Entrar com segurança</button><button class="button button-outline full" type="button" data-create-account>Primeiro acesso</button><button class="auth-help-link" type="button" data-forgot-password>Esqueci minha senha</button><small>No primeiro acesso, o Supabase enviará a confirmação ao e-mail previamente autorizado.</small></form>`;
+  const recoveryForm = `<form class="login-form" data-password-recovery-form><label><span>Nova senha</span><input type="password" name="newPassword" autocomplete="new-password" minlength="8" required placeholder="Mínimo de 8 caracteres" /></label><label><span>Confirmar nova senha</span><input type="password" name="confirmPassword" autocomplete="new-password" minlength="8" required placeholder="Digite novamente" /></label><button class="button button-yellow full" type="submit">Salvar nova senha</button><small>Depois de salvar, o acesso será liberado automaticamente neste aparelho.</small></form>`;
+  const heading = state.authLoading ? "Preparando seu acesso" : state.recoveryMode ? "Defina sua nova senha" : unauthorized ? "E-mail não liberado" : "Recebimentos sob controle";
+  const description = state.authLoading ? "Validando sua sessão protegida pelo Supabase…" : state.recoveryMode ? "Crie uma senha com pelo menos 8 caracteres para recuperar sua conta." : unauthorized ? `O e-mail <strong>${escapeHtml(state.user?.email || "")}</strong> foi autenticado, mas não está na lista autorizada por ${OWNER_EMAIL}.` : "Entre com um e-mail autorizado para consultar ou registrar recebimentos.";
+  const accessContent = state.authLoading ? '<span class="login-loading"><i></i> Aguarde um instante</span>' : state.recoveryMode ? recoveryForm : unauthorized ? '<button class="button button-outline full" type="button" data-sign-out>Entrar com outro e-mail</button>' : state.online ? loginForm : '<button class="button button-dark full" disabled>O acesso exige conexão</button>';
+  return `<main class="login-screen"><section class="login-card"><div class="login-brands"><img src="./epya-logo-oficial.png" alt="EPYA" /><span></span><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></div><span class="eyebrow">Controle diário • Projeto Sucuriú</span><h1>${heading}</h1><p>${description}</p>${accessContent}${state.authMessage ? `<p class="login-message">${escapeHtml(state.authMessage)}</p>` : ""}<button class="install-link" data-install>＋ Adicionar à tela inicial</button><div class="login-benefits"><span><b>✓</b> Supabase Auth</span><span><b>✓</b> RLS por e-mail</span><span><b>✓</b> PDF e relatórios</span></div></section></main>`;
 }
 
 function bindAccessEvents() {
   document.querySelectorAll("[data-install]").forEach((button) => button.addEventListener("click", installApp));
   document.querySelector("[data-auth-form]")?.addEventListener("submit", signInWithEmail);
   document.querySelector("[data-create-account]")?.addEventListener("click", createFirstAccess);
+  document.querySelector("[data-forgot-password]")?.addEventListener("click", requestPasswordReset);
+  document.querySelector("[data-password-recovery-form]")?.addEventListener("submit", updateRecoveredPassword);
   document.querySelectorAll("[data-sign-out]").forEach((button) => button.addEventListener("click", signOut));
 }
 
@@ -1767,6 +1775,8 @@ async function loadSession() {
 function authFields() { return { email: document.querySelector('[name="authEmail"]')?.value.trim().toLowerCase() || "", password: document.querySelector('[name="authPassword"]')?.value || "" }; }
 async function signInWithEmail(event) { event?.preventDefault(); const { email, password } = authFields(); if (!email || password.length < 8) return; state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.signInWithPassword({ email, password }); if (error) { state.authLoading = false; state.authMessage = "E-mail ou senha inválidos, ou confirmação ainda pendente."; render(); return; } await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); }
 async function createFirstAccess() { const { email, password } = authFields(); if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 8) return toast("Informe um e-mail válido e uma senha de pelo menos 8 caracteres.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { data, error } = await supabaseClient.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}` } }); state.authLoading = false; if (error) { state.authMessage = error.message || "Não foi possível criar o primeiro acesso."; render(); return; } if (data.session) { await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); return; } state.authMessage = "Confira seu e-mail e use o link de confirmação para concluir o primeiro acesso."; render(); }
+async function requestPasswordReset() { const email = document.querySelector('[name="authEmail"]')?.value.trim().toLowerCase() || ""; if (!/^\S+@\S+\.\S+$/.test(email)) return toast("Informe seu e-mail para recuperar a senha.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}${window.location.pathname}` }); state.authLoading = false; state.authMessage = error ? (error.message || "Não foi possível enviar a recuperação de senha.") : "Enviamos um link para redefinir sua senha. Confira também a caixa de spam."; render(); }
+async function updateRecoveredPassword(event) { event?.preventDefault(); const password = document.querySelector('[name="newPassword"]')?.value || ""; const confirmation = document.querySelector('[name="confirmPassword"]')?.value || ""; if (password.length < 8) return toast("A nova senha precisa ter pelo menos 8 caracteres.", "error"); if (password !== confirmation) return toast("As senhas informadas não são iguais.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.updateUser({ password }); if (error) { state.authLoading = false; state.authMessage = error.message || "Não foi possível atualizar a senha."; render(); return; } state.recoveryMode = false; window.history.replaceState({}, document.title, `${window.location.origin}${window.location.pathname}`); await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); toast("Senha atualizada. Acesso liberado com segurança.", "success"); }
 async function signOut() { if (state.saving || state.photoBusy) return; if (pendingPhotoFiles.size && !confirm("Há fotos ainda não salvas. Deseja sair e descartá-las?")) return; photoSessionEpoch++; await supabaseClient?.auth.signOut(); releasePendingPhotos(); photoUrls.clear(); state.draft = null; state.editingId = ""; state.editingInvoiceIndex = -1; state.newLocationMode = false; state.locations = []; state.goals = []; clearProtectedLocalData(); state.authenticated = false; state.authorized = false; state.user = null; state.records = []; state.team = []; state.teamLoaded = false; state.authMessage = "Sessão encerrada com segurança."; render(); }
 
 async function loadRecordsAndCategories() {
@@ -1819,9 +1829,16 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=32" : "/service-worker.js?v=32").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=33" : "/service-worker.js?v=33").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
 }
+
+supabaseClient?.auth?.onAuthStateChange?.((event) => {
+  if (event !== "PASSWORD_RECOVERY") return;
+  state.recoveryMode = true;
+  state.authLoading = false;
+  setTimeout(render, 0);
+});
 
 window.addEventListener("beforeunload", (event) => { if (pendingPhotoFiles.size || state.saving || state.photoBusy) { event.preventDefault(); event.returnValue = ""; } });
 window.addEventListener("beforeinstallprompt", (event) => { event.preventDefault(); state.installPrompt = event; if (state.view === "form" && !state.saving && !state.photoBusy) state.draft = formRecordFromDom(); render(); });

@@ -590,6 +590,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .login-form input { width: 100%; padding: 14px 15px; color: #17191c; background: white; border: 1px solid rgba(255, 255, 255, .35); border-radius: 10px; font: inherit; }
 .login-form input:focus { outline: 3px solid rgba(244, 201, 20, .28); border-color: var(--yellow); }
 .login-form small { color: #aeb4bb; font-size: .7rem; line-height: 1.5; }
+.auth-help-link { justify-self: center; padding: 4px; color: #f4c914; background: transparent; border: 0; font: inherit; font-size: .74rem; font-weight: 780; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.auth-help-link:hover { color: #ffe56c; }
 .login-message { padding: 11px 13px; color: #fff !important; background: rgba(244, 201, 20, .13); border: 1px solid rgba(244, 201, 20, .3); border-radius: 10px; font-size: .75rem; }
 .install-link { color: #d1d5da; }
 .login-benefits { padding-top: 15px; display: flex; flex-wrap: wrap; gap: 8px 15px; color: #b8bdc3; font-size: .68rem; border-top: 1px solid rgba(255, 255, 255, .12); }
