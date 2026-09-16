@@ -7,8 +7,7 @@ import {
 const app = document.querySelector("#app");
 const GITHUB_PAGES_MODE = window.location.hostname.endsWith("github.io");
 const INITIAL_RECOVERY_MODE = new URLSearchParams(String(window.location.hash || "").slice(1)).get("type") === "recovery";
-const ADMIN_ACCESS_MODE = new URLSearchParams(window.location.search).get("admin") === "1" || INITIAL_RECOVERY_MODE;
-const PUBLIC_LINK_MODE = !ADMIN_ACCESS_MODE;
+const PUBLIC_LINK_MODE = true;
 const SUPABASE_URL = "https://raaridhgnjrbmvrxdmtu.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ziP1cObIqUagG2opAALnGw_5ncCXDEg";
 const supabaseClient = window.supabase?.createClient
@@ -426,7 +425,7 @@ function render() {
       <header class="topbar no-print">
         <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel EPYA"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Controle diário de materiais</small></span></button>
         <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprovados", "!")}${navButton("reports", "Relatórios", "▤")}${!PUBLIC_LINK_MODE && state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
-        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span>${PUBLIC_LINK_MODE ? '<button class="user-chip" type="button" data-admin-access title="Abrir acesso administrativo"><strong>Modo consulta</strong><small>Entrar para lançar</small></button>' : `<button class="user-chip" type="button" data-sign-out title="Sair" aria-label="Sair do sistema"><strong>${escapeHtml(state.user.fullName || state.user.email.split("@")[0])}</strong><small>${state.user.role === "admin" ? "Administrador" : state.user.role === "viewer" ? "Consulta" : "Operação"}</small></button>`}</div>
+        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><span class="user-chip"><strong>Acesso direto</strong><small>Sem login</small></span></div>
       </header>
       <main class="app-main">${renderCurrentView()}</main>
       <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprov.", "!")}${navButton("reports", "Relatórios", "▤")}</footer>
@@ -1762,7 +1761,7 @@ async function loadSession() {
   if (PUBLIC_LINK_MODE) {
     state.authenticated = false;
     state.authorized = true;
-    state.user = { id: "public-link", email: "acesso-direto", fullName: "Acesso direto", role: "viewer" };
+    state.user = { id: "public-link", email: "acesso-direto", fullName: "Acesso direto", role: "admin" };
     state.recoveryMode = false;
     state.authLoading = false;
     return;
@@ -1844,7 +1843,7 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=35" : "/service-worker.js?v=35").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=36" : "/service-worker.js?v=36").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
 }
 
