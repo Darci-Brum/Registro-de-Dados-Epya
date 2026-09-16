@@ -6,6 +6,7 @@ import {
 
 const app = document.querySelector("#app");
 const GITHUB_PAGES_MODE = window.location.hostname.endsWith("github.io");
+const PUBLIC_LINK_MODE = true;
 const INITIAL_RECOVERY_MODE = new URLSearchParams(String(window.location.hash || "").slice(1)).get("type") === "recovery";
 const SUPABASE_URL = "https://raaridhgnjrbmvrxdmtu.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ziP1cObIqUagG2opAALnGw_5ncCXDEg";
@@ -49,7 +50,7 @@ const PERA_FIRST_MILESTONE = 15000;
 const PERA_FINAL_MILESTONE = 20000;
 
 const state = {
-  view: ["dashboard", "form", "history", "quality", "rejections", "reports", "team"].includes(requestedView)
+  view: ["dashboard", "form", "history", "quality", "rejections", "reports"].includes(requestedView)
     ? requestedView
     : "dashboard",
   records: [],
@@ -64,7 +65,7 @@ const state = {
   authorized: false,
   user: null,
   authMessage: "",
-  recoveryMode: INITIAL_RECOVERY_MODE,
+  recoveryMode: !PUBLIC_LINK_MODE && INITIAL_RECOVERY_MODE,
   team: [],
   teamLoaded: false,
   online: navigator.onLine,
@@ -414,7 +415,7 @@ function navButton(view, label, icon) {
 function render() {
   document.documentElement.dataset.theme = state.theme;
   document.body.classList.toggle("tv-mode", state.tvMode);
-  if (state.recoveryMode || state.authLoading || !state.user || !state.authorized) {
+  if (!PUBLIC_LINK_MODE && (state.recoveryMode || state.authLoading || !state.user || !state.authorized)) {
     app.innerHTML = renderAccessScreen();
     bindAccessEvents();
     return;
@@ -423,8 +424,8 @@ function render() {
     <div class="app-shell">
       <header class="topbar no-print">
         <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel EPYA"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Controle diário de materiais</small></span></button>
-        <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprovados", "!")}${navButton("reports", "Relatórios", "▤")}${state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
-        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><button class="user-chip" type="button" data-sign-out title="Sair" aria-label="Sair do sistema"><strong>${escapeHtml(state.user.fullName || state.user.email.split("@")[0])}</strong><small>${state.user.role === "admin" ? "Administrador" : state.user.role === "viewer" ? "Consulta" : "Operação"}</small></button></div>
+        <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprovados", "!")}${navButton("reports", "Relatórios", "▤")}${!PUBLIC_LINK_MODE && state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
+        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span>${PUBLIC_LINK_MODE ? '<span class="user-chip"><strong>Acesso direto</strong><small>Sem login</small></span>' : `<button class="user-chip" type="button" data-sign-out title="Sair" aria-label="Sair do sistema"><strong>${escapeHtml(state.user.fullName || state.user.email.split("@")[0])}</strong><small>${state.user.role === "admin" ? "Administrador" : state.user.role === "viewer" ? "Consulta" : "Operação"}</small></button>`}</div>
       </header>
       <main class="app-main">${renderCurrentView()}</main>
       <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprov.", "!")}${navButton("reports", "Relatórios", "▤")}</footer>
@@ -1755,6 +1756,14 @@ async function syncOutbox() {
 }
 
 async function loadSession() {
+  if (PUBLIC_LINK_MODE) {
+    state.authenticated = false;
+    state.authorized = true;
+    state.user = { id: "public-link", email: "acesso-direto", fullName: "Acesso direto", role: "viewer" };
+    state.recoveryMode = false;
+    state.authLoading = false;
+    return;
+  }
   if (!supabaseClient) { state.authenticated = false; state.authorized = false; state.user = null; state.authMessage = "O cliente seguro do Supabase não foi carregado."; state.authLoading = false; return; }
   try {
     const { data, error } = await supabaseClient.auth.getSession();
@@ -1829,12 +1838,12 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=33" : "/service-worker.js?v=33").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=34" : "/service-worker.js?v=34").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
 }
 
 supabaseClient?.auth?.onAuthStateChange?.((event) => {
-  if (event !== "PASSWORD_RECOVERY") return;
+  if (PUBLIC_LINK_MODE || event !== "PASSWORD_RECOVERY") return;
   state.recoveryMode = true;
   state.authLoading = false;
   setTimeout(render, 0);
