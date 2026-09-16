@@ -1,4 +1,4 @@
-const CACHE_NAME = "epya-recebimentos-github-v34";
+const CACHE_NAME = "epya-recebimentos-github-v35";
 const APP_SHELL = [
   "./",
   "./index.html",
