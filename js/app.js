@@ -13,6 +13,8 @@
   let currentSession = null;
   let currentProfile = null;
   let remoteReady = false;
+  let passwordRecoveryMode = new URLSearchParams(window.location.hash.slice(1)).get('type') === 'recovery'
+    || new URLSearchParams(window.location.search).get('type') === 'recovery';
 
   const defaultState = {
     users: [
@@ -281,16 +283,48 @@
     setLoginMessage('Você saiu do sistema.');
   }
 
+  function setAuthMode(mode) {
+    document.querySelectorAll('[data-login-mode]').forEach((item) => {
+      item.classList.toggle('active', item.dataset.loginMode === mode);
+    });
+    $('#loginForm').hidden = mode !== 'signin';
+    $('#signupForm').hidden = mode !== 'signup';
+    $('#forgotPasswordForm').hidden = mode !== 'forgot';
+    $('#recoveryPasswordForm').hidden = mode !== 'recovery';
+    $('.login-tabs').hidden = mode === 'recovery';
+  }
+
+  function friendlyAuthError(error, action = 'continuar') {
+    const message = String(error?.message || error || 'Erro desconhecido');
+    if (/failed to fetch|networkerror|network request failed/i.test(message)) {
+      return `Não foi possível ${action}: o serviço está iniciando ou sem conexão. Aguarde um minuto e tente novamente.`;
+    }
+    if (/invalid login credentials/i.test(message)) return 'E-mail ou senha incorretos. Use “Esqueci minha senha” para criar uma nova senha.';
+    if (/email rate limit exceeded|rate limit/i.test(message)) return 'Muitos e-mails foram solicitados. Aguarde alguns minutos antes de tentar novamente.';
+    return `Não foi possível ${action}: ${message}`;
+  }
+
   function setupAuthForms() {
     document.querySelectorAll('[data-login-mode]').forEach((button) => {
       button.addEventListener('click', () => {
         const mode = button.dataset.loginMode;
-        document.querySelectorAll('[data-login-mode]').forEach((item) => item.classList.toggle('active', item === button));
-        $('#loginForm').hidden = mode !== 'signin';
-        $('#signupForm').hidden = mode !== 'signup';
+        setAuthMode(mode);
         setLoginMessage(mode === 'signin'
           ? 'Acesso restrito a usuários cadastrados.'
           : 'O primeiro acesso só libera e-mails previamente cadastrados pelo admin.');
+      });
+    });
+
+    $('#forgotPasswordButton')?.addEventListener('click', () => {
+      $('#forgotPasswordEmail').value = $('#loginEmail').value.trim();
+      setAuthMode('forgot');
+      setLoginMessage('Informe seu e-mail para receber o link de recuperação.');
+    });
+
+    document.querySelectorAll('[data-back-to-login]').forEach((button) => {
+      button.addEventListener('click', () => {
+        setAuthMode('signin');
+        setLoginMessage('Acesso restrito a usuários cadastrados.');
       });
     });
 
@@ -303,13 +337,76 @@
       setLoginMessage('Validando acesso...');
       const email = $('#loginEmail').value.trim();
       const password = $('#loginPassword').value;
-      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-      if (error) {
-        setLoginMessage(`Não foi possível entrar: ${error.message}`);
+      try {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        if (error) {
+          setLoginMessage(friendlyAuthError(error, 'entrar'));
+          return;
+        }
+        currentSession = data.session;
+        await loadAuthenticatedApp();
+      } catch (error) {
+        setLoginMessage(friendlyAuthError(error, 'entrar'));
+      }
+    });
+
+    $('#forgotPasswordForm')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!supabaseClient) {
+        setLoginMessage('Biblioteca do Supabase não carregou. Verifique a conexão com a internet.');
         return;
       }
-      currentSession = data.session;
-      await loadAuthenticatedApp();
+      const email = $('#forgotPasswordEmail').value.trim();
+      setLoginMessage('Enviando o link de recuperação...');
+      try {
+        const redirectTo = `${window.location.origin}${window.location.pathname}`;
+        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo });
+        if (error) {
+          setLoginMessage(friendlyAuthError(error, 'enviar o link'));
+          return;
+        }
+        setLoginMessage('Se este e-mail estiver cadastrado, o link para trocar a senha chegará em instantes. Verifique também a caixa de spam.');
+      } catch (error) {
+        setLoginMessage(friendlyAuthError(error, 'enviar o link'));
+      }
+    });
+
+    $('#recoveryPasswordForm')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const password = $('#recoveryPassword').value;
+      const confirmation = $('#recoveryPasswordConfirm').value;
+      if (password !== confirmation) {
+        setLoginMessage('As senhas digitadas não são iguais.');
+        return;
+      }
+      setLoginMessage('Salvando a nova senha...');
+      try {
+        const { error } = await supabaseClient.auth.updateUser({ password });
+        if (error) {
+          setLoginMessage(friendlyAuthError(error, 'salvar a nova senha'));
+          return;
+        }
+        const recoveredEmail = currentSession?.user?.email || '';
+        await supabaseClient.auth.signOut();
+        currentSession = null;
+        passwordRecoveryMode = false;
+        window.history.replaceState({}, document.title, window.location.pathname);
+        $('#loginEmail').value = recoveredEmail;
+        $('#recoveryPasswordForm').reset();
+        setAuthMode('signin');
+        setLoginMessage('Senha alterada com sucesso. Entre usando a nova senha.');
+      } catch (error) {
+        setLoginMessage(friendlyAuthError(error, 'salvar a nova senha'));
+      }
+    });
+
+    supabaseClient?.auth.onAuthStateChange((event, session) => {
+      if (event !== 'PASSWORD_RECOVERY') return;
+      passwordRecoveryMode = true;
+      currentSession = session;
+      showLogin();
+      setAuthMode('recovery');
+      setLoginMessage('Link confirmado. Agora crie sua nova senha.');
     });
 
     $('#signupForm')?.addEventListener('submit', async (event) => {
@@ -362,6 +459,14 @@
     }
     const { data } = await supabaseClient.auth.getSession();
     currentSession = data.session;
+    if (passwordRecoveryMode) {
+      showLogin();
+      setAuthMode('recovery');
+      setLoginMessage(currentSession
+        ? 'Link confirmado. Agora crie sua nova senha.'
+        : 'Confirmando o link de recuperação...');
+      return;
+    }
     if (!currentSession) {
       showLogin();
       return;

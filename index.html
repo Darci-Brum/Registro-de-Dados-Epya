@@ -7,7 +7,7 @@
   <title>EPYA | Controle de Qualidade - Darci Brum</title>
   <link rel="icon" href="assets/epya-logo-original.png" type="image/svg+xml" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/styles.css?v=8" />
 </head>
 <body>
   <noscript>Este sistema precisa de JavaScript ativado para salvar os registros no navegador e sincronizar com o Supabase.</noscript>
@@ -37,6 +37,7 @@
           <input type="password" id="loginPassword" autocomplete="current-password" required placeholder="Digite sua senha" />
         </label>
         <button type="submit" class="primary-btn full-btn">Entrar</button>
+        <button type="button" class="login-link-btn" id="forgotPasswordButton">Esqueci minha senha</button>
       </form>
 
       <form id="signupForm" class="login-form" hidden>
@@ -53,7 +54,29 @@
         <button type="submit" class="primary-btn full-btn">Criar acesso</button>
       </form>
 
-      <p class="login-note" id="loginMessage">Acesso restrito a usuários cadastrados.</p>
+      <form id="forgotPasswordForm" class="login-form" hidden>
+        <h1>Recuperar senha</h1>
+        <p>Informe seu e-mail cadastrado. Você receberá um link seguro para criar uma nova senha.</p>
+        <label>E-mail
+          <input type="email" id="forgotPasswordEmail" autocomplete="email" required placeholder="seuemail@empresa.com" />
+        </label>
+        <button type="submit" class="primary-btn full-btn">Enviar link de recuperação</button>
+        <button type="button" class="login-link-btn" data-back-to-login>Voltar para entrar</button>
+      </form>
+
+      <form id="recoveryPasswordForm" class="login-form" hidden>
+        <h1>Criar nova senha</h1>
+        <p>Digite e confirme a nova senha para concluir a recuperação.</p>
+        <label>Nova senha
+          <input type="password" id="recoveryPassword" autocomplete="new-password" required minlength="6" placeholder="Mínimo de 6 caracteres" />
+        </label>
+        <label>Confirmar nova senha
+          <input type="password" id="recoveryPasswordConfirm" autocomplete="new-password" required minlength="6" placeholder="Digite novamente" />
+        </label>
+        <button type="submit" class="primary-btn full-btn">Salvar nova senha</button>
+      </form>
+
+      <p class="login-note" id="loginMessage" role="status" aria-live="polite">Acesso restrito a usuários cadastrados.</p>
     </div>
   </section>
 
@@ -1229,6 +1252,6 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/app.js?v=8"></script>
 </body>
 </html>
