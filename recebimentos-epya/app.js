@@ -7,7 +7,7 @@ import {
 const app = document.querySelector("#app");
 const GITHUB_PAGES_MODE = window.location.hostname.endsWith("github.io");
 const INITIAL_RECOVERY_MODE = new URLSearchParams(String(window.location.hash || "").slice(1)).get("type") === "recovery";
-const PUBLIC_LINK_MODE = true;
+const PUBLIC_LINK_MODE = false;
 const SUPABASE_URL = "https://raaridhgnjrbmvrxdmtu.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ziP1cObIqUagG2opAALnGw_5ncCXDEg";
 const supabaseClient = window.supabase?.createClient
@@ -44,10 +44,6 @@ const MATERIALS = {
   dormente: { label: "Dormentes", singular: "Dormente", unit: "un", color: "#f4c914" },
   trilho: { label: "Trilhos", singular: "Trilho", unit: "barras", color: "#39b8ff" },
 };
-
-const PERA_WARNING_START = 14000;
-const PERA_FIRST_MILESTONE = 15000;
-const PERA_FINAL_MILESTONE = 20000;
 
 const state = {
   view: ["dashboard", "form", "history", "quality", "rejections", "reports"].includes(requestedView)
@@ -408,6 +404,12 @@ function canEdit() {
   return state.authorized && state.user?.role === "admin";
 }
 
+function requireAdminAction() {
+  if (canEdit()) return true;
+  toast("Esta ação é exclusiva do administrador.", "error");
+  return false;
+}
+
 function navButton(view, label, icon) {
   return `<button class="nav-button ${state.view === view ? "active" : ""}" data-nav="${view}"><span aria-hidden="true">${icon}</span><b>${label}</b></button>`;
 }
@@ -425,7 +427,7 @@ function render() {
       <header class="topbar no-print">
         <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel EPYA"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Controle diário de materiais</small></span></button>
         <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprovados", "!")}${navButton("reports", "Relatórios", "▤")}${!PUBLIC_LINK_MODE && state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
-        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><span class="user-chip"><strong>Acesso direto</strong><small>Sem login</small></span></div>
+        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><button class="user-chip" type="button" data-sign-out aria-label="Sair da conta ${escapeHtml(state.user?.email || "")}"><strong>Sair</strong><small>${state.user?.role === "admin" ? "Administrador" : "Consulta"} • ${escapeHtml(state.user?.email || "")}</small></button></div>
       </header>
       <main class="app-main">${renderCurrentView()}</main>
       <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprov.", "!")}${navButton("reports", "Relatórios", "▤")}</footer>
@@ -438,10 +440,10 @@ function render() {
 
 function renderAccessScreen() {
   const unauthorized = !state.recoveryMode && state.authenticated && !state.authorized;
-  const loginForm = `<form class="login-form" data-auth-form><label><span>E-mail administrativo</span><input type="email" name="authEmail" autocomplete="email" required placeholder="seu@email.com" /></label><label><span>Senha</span><input type="password" name="authPassword" autocomplete="current-password" minlength="8" required placeholder="Mínimo de 8 caracteres" /></label><button class="button button-yellow full" type="submit">Entrar para lançar</button><button class="auth-help-link" type="button" data-forgot-password>Esqueci minha senha</button><button class="button button-outline full" type="button" data-public-access>Voltar ao modo consulta</button><small>Somente contas autorizadas como administrador podem lançar ou alterar dados.</small></form>`;
+  const loginForm = `<form class="login-form" data-auth-form><label><span>E-mail cadastrado</span><input type="email" name="authEmail" autocomplete="email" required placeholder="seu@email.com" /></label><label><span>Senha</span><input type="password" name="authPassword" autocomplete="current-password" minlength="8" required placeholder="Mínimo de 8 caracteres" /></label><button class="button button-yellow full" type="submit">Entrar com segurança</button><button class="auth-help-link" type="button" data-forgot-password>Esqueci minha senha</button><button class="button button-outline full" type="button" data-create-account>Primeiro acesso</button><small>Use somente um e-mail previamente cadastrado. Administradores podem alterar dados; os demais acessos são apenas para consulta.</small></form>`;
   const recoveryForm = `<form class="login-form" data-password-recovery-form><label><span>Nova senha</span><input type="password" name="newPassword" autocomplete="new-password" minlength="8" required placeholder="Mínimo de 8 caracteres" /></label><label><span>Confirmar nova senha</span><input type="password" name="confirmPassword" autocomplete="new-password" minlength="8" required placeholder="Digite novamente" /></label><button class="button button-yellow full" type="submit">Salvar nova senha</button><small>Depois de salvar, o acesso será liberado automaticamente neste aparelho.</small></form>`;
-  const heading = state.authLoading ? "Preparando seu acesso" : state.recoveryMode ? "Defina sua nova senha" : unauthorized ? "E-mail não liberado" : "Acesso administrativo";
-  const description = state.authLoading ? "Validando sua sessão protegida pelo Supabase…" : state.recoveryMode ? "Crie uma senha com pelo menos 8 caracteres para recuperar sua conta." : unauthorized ? `O e-mail <strong>${escapeHtml(state.user?.email || "")}</strong> foi autenticado, mas não está na lista autorizada por ${OWNER_EMAIL}.` : "Entre com sua conta de administrador para lançar notas fiscais ou alterar os recebimentos.";
+  const heading = state.authLoading ? "Preparando seu acesso" : state.recoveryMode ? "Defina sua nova senha" : unauthorized ? "E-mail não liberado" : "Acesso ao sistema";
+  const description = state.authLoading ? "Validando sua sessão protegida pelo Supabase…" : state.recoveryMode ? "Crie uma senha com pelo menos 8 caracteres para recuperar sua conta." : unauthorized ? `O e-mail <strong>${escapeHtml(state.user?.email || "")}</strong> foi autenticado, mas não está na lista autorizada por ${OWNER_EMAIL}.` : "Entre com um e-mail cadastrado para consultar os recebimentos. Somente administradores podem realizar alterações.";
   const accessContent = state.authLoading ? '<span class="login-loading"><i></i> Aguarde um instante</span>' : state.recoveryMode ? recoveryForm : unauthorized ? '<button class="button button-outline full" type="button" data-sign-out>Entrar com outro e-mail</button>' : state.online ? loginForm : '<button class="button button-dark full" disabled>O acesso exige conexão</button>';
   return `<main class="login-screen"><section class="login-card"><div class="login-brands"><img src="./epya-logo-oficial.png" alt="EPYA" /><span></span><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></div><span class="eyebrow">Controle diário • Projeto Sucuriú</span><h1>${heading}</h1><p>${description}</p>${accessContent}${state.authMessage ? `<p class="login-message">${escapeHtml(state.authMessage)}</p>` : ""}<button class="install-link" data-install>＋ Adicionar à tela inicial</button><div class="login-benefits"><span><b>✓</b> Supabase Auth</span><span><b>✓</b> Permissões por perfil</span><span><b>✓</b> PDF e relatórios</span></div></section></main>`;
 }
@@ -452,7 +454,6 @@ function bindAccessEvents() {
   document.querySelector("[data-create-account]")?.addEventListener("click", createFirstAccess);
   document.querySelector("[data-forgot-password]")?.addEventListener("click", requestPasswordReset);
   document.querySelector("[data-password-recovery-form]")?.addEventListener("submit", updateRecoveredPassword);
-  document.querySelector("[data-public-access]")?.addEventListener("click", openPublicAccess);
   document.querySelectorAll("[data-sign-out]").forEach((button) => button.addEventListener("click", signOut));
 }
 
@@ -591,32 +592,9 @@ function renderReportQuality(records, material = state.reportFilters.material) {
   return `<div class="report-quality-pair"><div><h3>Dormentes</h3>${renderQualityDonut("dormente", records)}</div><div><h3>Trilhos</h3>${renderQualityDonut("trilho", records)}</div></div>`;
 }
 
-function renderPeraMilestone(value) {
+function renderPeraAchievement(value) {
   const total = value.peraSleepers;
-  let status = "monitor";
-  let title = "Monitoramento da Pera";
-  let milestone = PERA_FIRST_MILESTONE;
-  let detail = `Faltam ${formatNumber(PERA_FIRST_MILESTONE - total)} dormentes para o primeiro lembrete.`;
-
-  if (total >= PERA_FINAL_MILESTONE) {
-    status = "reached";
-    title = "Marco atingido: 20.000 dormentes na Pera";
-    milestone = PERA_FINAL_MILESTONE;
-    detail = `O total registrado chegou a ${formatNumber(total)} dormentes.`;
-  } else if (total >= PERA_FIRST_MILESTONE) {
-    status = "next";
-    title = "Primeiro marco atingido: 15.000 dormentes";
-    milestone = PERA_FINAL_MILESTONE;
-    detail = `Faltam ${formatNumber(PERA_FINAL_MILESTONE - total)} dormentes para o lembrete de 20.000.`;
-  } else if (total >= PERA_WARNING_START) {
-    status = "warning";
-    title = "Atenção: próximo de 15.000 na Pera";
-    detail = `Faltam somente ${formatNumber(PERA_FIRST_MILESTONE - total)} dormentes para o primeiro marco.`;
-  }
-
-  const progress = Math.min(100, (total / milestone) * 100);
-  const liveRole = status === "warning" || status === "reached" ? "alert" : "status";
-  return `<article class="pera-milestone ${status}" role="${liveRole}" aria-live="polite"><span class="pera-milestone-icon" aria-hidden="true">${status === "reached" ? "✓" : "!"}</span><div class="pera-milestone-copy"><span class="eyebrow">Controle de descarga</span><h2>${title}</h2><p>${detail}</p></div><div class="pera-milestone-total"><span>Total na Pera</span><strong>${formatNumber(total)}</strong><small>dormentes</small></div><div class="pera-milestone-progress" aria-label="${progress.toFixed(1).replace(".", ",")}% do marco de ${formatNumber(milestone)} dormentes"><i style="width:${progress}%"></i></div></article>`;
+  return `<article class="pera-milestone reached" role="status" aria-live="polite"><span class="pera-milestone-icon" aria-hidden="true">✓</span><div class="pera-milestone-copy"><span class="eyebrow">Quantidade atingida</span><h2>Descarga na Pera concluída</h2><p>Operação encerrada neste ponto de entrega.</p></div><div class="pera-milestone-total"><span>Quantidade final na Pera</span><strong>${formatNumber(total)}</strong><small>dormentes</small></div><div class="pera-milestone-progress" aria-label="Quantidade final registrada na Pera"><i style="width:100%"></i></div></article>`;
 }
 
 function goalRecords(goal) {
@@ -715,11 +693,12 @@ function renderLocationDashboards() {
   return `<section class="location-dashboards"><div class="section-heading"><div><span class="eyebrow">Locais de descarga</span><h2>Painel por local</h2></div><span class="updated-label">${groups.length} locais registrados</span></div><div class="location-dashboard-grid">${groups.map((group) => {
     const value = metrics(group.records);
     const dates = group.records.map((record) => record.receivedDate || String(record.receivedAt || "").slice(0, 10)).filter(Boolean).sort();
-    return `<article class="panel location-dashboard"><div class="panel-heading"><div><h3>${escapeHtml(group.label)}</h3><p>Último recebimento: ${formatDate(dates.at(-1))}</p></div></div><div class="location-totals"><div class="location-sleepers"><span>Dormentes</span><strong>${formatNumber(value.sleepers)}</strong><small>${formatNumber(value.sleeperNfs)} NFs</small></div><div class="location-rails"><span>Trilhos</span><strong>${formatNumber(value.rails)}</strong><small>${formatNumber(value.railNfs)} NFs</small></div></div><dl class="location-quality"><div><dt>Notas fiscais</dt><dd>${formatNumber(value.totalNfs)}</dd></div><div><dt>Ocorrências de qualidade</dt><dd>${formatNumber(value.sleeperOccurrences + value.railOccurrences)}</dd></div><div><dt>Reprovados</dt><dd>${formatNumber(value.rejected)} dormentes · ${formatNumber(value.railRejected)} trilhos</dd></div></dl>${state.dashboardLocation ? `<h4>Entradas por semana</h4><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("week", group.records)}` : ""}<button class="button button-outline no-print" data-location-report="${escapeHtml(group.key)}">Gerar relatório deste local</button></article>`;
+    return `<article class="panel location-dashboard"><div class="panel-heading"><div><h3>${escapeHtml(group.label)}</h3><p>Último recebimento: ${formatDate(dates.at(-1))}</p></div></div><div class="location-totals"><div class="location-sleepers"><span>Dormentes</span><strong>${formatNumber(value.sleepers)}</strong><small>${formatNumber(value.sleeperNfs)} NFs</small></div><div class="location-rails"><span>Trilhos</span><strong>${formatNumber(value.rails)}</strong><small>${formatNumber(value.railNfs)} NFs</small></div></div><dl class="location-quality"><div><dt>Notas fiscais</dt><dd>${formatNumber(value.totalNfs)}</dd></div><div><dt>Ocorrências de qualidade</dt><dd>${formatNumber(value.sleeperOccurrences + value.railOccurrences)}</dd></div><div><dt>Reprovados</dt><dd>${formatNumber(value.rejected)} dormentes · ${formatNumber(value.railRejected)} trilhos</dd></div></dl>${state.dashboardLocation ? `<h4>Entradas por semana</h4><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("week", group.records)}` : ""}${canEdit() ? `<button class="button button-outline no-print" data-location-report="${escapeHtml(group.key)}">Gerar relatório deste local</button>` : ""}</article>`;
   }).join("")}</div></section>`;
 }
 
 function openLocationReport(location) {
+  if (!requireAdminAction()) return;
   if (!locationGroups().some((group) => group.key === location)) return;
   state.reportFilters = { from: "", to: "", material: "todos", location };
   navigate("reports");
@@ -730,7 +709,7 @@ function renderDashboard() {
   const value = metrics();
   const recent = state.records.slice(0, 6);
   return `<section class="view dashboard-view">${renderDashboardHeader()}${renderDashboardTabs()}
-    <div class="section-heading"><div><span class="eyebrow">Visão executiva</span><h2>Panorama acumulado</h2></div><span class="updated-label">Atualizado com ${value.totalNfs} notas fiscais</span></div><div class="metrics-grid"><article class="metric-card sleeper"><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs • meta ${formatNumber(TARGET_SLEEPERS)}</small><div class="metric-progress"><i style="width:${value.progress}%"></i></div></article><article class="metric-card rail"><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs • acompanhe pelas metas</small><div class="metric-line"></div></article><article class="metric-card remaining"><span>Saldo de dormentes</span><strong>${formatNumber(value.remaining)}</strong><small>${value.progress.toFixed(2).replace(".", ",")}% da meta concluída</small><div class="metric-line"></div></article><article class="metric-card quality"><span>Ocorrências de qualidade</span><strong>${formatNumber(value.sleeperOccurrences + value.railOccurrences)}</strong><small>${formatNumber(value.sleeperOccurrences)} em dormentes • ${formatNumber(value.railOccurrences)} em trilhos</small><div class="metric-line"></div></article></div>${renderGoalsPanel()}${renderPeraMilestone(value)}
+    <div class="section-heading"><div><span class="eyebrow">Visão executiva</span><h2>Panorama acumulado</h2></div><span class="updated-label">Atualizado com ${value.totalNfs} notas fiscais</span></div><div class="metrics-grid"><article class="metric-card sleeper"><span>Dormentes recebidos</span><strong>${formatNumber(value.sleepers)}</strong><small>${value.sleeperNfs} NFs • meta ${formatNumber(TARGET_SLEEPERS)}</small><div class="metric-progress"><i style="width:${value.progress}%"></i></div></article><article class="metric-card rail"><span>Trilhos recebidos</span><strong>${formatNumber(value.rails)}</strong><small>${value.railNfs} NFs • acompanhe pelas metas</small><div class="metric-line"></div></article><article class="metric-card remaining"><span>Saldo de dormentes</span><strong>${formatNumber(value.remaining)}</strong><small>${value.progress.toFixed(2).replace(".", ",")}% da meta concluída</small><div class="metric-line"></div></article><article class="metric-card quality"><span>Ocorrências de qualidade</span><strong>${formatNumber(value.sleeperOccurrences + value.railOccurrences)}</strong><small>${formatNumber(value.sleeperOccurrences)} em dormentes • ${formatNumber(value.railOccurrences)} em trilhos</small><div class="metric-line"></div></article></div>${renderGoalsPanel()}${renderPeraAchievement(value)}
     <div class="dashboard-grid charts-main"><article class="panel chart-card clickable" data-chart-modal="week" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação semanal</span><h2>Entradas por semana</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("week")}</article><article class="panel chart-card clickable" data-chart-modal="month" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Comparação mensal</span><h2>Evolução por mês</h2></div><span class="expand-hint">Ampliar ↗</span></div><div class="chart-legend"><span><i class="dot yellow"></i>Dormentes</span><span><i class="dot blue"></i>Trilhos</span></div>${renderComparisonChart("month")}</article></div>
     <div class="dashboard-grid charts-secondary"><article class="panel chart-card clickable" data-chart-modal="daily" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Ritmo da operação</span><h2>Volume diário</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderDailyChart()}</article><article class="panel quality-card clickable" data-chart-modal="quality-dormente" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Classificações</span><h2>Qualidade dos dormentes</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("dormente")}</article><article class="panel quality-card clickable" data-chart-modal="quality-trilho" tabindex="0"><div class="panel-heading"><div><span class="eyebrow">Inspeção ferroviária</span><h2>Qualidade dos trilhos</h2></div><span class="expand-hint">Ampliar ↗</span></div>${renderQualityDonut("trilho")}</article></div>
     ${renderPendingSummary()}
@@ -739,7 +718,7 @@ function renderDashboard() {
 }
 
 function renderDashboardHeader() {
-  return `<article class="dashboard-hero"><div class="hero-copy"><div class="hero-kicker"><span>Controle de recebimentos</span></div><h1>Controle diário de<br />dormentes e trilhos.</h1><p>Notas fiscais, quantidades, qualidade e avanço físico reunidos em uma visão clara da obra.</p><div class="hero-actions no-print">${renderSyncBadge()}${canEdit() ? '<button class="button button-yellow" data-new-record>+ Novo recebimento</button>' : ""}<button class="button button-glass" data-nav="reports">Gerar relatório</button></div></div><div class="hero-corner-brand"><img src="./arauco-sucuriu-logo.svg" alt="Símbolo do Projeto Sucuriú" /><span><strong>ARAUCO</strong><small>Projeto Sucuriú</small></span></div></article>`;
+  return `<article class="dashboard-hero"><div class="hero-copy"><div class="hero-kicker"><span>Controle de recebimentos</span></div><h1>Controle diário de<br />dormentes e trilhos.</h1><p>Notas fiscais, quantidades, qualidade e avanço físico reunidos em uma visão clara da obra.</p><div class="hero-actions no-print">${renderSyncBadge()}${canEdit() ? '<button class="button button-yellow" data-new-record>+ Novo recebimento</button><button class="button button-glass" data-nav="reports">Gerar relatório</button>' : ""}</div></div><div class="hero-corner-brand"><img src="./arauco-sucuriu-logo.svg" alt="Símbolo do Projeto Sucuriú" /><span><strong>ARAUCO</strong><small>Projeto Sucuriú</small></span></div></article>`;
 }
 
 function renderDashboardTabs() {
@@ -1052,7 +1031,7 @@ function renderRecordsTable(records, compact = false) {
 function renderHistory() {
   const records = filteredHistory();
   const value = metrics(records);
-  return `<section class="view history-view"><div class="page-heading"><div><span class="eyebrow">Rastreabilidade</span><h1>Histórico de recebimentos</h1><p>Pesquise por NF, fornecedor, período ou tipo de material.</p></div><div class="heading-actions">${canEdit() ? '<button class="button button-yellow" data-new-record>+ Novo recebimento</button>' : ""}<button class="button button-outline" data-export-csv>Exportar planilha</button></div></div><article class="panel filters-panel no-print"><label class="search-field"><span>Buscar NF, local ou fornecedor</span><input name="historySearch" value="${escapeHtml(state.historyFilters.search)}" placeholder="Digite para pesquisar" /></label><label><span>Material</span><select name="historyMaterial"><option value="todos">Todos</option><option value="dormente" ${state.historyFilters.material === "dormente" ? "selected" : ""}>Dormentes</option><option value="trilho" ${state.historyFilters.material === "trilho" ? "selected" : ""}>Trilhos</option></select></label><label><span>De</span><input type="date" name="historyFrom" value="${state.historyFilters.from}" /></label><label><span>Até</span><input type="date" name="historyTo" value="${state.historyFilters.to}" /></label><button class="button button-dark compact" data-apply-history>Filtrar</button><button class="text-button" data-clear-history>Limpar</button><label class="pending-filter"><input type="checkbox" name="historyPending" ${state.historyFilters.pending ? "checked" : ""} /> Somente pendências</label></article><div class="history-summary"><span><strong>${records.length}</strong> lançamentos</span><span><strong>${formatNumber(value.totalNfs)}</strong> notas fiscais</span><span><strong>${formatNumber(value.sleepers)}</strong> dormentes</span><span><strong>${formatNumber(value.rails)}</strong> trilhos</span></div><article class="panel">${renderRecordsTable(records)}</article></section>`;
+  return `<section class="view history-view"><div class="page-heading"><div><span class="eyebrow">Rastreabilidade</span><h1>Histórico de recebimentos</h1><p>Pesquise por NF, fornecedor, período ou tipo de material.</p></div>${canEdit() ? '<div class="heading-actions"><button class="button button-yellow" data-new-record>+ Novo recebimento</button><button class="button button-outline" data-export-csv>Exportar planilha</button></div>' : ""}</div><article class="panel filters-panel no-print"><label class="search-field"><span>Buscar NF, local ou fornecedor</span><input name="historySearch" value="${escapeHtml(state.historyFilters.search)}" placeholder="Digite para pesquisar" /></label><label><span>Material</span><select name="historyMaterial"><option value="todos">Todos</option><option value="dormente" ${state.historyFilters.material === "dormente" ? "selected" : ""}>Dormentes</option><option value="trilho" ${state.historyFilters.material === "trilho" ? "selected" : ""}>Trilhos</option></select></label><label><span>De</span><input type="date" name="historyFrom" value="${state.historyFilters.from}" /></label><label><span>Até</span><input type="date" name="historyTo" value="${state.historyFilters.to}" /></label><button class="button button-dark compact" data-apply-history>Filtrar</button><button class="text-button" data-clear-history>Limpar</button><label class="pending-filter"><input type="checkbox" name="historyPending" ${state.historyFilters.pending ? "checked" : ""} /> Somente pendências</label></article><div class="history-summary"><span><strong>${records.length}</strong> lançamentos</span><span><strong>${formatNumber(value.totalNfs)}</strong> notas fiscais</span><span><strong>${formatNumber(value.sleepers)}</strong> dormentes</span><span><strong>${formatNumber(value.rails)}</strong> trilhos</span></div><article class="panel">${renderRecordsTable(records)}</article></section>`;
 }
 
 function renderQuality() {
@@ -1106,7 +1085,7 @@ function renderRejections() {
   const reasons = [...new Set(allRows.map((row) => row.reason))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   const period = `${state.rejectionFilters.from ? formatDate(state.rejectionFilters.from) : "Início dos registros"} a ${state.rejectionFilters.to ? formatDate(state.rejectionFilters.to) : "último recebimento"}`;
   const locationLabel = locationGroups().find((group) => group.key === state.rejectionFilters.location)?.label || "Todos os locais";
-  return `<section class="view rejections-view"><div class="page-heading no-print"><div><span class="eyebrow">Rastreabilidade de não conformidades</span><h1>Dormentes reprovados</h1><p>Veja somente as peças reprovadas, com identificação, origem, responsável, observações e fotos da nota fiscal.</p></div><div class="heading-actions"><button class="button button-outline" data-export-rejections>Exportar Excel</button><button class="button button-yellow" data-print-rejections>Gerar PDF</button></div></div><article class="panel rejection-filters no-print"><label class="search-field"><span>Buscar NF, molde, cavidade, placa ou motivo</span><input name="rejectionSearch" value="${escapeHtml(state.rejectionFilters.search)}" placeholder="Digite para pesquisar" /></label><label><span>Local</span><select name="rejectionLocation">${renderLocationOptions(state.rejectionFilters.location)}</select></label><label><span>Motivo</span><select name="rejectionReason"><option value="">Todos os motivos</option>${reasons.map((reason) => `<option value="${escapeHtml(reason)}" ${reason === state.rejectionFilters.reason ? "selected" : ""}>${escapeHtml(reason)}</option>`).join("")}</select></label><label><span>De</span><input type="date" name="rejectionFrom" value="${state.rejectionFilters.from}" /></label><label><span>Até</span><input type="date" name="rejectionTo" value="${state.rejectionFilters.to}" /></label><button class="button button-dark" data-apply-rejections>Filtrar</button><button class="text-button" data-clear-rejections>Limpar</button></article><article class="print-report rejection-report"><header class="report-header"><img src="./epya-logo-oficial.png" alt="EPYA" /><div><span>RELATÓRIO DE NÃO CONFORMIDADES</span><h1>Dormentes reprovados</h1><p>Período: ${period}</p><p>Local: <strong>${escapeHtml(locationLabel)}</strong></p><p>Responsável pelo controle: <strong>${CONTROL_OWNER}</strong></p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header><div class="report-kpis rejection-kpis"><div><span>Dormentes reprovados</span><strong>${formatNumber(rows.length)}</strong><small>peças individualizadas</small></div><div><span>Notas fiscais afetadas</span><strong>${formatNumber(affectedInvoices)}</strong><small>no filtro selecionado</small></div><div><span>Locais afetados</span><strong>${formatNumber(affectedLocations)}</strong><small>pontos de descarga</small></div><div><span>Dados pendentes</span><strong>${formatNumber(pendingDetails)}</strong><small>identificações incompletas</small></div></div>${renderRejectedSleeperTable(rows)}${renderRejectedSleeperCards(rows)}<footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle de dormentes reprovados</span></footer></article></section>`;
+  return `<section class="view rejections-view"><div class="page-heading no-print"><div><span class="eyebrow">Rastreabilidade de não conformidades</span><h1>Dormentes reprovados</h1><p>Veja somente as peças reprovadas, com identificação, origem, responsável, observações e fotos da nota fiscal.</p></div>${canEdit() ? '<div class="heading-actions"><button class="button button-outline" data-export-rejections>Exportar Excel</button><button class="button button-yellow" data-print-rejections>Gerar PDF</button></div>' : ""}</div><article class="panel rejection-filters no-print"><label class="search-field"><span>Buscar NF, molde, cavidade, placa ou motivo</span><input name="rejectionSearch" value="${escapeHtml(state.rejectionFilters.search)}" placeholder="Digite para pesquisar" /></label><label><span>Local</span><select name="rejectionLocation">${renderLocationOptions(state.rejectionFilters.location)}</select></label><label><span>Motivo</span><select name="rejectionReason"><option value="">Todos os motivos</option>${reasons.map((reason) => `<option value="${escapeHtml(reason)}" ${reason === state.rejectionFilters.reason ? "selected" : ""}>${escapeHtml(reason)}</option>`).join("")}</select></label><label><span>De</span><input type="date" name="rejectionFrom" value="${state.rejectionFilters.from}" /></label><label><span>Até</span><input type="date" name="rejectionTo" value="${state.rejectionFilters.to}" /></label><button class="button button-dark" data-apply-rejections>Filtrar</button><button class="text-button" data-clear-rejections>Limpar</button></article><article class="print-report rejection-report"><header class="report-header"><img src="./epya-logo-oficial.png" alt="EPYA" /><div><span>RELATÓRIO DE NÃO CONFORMIDADES</span><h1>Dormentes reprovados</h1><p>Período: ${period}</p><p>Local: <strong>${escapeHtml(locationLabel)}</strong></p><p>Responsável pelo controle: <strong>${CONTROL_OWNER}</strong></p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header><div class="report-kpis rejection-kpis"><div><span>Dormentes reprovados</span><strong>${formatNumber(rows.length)}</strong><small>peças individualizadas</small></div><div><span>Notas fiscais afetadas</span><strong>${formatNumber(affectedInvoices)}</strong><small>no filtro selecionado</small></div><div><span>Locais afetados</span><strong>${formatNumber(affectedLocations)}</strong><small>pontos de descarga</small></div><div><span>Dados pendentes</span><strong>${formatNumber(pendingDetails)}</strong><small>identificações incompletas</small></div></div>${renderRejectedSleeperTable(rows)}${renderRejectedSleeperCards(rows)}<footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle de dormentes reprovados</span></footer></article></section>`;
 }
 
 function reportRecords() {
@@ -1292,22 +1271,22 @@ function renderReports() {
   const materialLabel = material === "todos" ? "Dormentes e trilhos" : MATERIALS[material].label;
   const pdfLabel = material === "todos" ? "Gerar PDF: Ambos" : `Gerar PDF: ${MATERIALS[material].label}`;
   return `<section class="view reports-view">
-    <div class="page-heading no-print"><div><span class="eyebrow">Relatório semanal e por período</span><h1>Relatórios da obra</h1><p>Escolha o período, o material e o local de descarga. O PDF, a planilha e o texto para mensagem respeitam exatamente os filtros selecionados.</p></div><div class="heading-actions"><button class="button button-outline" data-report-week>Últimos 7 dias</button><button class="button button-outline" data-export-report>Exportar Excel</button><button class="button button-outline" data-open-report-text>Gerar texto</button><button class="button button-yellow" data-print-report>${pdfLabel}</button></div></div>
+    <div class="page-heading no-print"><div><span class="eyebrow">Relatório semanal e por período</span><h1>Relatórios da obra</h1><p>Escolha o período, o material e o local de descarga. A visualização respeita exatamente os filtros selecionados.</p></div><div class="heading-actions"><button class="button button-outline" data-report-week>Últimos 7 dias</button>${canEdit() ? `<button class="button button-outline" data-export-report>Exportar Excel</button><button class="button button-outline" data-open-report-text>Gerar texto</button><button class="button button-yellow" data-print-report>${pdfLabel}</button>` : ""}</div></div>
     ${renderReportMaterialSwitch()}
     <article class="panel report-filters no-print"><label><span>Data inicial</span><input type="date" name="reportFrom" value="${state.reportFilters.from}" /></label><label><span>Data final</span><input type="date" name="reportTo" value="${state.reportFilters.to}" /></label><label><span>Material selecionado</span><select name="reportMaterial"><option value="todos">Todos os materiais</option><option value="dormente" ${state.reportFilters.material === "dormente" ? "selected" : ""}>Dormentes</option><option value="trilho" ${state.reportFilters.material === "trilho" ? "selected" : ""}>Trilhos</option></select></label><label><span>Local de descarga</span><select name="reportLocation">${renderLocationOptions(state.reportFilters.location)}</select></label><button class="button button-dark" data-apply-report>Atualizar relatório</button></article>
-    ${renderReportImageControls()}
+    ${canEdit() ? renderReportImageControls() : ""}
     <article class="print-report"><header class="report-header"><img src="./epya-logo-oficial.png" alt="EPYA" /><div><span>RELATÓRIO DE RECEBIMENTO DE MATERIAIS</span><h1>ARAUCO / Projeto Sucuriú</h1><p>Material: <strong>${materialLabel}</strong></p><p>Período: ${state.reportFilters.from ? formatDate(state.reportFilters.from) : "Início dos registros"} a ${state.reportFilters.to ? formatDate(state.reportFilters.to) : "último recebimento"}</p><p>Local de descarga: <strong>${escapeHtml(reportLocationLabel())}</strong></p><p>Responsável pelo controle: <strong>${CONTROL_OWNER}</strong></p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header>
       ${renderReportKpis(records)}
       <div class="report-charts"><section class="clickable" data-chart-modal="report-week" tabindex="0"><div class="report-chart-heading"><h2>Comparação semanal</h2><span>Ampliar ↗</span></div>${renderComparisonChart("week", records)}</section><section class="clickable" data-chart-modal="report-quality" tabindex="0"><div class="report-chart-heading"><h2>Qualidade — ${materialLabel}</h2><span>Ampliar ↗</span></div>${renderReportQuality(records, material)}</section></div>
       ${renderReportTable(records)}
       ${renderReportRejections(records)}${renderReportPhotoSection()}<footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle diário de recebimentos</span></footer></article>
-    <article class="panel email-report no-print"><div><span class="eyebrow">Compartilhamento</span><h2>Relatório para mensagem</h2><p>Abra o texto somente quando precisar. Você poderá editar todo o conteúdo antes de copiar, enviar por e-mail ou WhatsApp.</p></div><button class="button button-dark" data-open-report-text>Abrir e editar texto</button></article>
+    ${canEdit() ? '<article class="panel email-report no-print"><div><span class="eyebrow">Compartilhamento</span><h2>Relatório para mensagem</h2><p>Abra o texto somente quando precisar. Você poderá editar todo o conteúdo antes de copiar, enviar por e-mail ou WhatsApp.</p></div><button class="button button-dark" data-open-report-text>Abrir e editar texto</button></article>' : ""}
   </section>`;
 }
 
 function renderTeam() {
   if (state.user?.role !== "admin") return renderDashboard();
-  return `<section class="view team-view"><div class="page-heading"><div><span class="eyebrow">Segurança e acompanhamento</span><h1>E-mails autorizados</h1><p>Libere consulta, operação ou administração para novos integrantes.</p></div></div><div class="team-grid"><article class="panel team-form-panel"><span class="eyebrow">Novo acesso</span><h2>Adicionar e-mail</h2><label><span>Nome</span><input name="teamFullName" placeholder="Nome completo" /></label><label><span>E-mail</span><input type="email" name="teamEmail" placeholder="nome@empresa.com" /></label><label><span>Permissão</span><select name="teamRole"><option value="viewer">Consulta — somente acompanhar</option><option value="editor">Operação — lançar e editar</option><option value="admin">Administrador — gerenciar acessos</option></select></label><button class="button button-yellow" data-add-user>Adicionar acesso</button><p class="security-note">Cadastre o e-mail e envie o link seguro. No primeiro acesso, cada pessoa confirma a própria conta do ChatGPT; o site não cria nem armazena senhas. Quem não estiver nesta lista não consegue visualizar os registros.</p></article><article class="panel team-list-panel"><div class="panel-heading"><div><span class="eyebrow">Equipe liberada</span><h2>${state.team.filter((user) => user.active).length} acesso(s) ativo(s)</h2></div></div>${state.teamLoaded ? `<div class="team-list">${state.team.map((user) => `<div class="team-row ${user.active ? "" : "inactive"}"><span class="team-avatar">${escapeHtml((user.fullName || user.email).slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(user.fullName || "Sem nome")}</strong><small>${escapeHtml(user.email)}</small></div><span class="role-pill">${user.role === "admin" ? "Administrador" : user.role === "viewer" ? "Consulta" : "Operação"}</span>${user.email === OWNER_EMAIL ? '<span class="owner-pill">Acesso principal</span>' : user.active ? `<button class="danger-link" data-remove-user="${user.id}">Remover</button>` : '<span class="status-pill">Inativo</span>'}</div>`).join("")}</div>` : '<div class="loading-inline"><span class="spinner"></span> Carregando acessos…</div>'}</article></div></section>`;
+  return `<section class="view team-view"><div class="page-heading"><div><span class="eyebrow">Segurança e acompanhamento</span><h1>E-mails autorizados</h1><p>Libere acesso de consulta ou administração para novos integrantes.</p></div></div><div class="team-grid"><article class="panel team-form-panel"><span class="eyebrow">Novo acesso</span><h2>Adicionar e-mail</h2><label><span>Nome</span><input name="teamFullName" placeholder="Nome completo" /></label><label><span>E-mail</span><input type="email" name="teamEmail" placeholder="nome@empresa.com" /></label><label><span>Permissão</span><select name="teamRole"><option value="viewer">Consulta — somente acompanhar</option><option value="admin">Administrador — editar e gerenciar acessos</option></select></label><button class="button button-yellow" data-add-user>Adicionar acesso</button><p class="security-note">Cadastre o e-mail e envie o link seguro do site. No primeiro acesso, cada pessoa cria a própria senha e confirma o e-mail pelo Supabase. Quem não estiver nesta lista não consegue visualizar os registros.</p></article><article class="panel team-list-panel"><div class="panel-heading"><div><span class="eyebrow">Equipe liberada</span><h2>${state.team.filter((user) => user.active).length} acesso(s) ativo(s)</h2></div></div>${state.teamLoaded ? `<div class="team-list">${state.team.map((user) => `<div class="team-row ${user.active ? "" : "inactive"}"><span class="team-avatar">${escapeHtml((user.fullName || user.email).slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(user.fullName || "Sem nome")}</strong><small>${escapeHtml(user.email)}</small></div><span class="role-pill">${user.role === "admin" ? "Administrador" : "Consulta"}</span>${user.email === OWNER_EMAIL ? '<span class="owner-pill">Acesso principal</span>' : user.active ? `<button class="danger-link" data-remove-user="${user.id}">Remover</button>` : '<span class="status-pill">Inativo</span>'}</div>`).join("")}</div>` : '<div class="loading-inline"><span class="spinner"></span> Carregando acessos…</div>'}</article></div></section>`;
 }
 
 function renderModal() {
@@ -1315,7 +1294,7 @@ function renderModal() {
   let title = "Detalhes";
   let subtitle = "Dados do painel";
   let body = "";
-  let footer = '<button class="button button-outline" data-modal-close>Fechar</button><button class="button button-dark" data-print-report>Gerar PDF do painel</button>';
+  let footer = `<button class="button button-outline" data-modal-close>Fechar</button>${canEdit() ? '<button class="button button-dark" data-print-report>Gerar PDF do painel</button>' : ""}`;
   if (state.modal.type === "goal-form") {
     title = "Adicionar meta";
     subtitle = "Planejamento da obra";
@@ -1411,7 +1390,6 @@ function bindEvents() {
   document.querySelector("[data-save-goal]")?.addEventListener("click", saveGoal);
   document.querySelector("[data-goal-form]")?.addEventListener("submit", (event) => { event.preventDefault(); saveGoal(); });
   document.querySelectorAll("[data-delete-goal]").forEach((button) => button.addEventListener("click", () => deleteGoal(button.dataset.deleteGoal)));
-  document.querySelector("[data-admin-access]")?.addEventListener("click", openAdminAccess);
   document.querySelector("[data-sign-out]")?.addEventListener("click", signOut);
   document.querySelectorAll("[data-nav]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.nav)));
   document.querySelectorAll("[data-new-record]").forEach((button) => button.addEventListener("click", () => newRecord()));
@@ -1640,6 +1618,7 @@ function removeReportImage(id) {
 }
 
 function exportCsv(records) {
+  if (!requireAdminAction()) return;
   const rows = [["Data", "Horário", "Material", "Nota Fiscal", "Quantidade", "Local", "Fornecedor", "Pequenas quebras", "Reparados", "Bolhas", "Quebras", "Dormentes reprovados", "Molde / cavidade / motivo", "Empenamento / torção", "Oxidação / corrosão", "Danos no boleto", "Danos na alma", "Danos no patim", "Trilhos reprovados", "Responsável", "Observações"]];
   records.forEach((record) => invoiceItems(record).forEach((item, index) => { const quality = invoiceQuality(record, item, index); const rejected = Math.max(number(quality.reprovados), rejectionsForInvoice(record, item.number).length); rows.push([formatDate(record.receivedDate), record.receivedTime || "não informado", MATERIALS[record.material].label, item.number, item.quantity, record.location, record.supplier, quality["pequenas-quebras"] || 0, quality.reparados || 0, quality.bolhas || 0, quality.quebras || 0, rejected, rejectionDetails(record, item.number), quality["trilho-empenamento"] || 0, quality["trilho-oxidacao"] || 0, quality["trilho-boleto"] || 0, quality["trilho-alma"] || 0, quality["trilho-patim"] || 0, quality["trilho-reprovados"] || 0, record.inspectorName || CONTROL_OWNER, record.observations || ""]); }));
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
@@ -1648,6 +1627,7 @@ function exportCsv(records) {
 }
 
 function exportRejectedCsv() {
+  if (!requireAdminAction()) return;
   syncRejectionFiltersFromDom();
   const rows = [["Data", "Horário", "Nota Fiscal", "Quantidade da NF", "Local", "Fornecedor", "Placa", "Molde", "Cavidade", "Motivo da reprovação", "Responsável", "Observações", "Fotos da NF"]];
   filteredRejectedSleepers().forEach((row) => rows.push([formatDate(row.record.receivedDate || row.record.receivedAt), row.record.receivedTime || "não informado", row.item.number || row.rejection.invoiceNumber || "", row.item.quantity, row.record.location || "", row.record.supplier || "", row.record.vehiclePlate || "", row.rejection.mold || "", row.rejection.cavity || "", row.reason, row.record.inspectorName || CONTROL_OWNER, row.record.observations || "", row.item.photos?.length || 0]));
@@ -1657,11 +1637,13 @@ function exportRejectedCsv() {
 }
 
 function printRejectedReport() {
+  if (!requireAdminAction()) return;
   syncRejectionFiltersFromDom(); state.modal = null; state.view = "rejections"; render();
   requestAnimationFrame(() => window.print());
 }
 
 async function printReport() {
+  if (!requireAdminAction()) return;
   syncReportFiltersFromDom(); state.modal = null; state.view = "reports"; render();
   const photos = state.includeInvoicePhotos ? photosForRecords(reportRecords()) : [];
   await ensurePhotoUrls(photos.map((photo) => photo.path));
@@ -1679,6 +1661,7 @@ async function printReport() {
 }
 
 function openReportText() {
+  if (!requireAdminAction()) return;
   syncReportFiltersFromDom();
   state.reportTextDraft = descriptiveReportText();
   state.modal = { type: "report-text" };
@@ -1693,6 +1676,7 @@ function editedReportText() {
 }
 
 function emailReport() {
+  if (!requireAdminAction()) return;
   const recipient = document.querySelector('[name="reportEmail"]')?.value.trim();
   if (!recipient || !/^\S+@\S+\.\S+$/.test(recipient)) return toast("Informe um e-mail válido.", "error");
   const message = editedReportText();
@@ -1702,6 +1686,7 @@ function emailReport() {
 }
 
 function whatsappReport() {
+  if (!requireAdminAction()) return;
   const message = editedReportText();
   if (!message) return toast("O texto do relatório está vazio.", "error");
   window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
@@ -1709,6 +1694,7 @@ function whatsappReport() {
 }
 
 async function copyReportText() {
+  if (!requireAdminAction()) return;
   const message = editedReportText();
   if (!message) return toast("O texto do relatório está vazio.", "error");
   try {
@@ -1784,13 +1770,11 @@ async function loadSession() {
 }
 
 function authFields() { return { email: document.querySelector('[name="authEmail"]')?.value.trim().toLowerCase() || "", password: document.querySelector('[name="authPassword"]')?.value || "" }; }
-function accessUrl(admin) { const url = new URL(window.location.href); url.hash = ""; url.searchParams.delete("view"); if (admin) url.searchParams.set("admin", "1"); else url.searchParams.delete("admin"); return url; }
-function openAdminAccess() { window.location.assign(accessUrl(true)); }
-function openPublicAccess() { window.location.assign(accessUrl(false)); }
+function accessUrl() { const url = new URL(window.location.href); url.hash = ""; url.searchParams.delete("view"); url.searchParams.delete("admin"); return url; }
 async function signInWithEmail(event) { event?.preventDefault(); const { email, password } = authFields(); if (!email || password.length < 8) return; state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.signInWithPassword({ email, password }); if (error) { state.authLoading = false; state.authMessage = "E-mail ou senha inválidos."; render(); return; } await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); }
-async function createFirstAccess() { const { email, password } = authFields(); if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 8) return toast("Informe um e-mail válido e uma senha de pelo menos 8 caracteres.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { data, error } = await supabaseClient.auth.signUp({ email, password, options: { emailRedirectTo: accessUrl(true).toString() } }); state.authLoading = false; if (error) { state.authMessage = error.message || "Não foi possível criar o primeiro acesso."; render(); return; } if (data.session) { await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); return; } state.authMessage = "Confira seu e-mail e use o link de confirmação para concluir o primeiro acesso."; render(); }
-async function requestPasswordReset() { const email = document.querySelector('[name="authEmail"]')?.value.trim().toLowerCase() || ""; if (!/^\S+@\S+\.\S+$/.test(email)) return toast("Informe seu e-mail para recuperar a senha.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: accessUrl(true).toString() }); state.authLoading = false; state.authMessage = error ? (error.message || "Não foi possível enviar a recuperação de senha.") : "Enviamos um link para redefinir sua senha. Confira também a caixa de spam."; render(); }
-async function updateRecoveredPassword(event) { event?.preventDefault(); const password = document.querySelector('[name="newPassword"]')?.value || ""; const confirmation = document.querySelector('[name="confirmPassword"]')?.value || ""; if (password.length < 8) return toast("A nova senha precisa ter pelo menos 8 caracteres.", "error"); if (password !== confirmation) return toast("As senhas informadas não são iguais.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.updateUser({ password }); if (error) { state.authLoading = false; state.authMessage = error.message || "Não foi possível atualizar a senha."; render(); return; } state.recoveryMode = false; window.history.replaceState({}, document.title, accessUrl(true)); await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); toast("Senha atualizada. Acesso liberado com segurança.", "success"); }
+async function createFirstAccess() { const { email, password } = authFields(); if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 8) return toast("Informe um e-mail válido e uma senha de pelo menos 8 caracteres.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { data, error } = await supabaseClient.auth.signUp({ email, password, options: { emailRedirectTo: accessUrl().toString() } }); state.authLoading = false; if (error) { state.authMessage = error.message || "Não foi possível criar o primeiro acesso."; render(); return; } if (data.session) { await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); return; } state.authMessage = "Confira seu e-mail e use o link de confirmação para concluir o primeiro acesso."; render(); }
+async function requestPasswordReset() { const email = document.querySelector('[name="authEmail"]')?.value.trim().toLowerCase() || ""; if (!/^\S+@\S+\.\S+$/.test(email)) return toast("Informe seu e-mail para recuperar a senha.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: accessUrl().toString() }); state.authLoading = false; state.authMessage = error ? (error.message || "Não foi possível enviar a recuperação de senha.") : "Enviamos um link para redefinir sua senha. Confira também a caixa de spam."; render(); }
+async function updateRecoveredPassword(event) { event?.preventDefault(); const password = document.querySelector('[name="newPassword"]')?.value || ""; const confirmation = document.querySelector('[name="confirmPassword"]')?.value || ""; if (password.length < 8) return toast("A nova senha precisa ter pelo menos 8 caracteres.", "error"); if (password !== confirmation) return toast("As senhas informadas não são iguais.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.updateUser({ password }); if (error) { state.authLoading = false; state.authMessage = error.message || "Não foi possível atualizar a senha."; render(); return; } state.recoveryMode = false; window.history.replaceState({}, document.title, accessUrl()); await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); toast("Senha atualizada. Acesso liberado com segurança.", "success"); }
 async function signOut() { if (state.saving || state.photoBusy) return; if (pendingPhotoFiles.size && !confirm("Há fotos ainda não salvas. Deseja sair e descartá-las?")) return; photoSessionEpoch++; await supabaseClient?.auth.signOut(); releasePendingPhotos(); photoUrls.clear(); state.draft = null; state.editingId = ""; state.editingInvoiceIndex = -1; state.newLocationMode = false; state.locations = []; state.goals = []; clearProtectedLocalData(); state.authenticated = false; state.authorized = false; state.user = null; state.records = []; state.team = []; state.teamLoaded = false; state.authMessage = "Sessão encerrada com segurança."; render(); }
 
 async function loadRecordsAndCategories() {
@@ -1832,18 +1816,20 @@ async function loadTeam() {
 }
 
 async function addTeamMember() {
-  const fullName = document.querySelector('[name="teamFullName"]')?.value.trim() || ""; const email = document.querySelector('[name="teamEmail"]')?.value.trim().toLowerCase() || ""; const role = document.querySelector('[name="teamRole"]')?.value || "viewer";
+  if (!requireAdminAction()) return;
+  const fullName = document.querySelector('[name="teamFullName"]')?.value.trim() || ""; const email = document.querySelector('[name="teamEmail"]')?.value.trim().toLowerCase() || ""; const requestedRole = document.querySelector('[name="teamRole"]')?.value || "viewer"; const role = requestedRole === "admin" ? "admin" : "viewer";
   if (!/^\S+@\S+\.\S+$/.test(email)) return toast("Informe um e-mail válido.", "error");
   try { const existing = state.team.find((item) => item.email.toLowerCase() === email); const row = { email, full_name: fullName || email.split("@")[0], role, active: true, created_by: state.user.email, updated_at: new Date().toISOString() }; const query = existing ? supabaseClient.from("app_users").update(row).eq("id", existing.id) : supabaseClient.from("app_users").insert({ id: `user-${crypto.randomUUID()}`, ...row }); const { error } = await query; if (error) throw error; state.teamLoaded = false; await loadTeam(); toast(`${email} foi liberado.`, "success"); } catch (error) { toast(error.message || "Não foi possível liberar o acesso no Supabase.", "error"); }
 }
 
 async function removeTeamMember(id) {
+  if (!requireAdminAction()) return;
   const user = state.team.find((item) => item.id === id); if (!user || !confirm(`Remover o acesso de ${user.fullName || user.email}?`)) return;
   try { const { error } = await supabaseClient.from("app_users").update({ active: false, updated_at: new Date().toISOString() }).eq("id", id); if (error) throw error; state.teamLoaded = false; await loadTeam(); toast("Acesso removido.", "success"); } catch (error) { toast(error.message || "Falha ao remover acesso.", "error"); }
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=36" : "/service-worker.js?v=36").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=37" : "/service-worker.js?v=37").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
 }
 
