@@ -404,6 +404,20 @@ function canEdit() {
   return state.authorized && state.user?.role === "admin";
 }
 
+function isOperator() {
+  return state.authorized && state.user?.role === "operator";
+}
+
+function canLaunchReceipt() {
+  return canEdit() || isOperator();
+}
+
+function roleLabel(role = state.user?.role) {
+  if (role === "admin") return "Administrador";
+  if (role === "operator") return "Operador de recebimento";
+  return "Consulta";
+}
+
 function requireAdminAction() {
   if (canEdit()) return true;
   toast("Esta ação é exclusiva do administrador.", "error");
@@ -422,12 +436,27 @@ function render() {
     bindAccessEvents();
     return;
   }
+  if (isOperator()) {
+    state.view = "form";
+    state.tvMode = false;
+    app.innerHTML = `
+      <div class="app-shell operator-shell">
+        <header class="topbar operator-topbar no-print">
+          <div class="brand-lockup"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Modo de lançamento em campo</small></span></div>
+          <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync} pendente(s)` : ""}</button><span class="operator-role-chip">Operador de recebimento</span><button class="user-chip" type="button" data-sign-out aria-label="Sair da conta ${escapeHtml(state.user?.email || "")}"><strong>Sair</strong><small>${escapeHtml(state.user?.fullName || state.user?.email || "")}</small></button></div>
+        </header>
+        <main class="app-main operator-main">${state.loading ? '<section class="loading-panel"><span class="spinner"></span><h1>Preparando o lançamento</h1></section>' : renderOperatorForm()}</main>
+        <div class="toast" role="status" aria-live="polite"></div>
+      </div>`;
+    bindEvents();
+    return;
+  }
   app.innerHTML = `
     <div class="app-shell">
       <header class="topbar no-print">
         <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel EPYA"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Controle diário de materiais</small></span></button>
         <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprovados", "!")}${navButton("reports", "Relatórios", "▤")}${!PUBLIC_LINK_MODE && state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
-        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><button class="user-chip" type="button" data-sign-out aria-label="Sair da conta ${escapeHtml(state.user?.email || "")}"><strong>Sair</strong><small>${state.user?.role === "admin" ? "Administrador" : "Consulta"} • ${escapeHtml(state.user?.email || "")}</small></button></div>
+        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><button class="user-chip" type="button" data-sign-out aria-label="Sair da conta ${escapeHtml(state.user?.email || "")}"><strong>Sair</strong><small>${roleLabel()} • ${escapeHtml(state.user?.email || "")}</small></button></div>
       </header>
       <main class="app-main">${renderCurrentView()}</main>
       <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprov.", "!")}${navButton("reports", "Relatórios", "▤")}</footer>
@@ -440,10 +469,10 @@ function render() {
 
 function renderAccessScreen() {
   const unauthorized = !state.recoveryMode && state.authenticated && !state.authorized;
-  const loginForm = `<form class="login-form" data-auth-form><label><span>E-mail cadastrado</span><input type="email" name="authEmail" autocomplete="email" required placeholder="seu@email.com" /></label><label><span>Senha</span><input type="password" name="authPassword" autocomplete="current-password" minlength="8" required placeholder="Mínimo de 8 caracteres" /></label><button class="button button-yellow full" type="submit">Entrar com segurança</button><button class="auth-help-link" type="button" data-forgot-password>Esqueci minha senha</button><button class="button button-outline full" type="button" data-create-account>Primeiro acesso</button><small>Use somente um e-mail previamente cadastrado. Administradores podem alterar dados; os demais acessos são apenas para consulta.</small></form>`;
+  const loginForm = `<form class="login-form" data-auth-form><label><span>E-mail cadastrado</span><input type="email" name="authEmail" autocomplete="email" required placeholder="seu@email.com" /></label><label><span>Senha</span><input type="password" name="authPassword" autocomplete="current-password" minlength="8" required placeholder="Mínimo de 8 caracteres" /></label><button class="button button-yellow full" type="submit">Entrar com segurança</button><button class="auth-help-link" type="button" data-forgot-password>Esqueci minha senha</button><button class="button button-outline full" type="button" data-create-account>Primeiro acesso</button><small>Use somente um e-mail previamente cadastrado. O que cada pessoa pode fazer depende do perfil definido pelo administrador.</small></form>`;
   const recoveryForm = `<form class="login-form" data-password-recovery-form><label><span>Nova senha</span><input type="password" name="newPassword" autocomplete="new-password" minlength="8" required placeholder="Mínimo de 8 caracteres" /></label><label><span>Confirmar nova senha</span><input type="password" name="confirmPassword" autocomplete="new-password" minlength="8" required placeholder="Digite novamente" /></label><button class="button button-yellow full" type="submit">Salvar nova senha</button><small>Depois de salvar, o acesso será liberado automaticamente neste aparelho.</small></form>`;
   const heading = state.authLoading ? "Preparando seu acesso" : state.recoveryMode ? "Defina sua nova senha" : unauthorized ? "E-mail não liberado" : "Acesso ao sistema";
-  const description = state.authLoading ? "Validando sua sessão protegida pelo Supabase…" : state.recoveryMode ? "Crie uma senha com pelo menos 8 caracteres para recuperar sua conta." : unauthorized ? `O e-mail <strong>${escapeHtml(state.user?.email || "")}</strong> foi autenticado, mas não está na lista autorizada por ${OWNER_EMAIL}.` : "Entre com um e-mail cadastrado para consultar os recebimentos. Somente administradores podem realizar alterações.";
+  const description = state.authLoading ? "Validando sua sessão protegida pelo Supabase…" : state.recoveryMode ? "Crie uma senha com pelo menos 8 caracteres para recuperar sua conta." : unauthorized ? `O e-mail <strong>${escapeHtml(state.user?.email || "")}</strong> foi autenticado, mas não está na lista autorizada por ${OWNER_EMAIL}.` : "Entre com um e-mail cadastrado. O administrador define se o acesso é para administrar, lançar recebimentos ou somente consultar.";
   const accessContent = state.authLoading ? '<span class="login-loading"><i></i> Aguarde um instante</span>' : state.recoveryMode ? recoveryForm : unauthorized ? '<button class="button button-outline full" type="button" data-sign-out>Entrar com outro e-mail</button>' : state.online ? loginForm : '<button class="button button-dark full" disabled>O acesso exige conexão</button>';
   return `<main class="login-screen"><section class="login-card"><div class="login-brands"><img src="./epya-logo-oficial.png" alt="EPYA" /><span></span><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></div><span class="eyebrow">Controle diário • Projeto Sucuriú</span><h1>${heading}</h1><p>${description}</p>${accessContent}${state.authMessage ? `<p class="login-message">${escapeHtml(state.authMessage)}</p>` : ""}<button class="install-link" data-install>＋ Adicionar à tela inicial</button><div class="login-benefits"><span><b>✓</b> Supabase Auth</span><span><b>✓</b> Permissões por perfil</span><span><b>✓</b> PDF e relatórios</span></div></section></main>`;
 }
@@ -805,7 +834,7 @@ function draftWarnings(record) {
 function renderDraftWarnings(record) {
   const { missing, duplicates } = draftWarnings(record);
   if (!missing.length && !duplicates.length) return '<div class="draft-check complete" role="status">✓ Dados essenciais preenchidos. Nenhuma NF repetida encontrada.</div>';
-  return `<div class="draft-check pending" role="status">${missing.length ? `<strong>Dados pendentes</strong><ul>${missing.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><p>Você pode salvar como rascunho e concluir depois.</p>` : ""}${duplicates.length ? `<strong>Confira possíveis NFs repetidas</strong><ul>${duplicates.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><p>Se forem entregas parciais ou outra origem, você poderá confirmar ao salvar.</p>` : ""}</div>`;
+  return `<div class="draft-check pending" role="status">${missing.length ? `<strong>Dados pendentes</strong><ul>${missing.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><p>${isOperator() ? "Preencha estes dados para salvar o lançamento." : "Você pode salvar como rascunho e concluir depois."}</p>` : ""}${duplicates.length ? `<strong>Confira possíveis NFs repetidas</strong><ul>${duplicates.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><p>Se forem entregas parciais ou outra origem, você poderá confirmar ao salvar.</p>` : ""}</div>`;
 }
 
 function refreshDraftWarnings() {
@@ -977,7 +1006,7 @@ function formRecordFromDom() {
     const reasonId = row.querySelector('[name="rejectionReason"]')?.value || "";
     return { id: row.dataset.rejectionId || crypto.randomUUID(), invoiceNumber: row.querySelector('[name="rejectionInvoice"]')?.value || "", mold: row.querySelector('[name="rejectionMold"]')?.value.trim() || "", cavity: row.querySelector('[name="rejectionCavity"]')?.value.trim() || "", reasonId, reason: state.rejectionReasons.find((item) => item.id === reasonId)?.label || "" };
   });
-  if (material === "dormente") items.forEach((item) => { item.quality.reprovados = rejections.filter((rejection) => rejection.invoiceNumber === item.number).length; });
+  if (material === "dormente" && !isOperator()) items.forEach((item) => { item.quality.reprovados = rejections.filter((rejection) => rejection.invoiceNumber === item.number).length; });
   const quality = { ...((state.draft || {}).quality || {}) };
   categories.forEach((category) => { quality[category.id] = items.reduce((sum, item) => sum + number(item.quality?.[category.id]), 0); });
   return { ...(state.draft || defaultDraft()), material, receivedDate: form.elements.receivedDate.value, receivedTime: form.elements.receivedTime.value, timeKnown: Boolean(form.elements.receivedTime.value), location: form.elements.location.value.trim(), supplier: form.elements.supplier.value.trim(), vehiclePlate: form.elements.vehiclePlate.value.trim().toUpperCase(), inspectorName: form.elements.inspectorName.value.trim(), observations: form.elements.observations.value.trim(), invoiceItems: items.length ? items : [blankInvoiceItem(material)], quality, rejections, _cleanupMolde57Cav1: true };
@@ -1005,6 +1034,36 @@ function renderForm() {
     <article class="panel form-panel invoice-panel"><div class="form-section-title"><span>03</span><div><h2>Notas fiscais e quantidades</h2><p>Adicione quantas NFs chegaram juntas. A soma aparece no topo.</p></div></div><div class="invoice-head"><span>Nota fiscal</span><span>Quantidade</span><span></span></div><div class="invoice-list">${items.map((item, index) => `<div class="invoice-row ${state.editingInvoiceIndex === index ? "edit-target" : ""}" data-invoice-row="${index}"><label><span>NF ${index + 1}</span><input name="invoiceNumber" value="${escapeHtml(item.number)}" inputmode="numeric" placeholder="Número da NF" required /></label><label><span>Quantidade</span><input type="number" min="0" name="invoiceQuantity" value="${item.quantity || ""}" placeholder="0" required /></label><button type="button" class="remove-row" data-remove-invoice="${index}" aria-label="Remover nota" ${items.length === 1 ? "disabled" : ""}>×</button></div>`).join("")}</div><button type="button" class="add-row-button" data-add-invoice>＋ Adicionar outra NF</button><div class="invoice-total"><span>Total automático</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></article>
     <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Qualidade por nota fiscal</h2><p>Cada NF tem seus próprios defeitos. Ao adicionar outra nota, estes campos começam zerados.</p></div></div>${renderInvoiceQualityCards(draft, items, rejections)}${isSleeper ? `<p id="rejected-help" class="rejected-help">Os reprovados são calculados por NF a partir dos registros individuais abaixo.</p><div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div>${renderRejectionSection(draft, items, rejections)}` : '<p class="rail-quality-note">Registre em cada NF o empenamento, a corrosão e os danos no boleto, alma ou patim.</p>'}</article>
     ${renderInvoicePhotoFields(draft)}<article class="panel form-panel final-form-panel"><div class="form-section-title"><span>06</span><div><h2>Observações e confirmação</h2><p>Registre qualquer ressalva importante para o relatório.</p></div></div><label><span>Observações</span><textarea name="observations" rows="4" placeholder="Condições da descarga, divergências ou informações complementares">${escapeHtml(draft.observations || "")}</textarea></label><div data-draft-warnings>${renderDraftWarnings(draft)}</div><div class="form-actions"><button type="button" class="button button-outline" data-cancel-form>Cancelar</button><button type="button" class="button button-dark" data-save-status="rascunho">Salvar rascunho</button><button type="submit" class="button button-yellow" ${state.saving || state.photoBusy ? "disabled" : ""}>${state.saving ? "Salvando…" : state.editingId ? "Atualizar recebimento" : "Salvar recebimento"}</button></div></article></fieldset></form></section>`;
+}
+
+function renderOperatorQualityCards(draft, items) {
+  return `<div class="invoice-quality-list">${items.map((item, index) => {
+    const quality = { ...blankQuality(draft.material), ...invoiceQuality(draft, item, index) };
+    return `<article class="invoice-quality-card" data-invoice-quality-card="${index}"><header><div><span>Não conformidades desta nota</span><strong>${item.number ? `NF ${escapeHtml(item.number)}` : `NF ${index + 1}`}</strong></div><small>Preencha somente o que foi encontrado</small></header><div class="quality-input-grid">${qualityCategories(draft.material).map((category) => `<label style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><input type="number" min="0" name="invoiceQuality_${category.id}" data-quality-category="${category.id}" value="${number(quality[category.id])}" /></label>`).join("")}</div></article>`;
+  }).join("")}</div>`;
+}
+
+function renderOperatorForm() {
+  const draft = state.draft ||= defaultDraft("trilho");
+  draft.inspectorName = state.user?.fullName || state.user?.email || "Operador de recebimento";
+  const items = draft.invoiceItems?.length ? draft.invoiceItems : [blankInvoiceItem(draft.material)];
+  const total = items.reduce((sum, item) => sum + number(item.quantity), 0);
+  const isSleeper = draft.material === "dormente";
+  const locations = knownLocations();
+  if (draft.location && !locations.some((label) => locationKey(label) === locationKey(draft.location))) locations.push(draft.location);
+  return `<section class="view form-view operator-form-view"><div class="page-heading"><div><span class="eyebrow">Acesso de campo</span><h1>Novo lançamento</h1><p>Registre apenas a chegada do material. Depois de salvo, somente o administrador poderá consultar, corrigir ou excluir.</p></div><div class="heading-summary"><span>Total deste lançamento</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></div>
+    <div class="operator-sync-panel">${renderSyncBadge()}<p>${state.online ? "Ao salvar, os dados serão enviados imediatamente." : "Você está offline. O lançamento ficará protegido neste aparelho e será enviado automaticamente quando a internet voltar."}</p></div>
+    <form id="receiving-form" class="receiving-form operator-receiving-form"><fieldset class="receiving-fields" ${state.saving ? "disabled" : ""}>
+      <input type="hidden" name="receivedTime" value="" />
+      <input type="hidden" name="supplier" value="${draft.material === "trilho" ? "Arauco" : "Cavan / Arauco"}" />
+      <input type="hidden" name="vehiclePlate" value="" />
+      <input type="hidden" name="inspectorName" value="${escapeHtml(draft.inspectorName)}" />
+      <article class="panel form-panel"><div class="form-section-title"><span>01</span><div><h2>Material</h2><p>Escolha o tipo recebido.</p></div></div><div class="material-selector"><button type="button" class="material-option ${isSleeper ? "active" : ""}" data-material="dormente"><i class="sleeper-icon"></i><span><strong>Dormentes</strong><small>Unidades recebidas</small></span><b>${isSleeper ? "✓" : ""}</b></button><button type="button" class="material-option ${!isSleeper ? "active" : ""}" data-material="trilho"><i class="rail-icon"></i><span><strong>Trilhos</strong><small>Barras recebidas</small></span><b>${!isSleeper ? "✓" : ""}</b></button></div><input type="hidden" name="material" value="${draft.material}" /></article>
+      <article class="panel form-panel"><div class="form-section-title"><span>02</span><div><h2>Data e local</h2><p>Selecione o ponto de entrega cadastrado.</p></div></div><div class="operator-field-grid"><label><span>Data do recebimento *</span><input type="date" name="receivedDate" value="${escapeHtml(draft.receivedDate)}" required /></label><label><span>Local / ponto de descarga *</span><select name="location" required><option value="">Selecione um local</option>${locations.map((label) => `<option value="${escapeHtml(label)}" ${locationKey(label) === locationKey(draft.location) ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label></div></article>
+      <article class="panel form-panel invoice-panel"><div class="form-section-title"><span>03</span><div><h2>Nota fiscal e quantidade</h2><p>Você pode registrar mais de uma NF na mesma entrega.</p></div></div><div class="invoice-head"><span>Nota fiscal</span><span>Quantidade</span><span></span></div><div class="invoice-list">${items.map((item, index) => `<div class="invoice-row" data-invoice-row="${index}"><label><span>NF ${index + 1}</span><input name="invoiceNumber" value="${escapeHtml(item.number)}" inputmode="numeric" placeholder="Número da NF" required /></label><label><span>Quantidade</span><input type="number" min="1" name="invoiceQuantity" value="${item.quantity || ""}" placeholder="0" required /></label><button type="button" class="remove-row" data-remove-invoice="${index}" aria-label="Remover nota" ${items.length === 1 ? "disabled" : ""}>×</button></div>`).join("")}</div><button type="button" class="add-row-button" data-add-invoice>＋ Adicionar outra NF</button><div class="invoice-total"><span>Total automático</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></article>
+      <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Não conformidades — opcional</h2><p>Deixe os campos em zero quando não houver NC.</p></div></div>${renderOperatorQualityCards(draft, items)}</article>
+      <article class="panel form-panel final-form-panel"><div class="form-section-title"><span>05</span><div><h2>Detalhe da NC — opcional</h2><p>Use apenas para uma observação curta sobre a não conformidade.</p></div></div><label><span>Descrição</span><textarea name="observations" rows="3" maxlength="500" placeholder="Ex.: oxidação identificada durante a descarga">${escapeHtml(draft.observations || "")}</textarea></label><div data-draft-warnings>${renderDraftWarnings(draft)}</div><div class="form-actions"><button type="submit" class="button button-yellow operator-save-button" ${state.saving ? "disabled" : ""}>${state.saving ? "Salvando…" : state.online ? "Salvar lançamento" : "Salvar offline"}</button></div></article>
+    </fieldset></form></section>`;
 }
 
 function filteredHistory() {
@@ -1286,7 +1345,7 @@ function renderReports() {
 
 function renderTeam() {
   if (state.user?.role !== "admin") return renderDashboard();
-  return `<section class="view team-view"><div class="page-heading"><div><span class="eyebrow">Segurança e acompanhamento</span><h1>E-mails autorizados</h1><p>Libere acesso de consulta ou administração para novos integrantes.</p></div></div><div class="team-grid"><article class="panel team-form-panel"><span class="eyebrow">Novo acesso</span><h2>Adicionar e-mail</h2><label><span>Nome</span><input name="teamFullName" placeholder="Nome completo" /></label><label><span>E-mail</span><input type="email" name="teamEmail" placeholder="nome@empresa.com" /></label><label><span>Permissão</span><select name="teamRole"><option value="viewer">Consulta — somente acompanhar</option><option value="admin">Administrador — editar e gerenciar acessos</option></select></label><button class="button button-yellow" data-add-user>Adicionar acesso</button><p class="security-note">Cadastre o e-mail e envie o link seguro do site. No primeiro acesso, cada pessoa cria a própria senha e confirma o e-mail pelo Supabase. Quem não estiver nesta lista não consegue visualizar os registros.</p></article><article class="panel team-list-panel"><div class="panel-heading"><div><span class="eyebrow">Equipe liberada</span><h2>${state.team.filter((user) => user.active).length} acesso(s) ativo(s)</h2></div></div>${state.teamLoaded ? `<div class="team-list">${state.team.map((user) => `<div class="team-row ${user.active ? "" : "inactive"}"><span class="team-avatar">${escapeHtml((user.fullName || user.email).slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(user.fullName || "Sem nome")}</strong><small>${escapeHtml(user.email)}</small></div><span class="role-pill">${user.role === "admin" ? "Administrador" : "Consulta"}</span>${user.email === OWNER_EMAIL ? '<span class="owner-pill">Acesso principal</span>' : user.active ? `<button class="danger-link" data-remove-user="${user.id}">Remover</button>` : '<span class="status-pill">Inativo</span>'}</div>`).join("")}</div>` : '<div class="loading-inline"><span class="spinner"></span> Carregando acessos…</div>'}</article></div></section>`;
+  return `<section class="view team-view"><div class="page-heading"><div><span class="eyebrow">Segurança e acompanhamento</span><h1>E-mails autorizados</h1><p>Defina quem administra, quem apenas lança recebimentos e quem somente consulta.</p></div></div><div class="team-grid"><article class="panel team-form-panel"><span class="eyebrow">Novo acesso ou alteração</span><h2>Adicionar e-mail</h2><label><span>Nome</span><input name="teamFullName" placeholder="Nome completo" /></label><label><span>E-mail</span><input type="email" name="teamEmail" placeholder="nome@empresa.com" /></label><label><span>Permissão</span><select name="teamRole"><option value="viewer">Consulta — somente acompanhar</option><option value="operator">Operador — somente criar lançamentos</option><option value="admin">Administrador — editar e gerenciar acessos</option></select></label><button class="button button-yellow" data-add-user>Salvar acesso</button><p class="security-note">Para alterar um perfil, informe novamente o mesmo e-mail e escolha a nova permissão. O operador pode lançar data, local, NF, quantidade e NC, mas não visualiza histórico, relatórios, metas ou dados administrativos.</p></article><article class="panel team-list-panel"><div class="panel-heading"><div><span class="eyebrow">Equipe liberada</span><h2>${state.team.filter((user) => user.active).length} acesso(s) ativo(s)</h2></div></div>${state.teamLoaded ? `<div class="team-list">${state.team.map((user) => `<div class="team-row ${user.active ? "" : "inactive"}"><span class="team-avatar">${escapeHtml((user.fullName || user.email).slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(user.fullName || "Sem nome")}</strong><small>${escapeHtml(user.email)}</small></div><span class="role-pill">${roleLabel(user.role)}</span>${user.email === OWNER_EMAIL ? '<span class="owner-pill">Acesso principal</span>' : user.active ? `<button class="danger-link" data-remove-user="${user.id}">Remover</button>` : '<span class="status-pill">Inativo</span>'}</div>`).join("")}</div>` : '<div class="loading-inline"><span class="spinner"></span> Carregando acessos…</div>'}</article></div></section>`;
 }
 
 function renderModal() {
@@ -1463,7 +1522,8 @@ function updateFormTotal() {
 
 function navigate(view) {
   if (state.saving || state.photoBusy) return toast("Aguarde a preparação das fotos e o salvamento.", "error");
-  if (view === "form" && !canEdit()) return;
+  if (isOperator() && view !== "form") return;
+  if (view === "form" && !canLaunchReceipt()) return;
   if (state.view === "form" && view !== "form") state.draft = formRecordFromDom();
   state.view = view; state.modal = null;
   if (view === "form" && !state.draft) state.draft = defaultDraft();
@@ -1471,7 +1531,7 @@ function navigate(view) {
   render(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function newRecord(material = "dormente") { if (state.saving || state.photoBusy) return; if (pendingPhotoFiles.size && !confirm("Há fotos não salvas. Deseja descartá-las e iniciar outro recebimento?")) return; releasePendingPhotos(); state.newLocationMode = false; state.draft = defaultDraft(material); state.editingId = ""; state.editingInvoiceIndex = -1; navigate("form"); }
+function newRecord(material = "dormente") { if (!canLaunchReceipt() || state.saving || state.photoBusy) return; if (pendingPhotoFiles.size && !confirm("Há fotos não salvas. Deseja descartá-las e iniciar outro recebimento?")) return; releasePendingPhotos(); state.newLocationMode = false; state.draft = defaultDraft(material); state.editingId = ""; state.editingInvoiceIndex = -1; navigate("form"); }
 
 function editRecord(id, invoiceIndex = -1) {
   if (state.saving || state.photoBusy) return;
@@ -1488,7 +1548,8 @@ function editRecord(id, invoiceIndex = -1) {
 
 async function saveCurrent(status) {
   if (state.saving || state.photoBusy) return toast("Aguarde a preparação das fotos e o salvamento.", "error");
-  if (!canEdit()) return toast("Seu acesso é somente para consulta.", "error");
+  if (!canLaunchReceipt()) return toast("Seu acesso é somente para consulta.", "error");
+  if (isOperator() && (state.editingId || status === "rascunho")) return toast("O operador pode apenas criar lançamentos concluídos.", "error");
   const record = normalizeMaterialSupplier(formRecordFromDom());
   state.draft = record;
   const warnings = draftWarnings(record);
@@ -1509,7 +1570,9 @@ async function saveCurrent(status) {
   record.invoiceNumbers = record.invoiceItems.map((item) => item.number).filter(Boolean).join(", ");
   record.quantity = record.invoiceItems.reduce((sum, item) => sum + number(item.quantity), 0);
   record.rejected = qualityRejected(record); record.approved = Math.max(0, record.quantity - record.rejected);
-  record.inspectorName = record.inspectorName || CONTROL_OWNER;
+  record.inspectorName = isOperator() ? (state.user?.fullName || state.user?.email || "Operador de recebimento") : (record.inspectorName || CONTROL_OWNER);
+  record.createdBy ||= state.user?.email || "";
+  record.updatedBy = state.user?.email || "";
   record.receivedAt = `${record.receivedDate || todayInput()}T${record.receivedTime || "00:00"}:00`;
   record.timeKnown = Boolean(record.receivedTime); record.createdAt ||= new Date().toISOString(); record.updatedAt = new Date().toISOString();
   state.saving = true; render();
@@ -1518,8 +1581,7 @@ async function saveCurrent(status) {
     if (!supabaseClient || !state.online) throw new Error("offline");
     if (outboxSyncPromise) await outboxSyncPromise;
     if (hasPendingPhotos) await uploadInvoicePhotos(record);
-    const { error } = await supabaseClient.from("crm_records").upsert(supabaseRecordRow(record), { onConflict: "id" });
-    if (error) throw error;
+    await persistRecord(record);
     replaceRecord(record); state.storageMode = "cloud";
     try { forgetQueuedRecord(record.id); writeLocalRecords(); } catch { toast("Salvo na nuvem. Não foi possível atualizar o cache deste aparelho.", "error"); }
     const paths = new Set(photosForRecords([record]).map((photo) => photo.path));
@@ -1533,9 +1595,10 @@ async function saveCurrent(status) {
     try { queueForSync(record); replaceRecord(record); writeLocalRecords(); state.storageMode = "local"; savedLocally = true; }
     catch { state.saving = false; render(); return toast("Não foi possível salvar neste aparelho. Mantenha o formulário aberto e tente novamente com conexão.", "error"); }
   }
-  state.saving = false; releasePendingPhotos(); state.draft = null; state.newLocationMode = false;
-  state.editingId = ""; state.editingInvoiceIndex = -1; state.view = "dashboard"; render();
-  toast(savedLocally ? "Salvo neste aparelho. Aguardando sincronização." : status === "rascunho" ? "Rascunho salvo." : "Recebimento e fotos salvos.");
+  const savedMaterial = record.material;
+  state.saving = false; releasePendingPhotos(); state.draft = isOperator() ? defaultDraft(savedMaterial) : null; state.newLocationMode = false;
+  state.editingId = ""; state.editingInvoiceIndex = -1; state.view = isOperator() ? "form" : "dashboard"; render();
+  toast(savedLocally ? "Salvo neste aparelho. Será enviado quando a internet voltar." : status === "rascunho" ? "Rascunho salvo." : isOperator() ? "Lançamento salvo e enviado ao administrador." : "Recebimento e fotos salvos.");
 }
 
 function cancelDraft() {
@@ -1724,6 +1787,13 @@ function sanitizeLegacyMoldEntry(record) {
 }
 
 function supabaseRecordRow(record) { return { id: record.id, status: record.status, received_at: record.receivedAt, invoice_numbers: record.invoiceNumbers || "", supplier: record.supplier || "", quantity: number(record.quantity), approved: number(record.approved), rejected: number(record.rejected), truckloads: 1, payload: record, created_at: record.createdAt || new Date().toISOString(), updated_at: record.updatedAt || new Date().toISOString() }; }
+async function persistRecord(record) {
+  const query = isOperator()
+    ? supabaseClient.from("crm_records").insert(supabaseRecordRow(record))
+    : supabaseClient.from("crm_records").upsert(supabaseRecordRow(record), { onConflict: "id" });
+  const { error } = await query;
+  if (error && !(isOperator() && error.code === "23505")) throw error;
+}
 function clearProtectedLocalData() { [STORAGE_KEY, OUTBOX_KEY, AUTH_CACHE_KEY, CATEGORY_KEY, REJECTION_REASON_KEY, LOCATION_KEY, GOAL_KEY, GOAL_OUTBOX_KEY].forEach((key) => localStorage.removeItem(key)); }
 function readLocalRecords() { try { const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); return Array.isArray(stored) ? stored.map(sanitizeLegacyMoldEntry).sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))) : []; } catch { return []; } }
 function writeLocalRecords() { if (state.authorized) localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records)); }
@@ -1737,7 +1807,7 @@ async function syncOutbox() {
   if (!supabaseClient || !state.online || !state.authorized || state.saving) return;
   outboxSyncPromise = (async () => {
     const pending = readOutbox(); const remaining = [];
-    for (const record of pending) { try { const { error } = await supabaseClient.from("crm_records").upsert(supabaseRecordRow(record), { onConflict: "id" }); if (error) throw error; replaceRecord(record); } catch { remaining.push(record); } }
+    for (const record of pending) { try { await persistRecord(record); replaceRecord(record); } catch { remaining.push(record); } }
     localStorage.setItem(OUTBOX_KEY, JSON.stringify(remaining)); state.pendingSync = remaining.length; if (!remaining.length) state.storageMode = "cloud"; writeLocalRecords();
   })();
   try { await outboxSyncPromise; } finally { outboxSyncPromise = null; }
@@ -1753,19 +1823,29 @@ async function loadSession() {
     return;
   }
   if (!supabaseClient) { state.authenticated = false; state.authorized = false; state.user = null; state.authMessage = "O cliente seguro do Supabase não foi carregado."; state.authLoading = false; return; }
+  let sessionEmail = "";
   try {
     const { data, error } = await supabaseClient.auth.getSession();
     if (error) throw error;
     const session = data.session;
     if (!session?.user?.email) { state.authenticated = false; state.authorized = false; state.user = null; state.authLoading = false; return; }
     const email = session.user.email.trim().toLowerCase();
+    sessionEmail = email;
     state.authenticated = true;
     const { data: profile, error: profileError } = await supabaseClient.from("app_users").select("id,email,full_name,role,active").eq("active", true).eq("email", email).maybeSingle();
     if (profileError) throw profileError;
     state.authorized = Boolean(profile);
     state.user = profile ? { id: profile.id, email: profile.email, fullName: profile.full_name, role: profile.role } : { email, fullName: session.user.user_metadata?.full_name || email.split("@")[0], role: "viewer" };
     if (state.authorized) localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(state.user)); else clearProtectedLocalData();
-  } catch (error) { state.authenticated = false; state.authorized = false; state.user = null; state.authMessage = error.message || "Não foi possível validar a sessão."; }
+  } catch (error) {
+    let cached = null;
+    try { cached = JSON.parse(localStorage.getItem(AUTH_CACHE_KEY) || "null"); } catch {}
+    if (!state.online && sessionEmail && cached?.email?.toLowerCase() === sessionEmail && ["admin", "viewer", "operator"].includes(cached.role)) {
+      state.authenticated = true; state.authorized = true; state.user = cached; state.authMessage = "";
+    } else {
+      state.authenticated = false; state.authorized = false; state.user = null; state.authMessage = error.message || "Não foi possível validar a sessão.";
+    }
+  }
   state.authLoading = false;
 }
 
@@ -1778,6 +1858,31 @@ async function updateRecoveredPassword(event) { event?.preventDefault(); const p
 async function signOut() { if (state.saving || state.photoBusy) return; if (pendingPhotoFiles.size && !confirm("Há fotos ainda não salvas. Deseja sair e descartá-las?")) return; photoSessionEpoch++; await supabaseClient?.auth.signOut(); releasePendingPhotos(); photoUrls.clear(); state.draft = null; state.editingId = ""; state.editingInvoiceIndex = -1; state.newLocationMode = false; state.locations = []; state.goals = []; clearProtectedLocalData(); state.authenticated = false; state.authorized = false; state.user = null; state.records = []; state.team = []; state.teamLoaded = false; state.authMessage = "Sessão encerrada com segurança."; render(); }
 
 async function loadRecordsAndCategories() {
+  if (isOperator()) {
+    try {
+      const [categoriesResult, locationsResult] = await Promise.all([
+        supabaseClient.from("quality_categories").select("id,label,color").eq("active", true).order("label"),
+        supabaseClient.from("receiving_locations").select("id,label").order("label"),
+      ]);
+      if (categoriesResult.error) throw categoriesResult.error;
+      if (locationsResult.error) throw locationsResult.error;
+      if (categoriesResult.data?.length) state.categories = categoriesResult.data;
+      state.locations = locationsResult.data || [];
+      localStorage.setItem(LOCATION_KEY, JSON.stringify(state.locations));
+      saveCategoriesLocal();
+      state.storageMode = "cloud";
+    } catch {
+      state.categories = readCategories();
+      try { state.locations = JSON.parse(localStorage.getItem(LOCATION_KEY) || "[]"); } catch { state.locations = []; }
+      state.storageMode = "local";
+    }
+    state.records = [];
+    state.goals = [];
+    readOutbox().forEach(replaceRecord);
+    writeLocalRecords();
+    state.pendingSync = readOutbox().length;
+    return;
+  }
   try {
     await syncGoalChanges();
     const [recordsResult, categoriesResult, reasonsResult, locationsResult, goalsResult] = await Promise.all([
@@ -1817,7 +1922,7 @@ async function loadTeam() {
 
 async function addTeamMember() {
   if (!requireAdminAction()) return;
-  const fullName = document.querySelector('[name="teamFullName"]')?.value.trim() || ""; const email = document.querySelector('[name="teamEmail"]')?.value.trim().toLowerCase() || ""; const requestedRole = document.querySelector('[name="teamRole"]')?.value || "viewer"; const role = requestedRole === "admin" ? "admin" : "viewer";
+  const fullName = document.querySelector('[name="teamFullName"]')?.value.trim() || ""; const email = document.querySelector('[name="teamEmail"]')?.value.trim().toLowerCase() || ""; const requestedRole = document.querySelector('[name="teamRole"]')?.value || "viewer"; const role = ["admin", "operator", "viewer"].includes(requestedRole) ? requestedRole : "viewer";
   if (!/^\S+@\S+\.\S+$/.test(email)) return toast("Informe um e-mail válido.", "error");
   try { const existing = state.team.find((item) => item.email.toLowerCase() === email); const row = { email, full_name: fullName || email.split("@")[0], role, active: true, created_by: state.user.email, updated_at: new Date().toISOString() }; const query = existing ? supabaseClient.from("app_users").update(row).eq("id", existing.id) : supabaseClient.from("app_users").insert({ id: `user-${crypto.randomUUID()}`, ...row }); const { error } = await query; if (error) throw error; state.teamLoaded = false; await loadTeam(); toast(`${email} foi liberado.`, "success"); } catch (error) { toast(error.message || "Não foi possível liberar o acesso no Supabase.", "error"); }
 }
@@ -1829,7 +1934,7 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=37" : "/service-worker.js?v=37").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=38" : "/service-worker.js?v=38").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
 }
 
@@ -1842,7 +1947,7 @@ supabaseClient?.auth?.onAuthStateChange?.((event) => {
 
 window.addEventListener("beforeunload", (event) => { if (pendingPhotoFiles.size || state.saving || state.photoBusy) { event.preventDefault(); event.returnValue = ""; } });
 window.addEventListener("beforeinstallprompt", (event) => { event.preventDefault(); state.installPrompt = event; if (state.view === "form" && !state.saving && !state.photoBusy) state.draft = formRecordFromDom(); render(); });
-window.addEventListener("online", async () => { state.online = true; if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); await loadSession(); if (state.authorized) { await syncOutbox(); await syncGoalChanges(); } if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); render(); });
+window.addEventListener("online", async () => { state.online = true; if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); if (!isOperator()) await syncGoalChanges(); } if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); render(); });
 window.addEventListener("offline", () => { state.online = false; state.storageMode = "local"; if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); render(); });
 window.addEventListener("keydown", (event) => { if (event.key === "Escape" && state.modal) { state.modal = null; render(); } });
 

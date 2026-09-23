@@ -879,8 +879,25 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .report-image-control > div:first-child { flex: 1 1 350px; }
 .invoice-photo-report-toggle { flex: 1 1 100%; order: 2; }
 .report-image-control > .report-image-previews, .report-image-control > .report-image-empty { order: 3; width: 100%; }
+
+/* Perfil de campo: somente novos lançamentos. */
+.operator-shell .operator-topbar { grid-template-columns: minmax(230px, 1fr) auto; grid-template-rows: none; min-height: 82px; }
+.operator-shell .brand-lockup { cursor: default; }
+.operator-shell .operator-main { width: min(100%, 1120px); padding-top: 28px; }
+.operator-role-chip { min-height: 34px; padding: 7px 12px; display: inline-flex; align-items: center; color: var(--ink); font-size: .72rem; font-weight: 820; background: color-mix(in srgb, var(--yellow) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--yellow) 62%, var(--line)); border-radius: 999px; }
+.operator-form-view .page-heading { align-items: center; }
+.operator-sync-panel { margin-bottom: 16px; padding: 14px 17px; display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--yellow); border-radius: 12px; }
+.operator-sync-panel p { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.45; }
+.operator-field-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 14px; }
+.operator-receiving-form .quality-input-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.operator-receiving-form .final-form-panel { margin-bottom: 30px; }
+.operator-save-button { min-width: min(100%, 290px); }
 @media (max-width: 900px) {
   .location-picker, .pending-summary { align-items: stretch; flex-direction: column; gap: 12px; }
+  .operator-shell .operator-topbar { padding: 0 16px; position: sticky; grid-template-columns: 1fr auto; grid-template-rows: none; }
+  .operator-shell .top-actions { justify-content: flex-end; }
+  .operator-role-chip { display: none; }
+  .operator-shell .operator-main { padding-bottom: calc(30px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 620px) {
   .dashboard-view .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -896,6 +913,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .invoice-photo-grid img { height: 130px; }
   .invoice-photo-grid figcaption { padding: 10px; }
   .invoice-photo-grid input { min-height: 44px; font-size: .75rem; }
+  .operator-form-view .page-heading { align-items: stretch; }
+  .operator-form-view .heading-summary { width: 100%; min-width: 0; text-align: left; }
+  .operator-sync-panel { align-items: flex-start; flex-direction: column; }
+  .operator-field-grid, .operator-receiving-form .quality-input-grid { grid-template-columns: 1fr; }
+  .operator-save-button { width: 100%; }
 }
 @media (max-width: 390px) {
   .invoice-photo-grid { grid-template-columns: 1fr; }
