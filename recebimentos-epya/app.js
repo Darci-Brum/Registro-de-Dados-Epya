@@ -1113,6 +1113,10 @@ function renderRejectionSection(draft, items, rejections) {
 }
 
 function selectedDraftCollaborators(draft) {
+  if (state.editingInvoiceIndex >= 0) {
+    const target = invoiceItems(draft)[state.editingInvoiceIndex];
+    if (target) return invoiceCollaborators(draft, target);
+  }
   const source = invoiceCollaborators(draft);
   const fromInvoices = invoiceItems(draft).flatMap((item) => invoiceCollaborators(draft, item));
   const unique = new Map([...source, ...fromInvoices].map((person) => [person.id || person.name.toLocaleLowerCase("pt-BR"), person]));
@@ -1127,7 +1131,8 @@ function renderCrewVehicleFields(draft) {
     if (!catalog.some((entry) => entry.id === person.id || entry.fullName.toLocaleLowerCase("pt-BR") === person.name.toLocaleLowerCase("pt-BR"))) catalog.push(normalizeCollaborator(person));
   });
   catalog.sort((a, b) => (a.sortOrder - b.sortOrder) || a.fullName.localeCompare(b.fullName, "pt-BR"));
-  const currentPlate = String(draft.vehiclePlate || defaultVehicleForMaterial(draft.material)).toUpperCase();
+  const targetItem = state.editingInvoiceIndex >= 0 ? invoiceItems(draft)[state.editingInvoiceIndex] : null;
+  const currentPlate = String(targetItem?.vehiclePlate || draft.vehiclePlate || defaultVehicleForMaterial(draft.material)).toUpperCase();
   const vehicles = state.vehicles.filter((vehicle) => vehicle.active !== false && [draft.material, "todos"].includes(vehicle.material)).map(normalizeVehicle);
   if (currentPlate && !vehicles.some((vehicle) => vehicle.plate === currentPlate)) vehicles.push(normalizeVehicle({ id: `current-${currentPlate}`, plate: currentPlate, material: draft.material, label: "Veículo deste lançamento" }));
   return `<section class="crew-vehicle-fields"><div class="crew-vehicle-heading"><div><span class="eyebrow">Equipe da descarga</span><h3>Colaboradores presentes e veículo</h3><p>Marque quem participou. A informação será salva dentro de cada NF deste lançamento.</p></div><span class="crew-count">${selected.length} selecionado(s)</span></div><div class="crew-vehicle-grid"><div class="crew-selector" role="group" aria-label="Colaboradores presentes">${catalog.map((person) => { const checked = selectedKeys.has(person.id) || selectedKeys.has(person.fullName.toLocaleLowerCase("pt-BR")); return `<label class="crew-option ${checked ? "selected" : ""}"><input type="checkbox" name="collaboratorIds" value="${escapeHtml(person.id)}" ${checked ? "checked" : ""} /><span><strong>${escapeHtml(person.fullName)}</strong>${person.roleLabel ? `<small>${escapeHtml(person.roleLabel)}</small>` : ""}</span><i aria-hidden="true">✓</i></label>`; }).join("")}</div><div class="crew-side-fields"><label><span>Veículo usado *</span><select name="vehiclePlate" required>${vehicles.map((vehicle) => `<option value="${escapeHtml(vehicle.plate)}" ${vehicle.plate === currentPlate ? "selected" : ""}>${escapeHtml(vehicle.plate)}${vehicle.label ? ` — ${escapeHtml(vehicle.label)}` : ""}</option>`).join("")}</select><small>Padrão: ${escapeHtml(defaultVehicleForMaterial(draft.material))}</small></label><div class="catalog-add-box"><strong>Adicionar outro colaborador</strong><div><input name="newCollaboratorName" placeholder="Nome completo" /><button type="button" class="button button-outline" data-add-collaborator>Adicionar</button></div></div><div class="catalog-add-box"><strong>Adicionar outro veículo</strong><div><input name="newVehiclePlate" placeholder="Placa ou identificação" /><button type="button" class="button button-outline" data-add-vehicle>Adicionar</button></div></div></div></div></section>`;
@@ -1152,7 +1157,8 @@ function formRecordFromDom() {
     const qualityCard = form.querySelector(`[data-invoice-quality-card="${index}"]`);
     const quality = { ...blankQuality(material), ...(previous?.quality || {}) };
     categories.forEach((category) => { quality[category.id] = number(qualityCard?.querySelector(`[data-quality-category="${category.id}"]`)?.value); });
-    return { ...previous, id: previous?.id || crypto.randomUUID(), number: numberValue, quantity: number(invoiceQuantities[index]?.value), vehiclePlate, collaborators: selectedCollaborators, quality, photos: (previous?.photos || []).map((photo) => ({ ...photo, caption: [...form.querySelectorAll("[data-photo-caption]")].find((input) => input.dataset.photoCaption === photo.id)?.value.trim() ?? photo.caption ?? "" })) };
+    const appliesToInvoice = state.editingInvoiceIndex < 0 || state.editingInvoiceIndex === index;
+    return { ...previous, id: previous?.id || crypto.randomUUID(), number: numberValue, quantity: number(invoiceQuantities[index]?.value), vehiclePlate: appliesToInvoice ? vehiclePlate : String(previous?.vehiclePlate || defaultVehicleForMaterial(material)).toUpperCase(), collaborators: appliesToInvoice ? selectedCollaborators : invoiceCollaborators(state.draft || {}, previous), quality, photos: (previous?.photos || []).map((photo) => ({ ...photo, caption: [...form.querySelectorAll("[data-photo-caption]")].find((input) => input.dataset.photoCaption === photo.id)?.value.trim() ?? photo.caption ?? "" })) };
   });
   const rejections = [...form.querySelectorAll("[data-rejection-row]")].map((row) => {
     const reasonId = row.querySelector('[name="rejectionReason"]')?.value || "";
@@ -1161,7 +1167,9 @@ function formRecordFromDom() {
   if (material === "dormente" && !isOperator()) items.forEach((item) => { item.quality.reprovados = rejections.filter((rejection) => rejection.invoiceNumber === item.number).length; });
   const quality = { ...((state.draft || {}).quality || {}) };
   categories.forEach((category) => { quality[category.id] = items.reduce((sum, item) => sum + number(item.quality?.[category.id]), 0); });
-  return { ...(state.draft || defaultDraft()), material, receivedDate: form.elements.receivedDate.value, receivedTime: form.elements.receivedTime.value, timeKnown: Boolean(form.elements.receivedTime.value), location: form.elements.location.value.trim(), supplier: form.elements.supplier.value.trim(), vehiclePlate, collaborators: selectedCollaborators, inspectorName: form.elements.inspectorName.value.trim(), observations: form.elements.observations.value.trim(), invoiceItems: items.length ? items : [blankInvoiceItem(material)], quality, rejections, _cleanupMolde57Cav1: true };
+  const savedItems = items.length ? items : [blankInvoiceItem(material)];
+  const collaborators = [...new Map(savedItems.flatMap((item) => invoiceCollaborators({}, item)).map((person) => [person.id || person.name.toLocaleLowerCase("pt-BR"), person])).values()];
+  return { ...(state.draft || defaultDraft()), material, receivedDate: form.elements.receivedDate.value, receivedTime: form.elements.receivedTime.value, timeKnown: Boolean(form.elements.receivedTime.value), location: form.elements.location.value.trim(), supplier: form.elements.supplier.value.trim(), vehiclePlate: savedItems[0]?.vehiclePlate || vehiclePlate, collaborators, inspectorName: form.elements.inspectorName.value.trim(), observations: form.elements.observations.value.trim(), invoiceItems: savedItems, quality, rejections, _cleanupMolde57Cav1: true };
 }
 
 function renderInvoiceQualityCards(draft, items, rejections) {
@@ -1872,8 +1880,9 @@ async function addReceivingCollaborator(rawName) {
   if (!existing) state.collaborators.push(person);
   const selected = new Map(selectedDraftCollaborators(state.draft).map((entry) => [entry.id || entry.name, entry]));
   selected.set(person.id, collaboratorEntry(person));
-  state.draft.collaborators = [...selected.values()];
-  state.draft.invoiceItems = state.draft.invoiceItems.map((item) => ({ ...item, collaborators: state.draft.collaborators }));
+  const selectedPeople = [...selected.values()];
+  state.draft.invoiceItems = state.draft.invoiceItems.map((item, index) => state.editingInvoiceIndex < 0 || state.editingInvoiceIndex === index ? { ...item, collaborators: selectedPeople } : item);
+  state.draft.collaborators = [...new Map(state.draft.invoiceItems.flatMap((item) => invoiceCollaborators({}, item)).map((entry) => [entry.id || entry.name.toLocaleLowerCase("pt-BR"), entry])).values()];
   saveCollaboratorsLocal();
   if (supabaseClient && state.online && !existing) {
     const { error } = await supabaseClient.from("receiving_collaborators").upsert({ id: person.id, full_name: person.fullName, role_label: person.roleLabel, active: true, sort_order: person.sortOrder, created_by: state.user?.email || "app", updated_at: new Date().toISOString() }, { onConflict: "id" });
@@ -1891,7 +1900,8 @@ async function addReceivingVehicle(rawPlate) {
   const vehicle = existing || normalizeVehicle({ id: catalogId(plate), plate, material: state.draft.material, label: "Veículo adicionado no lançamento", active: true, sortOrder: state.vehicles.length * 10 + 10 });
   if (!existing) state.vehicles.push(vehicle);
   state.draft.vehiclePlate = plate;
-  state.draft.invoiceItems = state.draft.invoiceItems.map((item) => ({ ...item, vehiclePlate: plate }));
+  state.draft.invoiceItems = state.draft.invoiceItems.map((item, index) => state.editingInvoiceIndex < 0 || state.editingInvoiceIndex === index ? { ...item, vehiclePlate: plate } : item);
+  state.draft.vehiclePlate = state.draft.invoiceItems[0]?.vehiclePlate || plate;
   saveVehiclesLocal();
   if (supabaseClient && state.online && !existing) {
     const { error } = await supabaseClient.from("receiving_vehicles").upsert({ id: vehicle.id, plate: vehicle.plate, material: vehicle.material, label: vehicle.label, active: true, sort_order: vehicle.sortOrder, created_by: state.user?.email || "app", updated_at: new Date().toISOString() }, { onConflict: "id" });
