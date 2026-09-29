@@ -67,7 +67,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .nav-button:hover, .nav-button.active { color: #fff; }
 .nav-button.active::after { transform: scaleX(1); }
 .top-actions { display: flex; align-items: center; gap: 8px; }
-.status-pill, .sync-badge { min-height: 34px; padding: 6px 10px; display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: .74rem; font-weight: 730; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; }
+.status-pill, .sync-badge { min-height: 34px; padding: 6px 10px; display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-family: inherit; font-size: .74rem; font-weight: 730; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; }
+.sync-badge[data-retry-sync] { cursor: pointer; }
+.sync-badge[data-retry-sync]:hover { border-color: var(--orange); transform: translateY(-1px); }
+.sync-badge.is-syncing { cursor: wait; opacity: .82; }
 .topbar .status-pill { color: #d3d7dc; background: #24282d; border-color: #3a4047; }
 .status-pill { cursor: pointer; }
 .status-pill i, .sync-badge i { width: 7px; height: 7px; background: var(--green); border-radius: 50%; box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 16%, transparent); }
@@ -656,7 +659,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 
 @media (max-width: 1250px) {
   .topbar { grid-template-columns: auto 1fr; gap: 16px; }
-  .brand-lockup small, .status-pill, .user-chip, .control-owner-chip > span { display: none; }
+  .brand-lockup small, .status-pill, .control-owner-chip > span { display: none; }
   .main-nav { justify-content: flex-start; }
   .nav-button { min-width: 62px; }
   .nav-button span { display: none; }
@@ -682,9 +685,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .mobile-nav .nav-button::after { right: 24%; bottom: -5px; left: 24%; }
   .mobile-nav .nav-button span { font-size: 1rem; }
   .mobile-nav .nav-button b { font-size: .67rem; }
-  .user-chip { width: 46px; height: 46px; min-width: 46px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; }
-  .user-chip::before { content: "Sair"; font-size: .62rem; font-weight: 850; }
-  .user-chip strong, .user-chip small { display: none; }
+  .user-chip { width: auto; height: 46px; min-width: 78px; padding: 0 10px; display: grid; place-content: center start; border: 1px solid var(--line); border-radius: 10px; }
+  .user-chip::before { content: none; }
+  .user-chip strong { max-width: 96px; display: block; font-size: .7rem; }
+  .user-chip small { display: none; }
   .app-main { padding-bottom: calc(108px + env(safe-area-inset-bottom)); }
   .dashboard-hero { min-height: 430px; padding: 28px; align-items: flex-end; background: linear-gradient(0deg, rgba(8, 10, 13, .96) 0%, rgba(8, 10, 13, .72) 54%, rgba(8, 10, 13, .1) 100%), url("./hero-recebimento-epya.png") 60% center / cover; }
   .hero-corner-brand { width: 245px; min-height: 74px; top: 18px; right: 18px; grid-template-columns: 50px 1fr; gap: 11px; }

@@ -35,18 +35,18 @@ const requestedView = new URLSearchParams(window.location.search).get("view");
 const CONTROL_OWNER = "Darci de Brum";
 
 const DEFAULT_COLLABORATORS = [
-  { id: "diego-nunes-delmiro-da-silva", fullName: "Diego Nunes Delmiro da Silva", roleLabel: "" },
+  { id: "diego-nunes-delmiro-da-silva", fullName: "Diego Nunes Delmiro da Silva", roleLabel: "Apontador de Qualidade" },
   { id: "wesley-nunes-da-silva", fullName: "Wesley Nunes da Silva", roleLabel: "" },
   { id: "jean-nunes-da-silva", fullName: "Jean Nunes da Silva", roleLabel: "" },
-  { id: "matheus-dos-santos", fullName: "Matheus dos Santos", roleLabel: "Operador da máquina de trilhos" },
+  { id: "matheus-dos-santos", fullName: "Matheus dos Santos", roleLabel: "Operador de Máquinas Pesadas" },
   { id: "thaynan-marques-silva", fullName: "Thaynan Marques Silva", roleLabel: "" },
   { id: "adriano-jose-da-silva-santos", fullName: "Adriano José da Silva Santos", roleLabel: "" },
   { id: "josenilton-bezerra-da-silva", fullName: "Josenilton Bezerra da Silva", roleLabel: "" },
-  { id: "romario-do-nascimento-conceicao", fullName: "Romario do Nascimento Conceição", roleLabel: "Operador da máquina de dormentes" },
+  { id: "romario-do-nascimento-conceicao", fullName: "Romario do Nascimento Conceição", roleLabel: "Operador de Máquinas Pesadas" },
   { id: "jose-ivan-barbosa-da-silva", fullName: "José Ivan Barbosa da Silva", roleLabel: "" },
   { id: "antonio-rodrigues-dos-santos", fullName: "Antônio Rodrigues dos Santos", roleLabel: "" },
   { id: "leonilton-de-almeida-correia", fullName: "Leonilton de Almeida Correia", roleLabel: "" },
-  { id: "leudevan-da-silva", fullName: "Leudevan da Silva", roleLabel: "Operador da máquina de dormentes" },
+  { id: "leudevan-da-silva", fullName: "Leudevan da Silva", roleLabel: "Operador de Máquinas Pesadas" },
   { id: "everaldo-costa-silva", fullName: "Everaldo Costa Silva", roleLabel: "" },
 ];
 
@@ -91,6 +91,8 @@ const state = {
   online: navigator.onLine,
   storageMode: "cloud",
   pendingSync: 0,
+  syncing: false,
+  syncError: "",
   installPrompt: null,
   theme: localStorage.getItem(THEME_KEY) || "light",
   tvMode: false,
@@ -528,6 +530,11 @@ function roleLabel(role = state.user?.role) {
   return "Consulta";
 }
 
+function greetingName() {
+  const fullName = String(state.user?.fullName || state.user?.email || "").trim();
+  return fullName.split(/\s+/)[0] || "usuário";
+}
+
 function requireAdminAction() {
   if (canEdit()) return true;
   toast("Esta ação é exclusiva do administrador.", "error");
@@ -567,7 +574,7 @@ function render() {
         <header class="topbar operator-topbar no-print">
           <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel de recebimentos"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Operação em campo</small></span></button>
           <nav class="main-nav operator-nav" aria-label="Navegação do operador">${navButton("dashboard", "Painel", "▦")}${navButton("form", "Novo lançamento", "+")}</nav>
-          <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync} pendente(s)` : ""}</button><span class="operator-role-chip">Operador de recebimento</span><button class="user-chip" type="button" data-sign-out aria-label="Sair da conta ${escapeHtml(state.user?.email || "")}"><strong>Sair</strong><small>${escapeHtml(state.user?.fullName || state.user?.email || "")}</small></button></div>
+          <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync} pendente(s)` : ""}</button><span class="operator-role-chip">Operador de recebimento</span><button class="user-chip" type="button" data-sign-out aria-label="Olá, ${escapeHtml(greetingName())}. Sair da conta"><strong>Olá, ${escapeHtml(greetingName())}</strong><small>${roleLabel()} • Sair</small></button></div>
         </header>
         <main class="app-main operator-main">${operatorContent}</main>
         <footer class="mobile-nav operator-mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${navButton("form", "Lançar", "+")}</footer>
@@ -581,7 +588,7 @@ function render() {
       <header class="topbar no-print">
         <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel EPYA"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Controle diário de materiais</small></span></button>
         <nav class="main-nav" aria-label="Navegação principal">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprovados", "!")}${navButton("reports", "Relatórios", "▤")}${!PUBLIC_LINK_MODE && state.user.role === "admin" ? navButton("team", "Acessos", "◎") : ""}</nav>
-        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><button class="user-chip" type="button" data-sign-out aria-label="Sair da conta ${escapeHtml(state.user?.email || "")}"><strong>Sair</strong><small>${roleLabel()} • ${escapeHtml(state.user?.email || "")}</small></button></div>
+        <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync}` : ""}</button><button class="icon-button" data-theme-toggle title="Alternar tema" aria-label="Alternar tema">${state.theme === "dark" ? "☀" : "◐"}</button><button class="button button-dark compact" data-tv-toggle>Modo TV</button><span class="control-owner-chip"><i>DB</i><span><small class="control-motto">Qualidade é compromisso.</small><small>Responsável pelo controle</small><strong>${CONTROL_OWNER}</strong></span></span><button class="user-chip" type="button" data-sign-out aria-label="Olá, ${escapeHtml(greetingName())}. Sair da conta"><strong>Olá, ${escapeHtml(greetingName())}</strong><small>${roleLabel()} • Sair</small></button></div>
       </header>
       <main class="app-main">${renderCurrentView()}</main>
       <footer class="mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${canEdit() ? navButton("form", "Lançar", "+") : ""}${navButton("history", "Histórico", "⌕")}${navButton("quality", "Qualidade", "◇")}${navButton("rejections", "Reprov.", "!")}${navButton("reports", "Relatórios", "▤")}</footer>
@@ -604,6 +611,7 @@ function renderAccessScreen() {
 
 function bindAccessEvents() {
   document.querySelectorAll("[data-install]").forEach((button) => button.addEventListener("click", installApp));
+  document.querySelectorAll("[data-retry-sync]").forEach((button) => button.addEventListener("click", retryPendingSync));
   document.querySelector("[data-auth-form]")?.addEventListener("submit", signInWithEmail);
   document.querySelector("[data-create-account]")?.addEventListener("click", createFirstAccess);
   document.querySelector("[data-forgot-password]")?.addEventListener("click", requestPasswordReset);
@@ -623,7 +631,11 @@ function renderCurrentView() {
 }
 
 function renderSyncBadge() {
-  if (state.pendingSync) return `<span class="sync-badge warning"><i></i> ${state.pendingSync} aguardando sincronização</span>`;
+  if (state.syncing) return '<button class="sync-badge warning is-syncing" type="button" disabled><i></i> Sincronizando…</button>';
+  if (state.pendingSync) {
+    const explanation = state.syncError || "O lançamento está salvo neste aparelho e será enviado ao Supabase assim que houver conexão.";
+    return `<button class="sync-badge warning" type="button" data-retry-sync title="${escapeHtml(explanation)}"><i></i> ${state.pendingSync} aguardando sincronização • Tentar agora</button>`;
+  }
   return state.storageMode === "cloud" ? '<span class="sync-badge success"><i></i> Supabase sincronizado</span>' : '<span class="sync-badge warning"><i></i> Salvo neste aparelho</span>';
 }
 
@@ -2093,19 +2105,59 @@ function clearProtectedLocalData() { [STORAGE_KEY, OUTBOX_KEY, AUTH_CACHE_KEY, C
 function readLocalRecords() { try { const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); return Array.isArray(stored) ? stored.map(sanitizeLegacyMoldEntry).sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))) : []; } catch { return []; } }
 function writeLocalRecords() { if (state.authorized) localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records)); }
 function readOutbox() { try { const records = JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]"); return Array.isArray(records) ? records : []; } catch { return []; } }
-function queueForSync(record) { const outbox = readOutbox(); const index = outbox.findIndex((item) => item.id === record.id); if (index >= 0) outbox[index] = record; else outbox.push(record); localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); state.pendingSync = outbox.length; }
-function forgetQueuedRecord(id) { const outbox = readOutbox().filter((record) => record.id !== id); localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); state.pendingSync = outbox.length; }
+function queueForSync(record) { const outbox = readOutbox(); const index = outbox.findIndex((item) => item.id === record.id); if (index >= 0) outbox[index] = record; else outbox.push(record); localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); state.pendingSync = outbox.length; state.syncError = ""; }
+function forgetQueuedRecord(id) { const outbox = readOutbox().filter((record) => record.id !== id); localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); state.pendingSync = outbox.length; if (!outbox.length) state.syncError = ""; }
+
+function syncFailureMessage(error) {
+  const raw = String(error?.message || "").toLocaleLowerCase("pt-BR");
+  if (!state.online || raw.includes("fetch") || raw.includes("network")) return "Sem conexão com o Supabase. O lançamento continua salvo neste aparelho.";
+  if (raw.includes("permission") || raw.includes("policy") || raw.includes("row-level security")) return "Este acesso não conseguiu enviar o lançamento. Entre novamente ou procure o administrador.";
+  return "O envio não foi concluído. Toque para tentar novamente; o lançamento permanece salvo neste aparelho.";
+}
 
 let outboxSyncPromise = null;
 async function syncOutbox() {
   if (outboxSyncPromise) return outboxSyncPromise;
-  if (!supabaseClient || !state.online || !state.authorized || state.saving) return;
+  if (state.user?.role === "viewer") {
+    localStorage.removeItem(OUTBOX_KEY);
+    state.pendingSync = 0;
+    state.syncError = "";
+    return true;
+  }
+  if (!supabaseClient || !state.online || !state.authorized || state.saving) return false;
   outboxSyncPromise = (async () => {
-    const pending = readOutbox(); const remaining = [];
-    for (const record of pending) { try { await persistRecord(record); replaceRecord(record); } catch { remaining.push(record); } }
-    localStorage.setItem(OUTBOX_KEY, JSON.stringify(remaining)); state.pendingSync = remaining.length; if (!remaining.length) state.storageMode = "cloud"; writeLocalRecords();
+    const pending = readOutbox(); const remaining = []; let firstError = "";
+    for (const queuedRecord of pending) {
+      const record = normalizeMaterialSupplier(sanitizeLegacyMoldEntry(queuedRecord));
+      try {
+        await persistRecord(record);
+        replaceRecord(record);
+      } catch (error) {
+        remaining.push(record);
+        if (!firstError) firstError = syncFailureMessage(error);
+      }
+    }
+    localStorage.setItem(OUTBOX_KEY, JSON.stringify(remaining));
+    state.pendingSync = remaining.length;
+    state.syncError = remaining.length ? firstError : "";
+    if (!remaining.length) state.storageMode = "cloud";
+    writeLocalRecords();
+    return !remaining.length;
   })();
-  try { await outboxSyncPromise; } finally { outboxSyncPromise = null; }
+  try { return await outboxSyncPromise; } finally { outboxSyncPromise = null; }
+}
+
+async function retryPendingSync() {
+  if (state.syncing || !state.pendingSync) return;
+  if (!state.online) return toast("Sem internet. O lançamento está protegido neste aparelho e será enviado quando a conexão voltar.", "error");
+  state.syncing = true;
+  state.syncError = "";
+  render();
+  const synced = await syncOutbox();
+  state.syncing = false;
+  if (synced) await loadRecordsAndCategories();
+  render();
+  toast(synced ? "Sincronização concluída com o Supabase." : (state.syncError || "Não foi possível sincronizar agora."), synced ? "success" : "error");
 }
 
 async function loadSession() {
@@ -2131,6 +2183,7 @@ async function loadSession() {
     if (profileError) throw profileError;
     state.authorized = Boolean(profile);
     state.user = profile ? { id: profile.id, email: profile.email, fullName: profile.full_name, role: profile.role } : { email, fullName: session.user.user_metadata?.full_name || email.split("@")[0], role: "viewer" };
+    if (state.user.role === "viewer") { localStorage.removeItem(OUTBOX_KEY); state.pendingSync = 0; state.syncError = ""; }
     if (state.authorized) localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(state.user)); else clearProtectedLocalData();
   } catch (error) {
     let cached = null;
@@ -2261,7 +2314,7 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=40" : "/service-worker.js?v=40").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=41" : "/service-worker.js?v=41").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); if (isOperator()) await loadOperatorDashboardSummary(); } state.loading = false; render();
 }
 
@@ -2276,6 +2329,7 @@ window.addEventListener("beforeunload", (event) => { if (pendingPhotoFiles.size 
 window.addEventListener("beforeinstallprompt", (event) => { event.preventDefault(); state.installPrompt = event; if (state.view === "form" && !state.saving && !state.photoBusy) state.draft = formRecordFromDom(); render(); });
 window.addEventListener("online", async () => { state.online = true; if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); if (isOperator()) await loadOperatorDashboardSummary(); else await syncGoalChanges(); } if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); render(); });
 window.addEventListener("offline", () => { state.online = false; state.storageMode = "local"; if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); render(); });
+document.addEventListener?.("visibilitychange", async () => { if (document.visibilityState !== "visible" || !state.online || !state.pendingSync || state.saving || state.photoBusy) return; await syncOutbox(); render(); });
 window.addEventListener("keydown", (event) => { if (event.key === "Escape" && state.modal) { state.modal = null; render(); } });
 
 bootstrap();
