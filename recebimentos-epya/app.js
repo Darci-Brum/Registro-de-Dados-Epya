@@ -24,6 +24,7 @@ const REJECTION_REASON_KEY = "epya-recebimentos-rejection-reasons-v1";
 const LOCATION_KEY = "epya-recebimentos-locations-v1";
 const GOAL_KEY = "epya-recebimentos-goals-v1";
 const GOAL_OUTBOX_KEY = "epya-recebimentos-goals-outbox-v1";
+const OPERATOR_DASHBOARD_KEY = "epya-recebimentos-operator-dashboard-v1";
 const PHOTO_BUCKET = "recebimento-nf-photos";
 const MAX_INVOICE_PHOTOS = 6;
 const pendingPhotoFiles = new Map();
@@ -42,7 +43,7 @@ const RAIL_QUALITY_CATEGORIES = [
 
 const MATERIALS = {
   dormente: { label: "Dormentes", singular: "Dormente", unit: "un", color: "#f4c914" },
-  trilho: { label: "Trilhos", singular: "Trilho", unit: "barras", color: "#39b8ff" },
+  trilho: { label: "Trilhos", singular: "Trilho", unit: "barras", color: "#287fa3" },
 };
 
 const state = {
@@ -77,6 +78,8 @@ const state = {
   dashboardTab: "overview",
   dashboardLocation: "",
   locations: [],
+  operatorSummary: [],
+  operatorReceiptConfirmation: null,
   goals: readGoals(),
   saving: false,
   photoBusy: false,
@@ -218,7 +221,7 @@ function defaultDraft(material = "dormente") {
     receivedTime: nowTime(),
     timeKnown: true,
     location: "",
-    supplier: material === "dormente" ? "Cavan / Arauco" : "Arauco",
+    supplier: supplierForMaterial(material),
     vehiclePlate: "",
     inspectorName: CONTROL_OWNER,
     invoiceItems: [blankInvoiceItem(material)],
@@ -229,10 +232,13 @@ function defaultDraft(material = "dormente") {
   };
 }
 
+function supplierForMaterial(material) {
+  return material === "dormente" ? "Cavan / Arauco" : "Arauco";
+}
+
 function normalizeMaterialSupplier(record) {
-  if (!record || record.material !== "trilho" || !/\bcavan\b/i.test(record.supplier || "")) return record;
-  const supplier = String(record.supplier).replace(/\bcavan\b/gi, "").replace(/^[\s/,&;+|–—-]+|[\s/,&;+|–—-]+$/g, "").trim();
-  return { ...record, supplier: supplier || "Arauco" };
+  if (!record || !MATERIALS[record.material]) return record;
+  return { ...record, supplier: supplierForMaterial(record.material) };
 }
 
 function locationKey(location) {
@@ -437,15 +443,24 @@ function render() {
     return;
   }
   if (isOperator()) {
-    state.view = "form";
+    if (!["dashboard", "form", "confirmation"].includes(state.view)) state.view = "dashboard";
     state.tvMode = false;
+    const operatorContent = state.loading
+      ? '<section class="loading-panel"><span class="spinner"></span><h1>Preparando seu acesso</h1></section>'
+      : state.view === "form"
+        ? renderOperatorForm()
+        : state.view === "confirmation"
+          ? renderOperatorConfirmation()
+          : renderOperatorDashboard();
     app.innerHTML = `
       <div class="app-shell operator-shell">
         <header class="topbar operator-topbar no-print">
-          <div class="brand-lockup"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Modo de lançamento em campo</small></span></div>
+          <button class="brand-lockup" data-nav="dashboard" aria-label="Abrir painel de recebimentos"><img src="./epya-logo-oficial.png" alt="EPYA" /><span><strong>Recebimentos</strong><small>Operação em campo</small></span></button>
+          <nav class="main-nav operator-nav" aria-label="Navegação do operador">${navButton("dashboard", "Painel", "▦")}${navButton("form", "Novo lançamento", "+")}</nav>
           <div class="top-actions"><button class="status-pill ${state.online ? "online" : "offline"}" data-install><i></i>${state.online ? "Online" : "Offline"}${state.pendingSync ? ` • ${state.pendingSync} pendente(s)` : ""}</button><span class="operator-role-chip">Operador de recebimento</span><button class="user-chip" type="button" data-sign-out aria-label="Sair da conta ${escapeHtml(state.user?.email || "")}"><strong>Sair</strong><small>${escapeHtml(state.user?.fullName || state.user?.email || "")}</small></button></div>
         </header>
-        <main class="app-main operator-main">${state.loading ? '<section class="loading-panel"><span class="spinner"></span><h1>Preparando o lançamento</h1></section>' : renderOperatorForm()}</main>
+        <main class="app-main operator-main">${operatorContent}</main>
+        <footer class="mobile-nav operator-mobile-nav no-print">${navButton("dashboard", "Painel", "▦")}${navButton("form", "Lançar", "+")}</footer>
         <div class="toast" role="status" aria-live="polite"></div>
       </div>`;
     bindEvents();
@@ -1030,10 +1045,69 @@ function renderForm() {
   const rejections = isSleeper ? rejectionRows(draft) : [];
   return `<section class="view form-view"><div class="page-heading"><div><button class="back-link" data-nav="dashboard">← Voltar ao painel</button><span class="eyebrow">${state.editingId ? "Editar lançamento" : "Novo recebimento"}</span><h1>${state.editingId ? "Atualizar recebimento" : "Registrar chegada do dia"}</h1><p>Informe as NFs e as quantidades. O total é calculado automaticamente.</p></div><div class="heading-summary"><span>Total deste lançamento</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></div><form id="receiving-form" class="receiving-form"><fieldset class="receiving-fields" ${state.saving || state.photoBusy ? "disabled" : ""}>
     <article class="panel form-panel"><div class="form-section-title"><span>01</span><div><h2>Material recebido</h2><p>Escolha o tipo antes de preencher as notas.</p></div></div><div class="material-selector"><button type="button" class="material-option ${isSleeper ? "active" : ""}" data-material="dormente"><i class="sleeper-icon"></i><span><strong>Dormentes</strong><small>Meta: ${formatNumber(TARGET_SLEEPERS)} unidades</small></span><b>${isSleeper ? "✓" : ""}</b></button><button type="button" class="material-option ${!isSleeper ? "active" : ""}" data-material="trilho"><i class="rail-icon"></i><span><strong>Trilhos</strong><small>Meta aberta para definição</small></span><b>${!isSleeper ? "✓" : ""}</b></button></div><input type="hidden" name="material" value="${draft.material}" /></article>
-    <article class="panel form-panel"><div class="form-section-title"><span>02</span><div><h2>Data, horário e local</h2><p>O horário pode ficar vazio quando ainda não foi confirmado.</p></div></div><div class="field-grid four"><label><span>Data do recebimento *</span><input type="date" name="receivedDate" value="${escapeHtml(draft.receivedDate)}" required /></label><label><span>Horário</span><input type="time" name="receivedTime" value="${escapeHtml(draft.receivedTime || "")}" /></label>${renderLocationField(draft)}<label class="span-two"><span>Fornecedor / origem</span><input name="supplier" value="${escapeHtml(draft.supplier)}" /></label><label><span>Placa do veículo</span><input name="vehiclePlate" value="${escapeHtml(draft.vehiclePlate || "")}" placeholder="ABC-1D23" /></label><label><span>Responsável</span><input name="inspectorName" value="${escapeHtml(draft.inspectorName || "")}" /></label></div></article>
+    <article class="panel form-panel"><div class="form-section-title"><span>02</span><div><h2>Data, horário e local</h2><p>O horário pode ficar vazio quando ainda não foi confirmado.</p></div></div><div class="field-grid four"><label><span>Data do recebimento *</span><input type="date" name="receivedDate" value="${escapeHtml(draft.receivedDate)}" required /></label><label><span>Horário</span><input type="time" name="receivedTime" value="${escapeHtml(draft.receivedTime || "")}" /></label>${renderLocationField(draft)}<label class="span-two supplier-fixed-field"><span>Fornecedor / origem</span><input name="supplier" value="${escapeHtml(supplierForMaterial(draft.material))}" readonly aria-readonly="true" /><small>Definido automaticamente pelo material.</small></label><label><span>Placa do veículo</span><input name="vehiclePlate" value="${escapeHtml(draft.vehiclePlate || "")}" placeholder="ABC-1D23" /></label><label><span>Responsável</span><input name="inspectorName" value="${escapeHtml(draft.inspectorName || "")}" /></label></div></article>
     <article class="panel form-panel invoice-panel"><div class="form-section-title"><span>03</span><div><h2>Notas fiscais e quantidades</h2><p>Adicione quantas NFs chegaram juntas. A soma aparece no topo.</p></div></div><div class="invoice-head"><span>Nota fiscal</span><span>Quantidade</span><span></span></div><div class="invoice-list">${items.map((item, index) => `<div class="invoice-row ${state.editingInvoiceIndex === index ? "edit-target" : ""}" data-invoice-row="${index}"><label><span>NF ${index + 1}</span><input name="invoiceNumber" value="${escapeHtml(item.number)}" inputmode="numeric" placeholder="Número da NF" required /></label><label><span>Quantidade</span><input type="number" min="0" name="invoiceQuantity" value="${item.quantity || ""}" placeholder="0" required /></label><button type="button" class="remove-row" data-remove-invoice="${index}" aria-label="Remover nota" ${items.length === 1 ? "disabled" : ""}>×</button></div>`).join("")}</div><button type="button" class="add-row-button" data-add-invoice>＋ Adicionar outra NF</button><div class="invoice-total"><span>Total automático</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></article>
     <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Qualidade por nota fiscal</h2><p>Cada NF tem seus próprios defeitos. Ao adicionar outra nota, estes campos começam zerados.</p></div></div>${renderInvoiceQualityCards(draft, items, rejections)}${isSleeper ? `<p id="rejected-help" class="rejected-help">Os reprovados são calculados por NF a partir dos registros individuais abaixo.</p><div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div>${renderRejectionSection(draft, items, rejections)}` : '<p class="rail-quality-note">Registre em cada NF o empenamento, a corrosão e os danos no boleto, alma ou patim.</p>'}</article>
     ${renderInvoicePhotoFields(draft)}<article class="panel form-panel final-form-panel"><div class="form-section-title"><span>06</span><div><h2>Observações e confirmação</h2><p>Registre qualquer ressalva importante para o relatório.</p></div></div><label><span>Observações</span><textarea name="observations" rows="4" placeholder="Condições da descarga, divergências ou informações complementares">${escapeHtml(draft.observations || "")}</textarea></label><div data-draft-warnings>${renderDraftWarnings(draft)}</div><div class="form-actions"><button type="button" class="button button-outline" data-cancel-form>Cancelar</button><button type="button" class="button button-dark" data-save-status="rascunho">Salvar rascunho</button><button type="submit" class="button button-yellow" ${state.saving || state.photoBusy ? "disabled" : ""}>${state.saving ? "Salvando…" : state.editingId ? "Atualizar recebimento" : "Salvar recebimento"}</button></div></article></fieldset></form></section>`;
+}
+
+function normalizeOperatorSummaryRow(row = {}) {
+  return {
+    location: String(row.location || "Local não informado").trim() || "Local não informado",
+    material: row.material === "dormente" ? "dormente" : "trilho",
+    quantity: number(row.total_quantity ?? row.quantity),
+    invoiceCount: number(row.invoice_count ?? row.invoiceCount),
+    lastReceivedDate: String(row.last_received_date ?? row.lastReceivedDate ?? "").slice(0, 10),
+  };
+}
+
+function operatorSummaryMetrics(rows = state.operatorSummary) {
+  const normalized = rows.map(normalizeOperatorSummaryRow);
+  const dates = normalized.map((row) => row.lastReceivedDate).filter(Boolean).sort();
+  return {
+    sleepers: normalized.filter((row) => row.material === "dormente").reduce((sum, row) => sum + row.quantity, 0),
+    rails: normalized.filter((row) => row.material === "trilho").reduce((sum, row) => sum + row.quantity, 0),
+    invoices: normalized.reduce((sum, row) => sum + row.invoiceCount, 0),
+    lastReceivedDate: dates.at(-1) || "",
+  };
+}
+
+function operatorLocationGroups(rows = state.operatorSummary) {
+  const groups = new Map();
+  rows.map(normalizeOperatorSummaryRow).forEach((row) => {
+    const key = locationKey(row.location);
+    if (!groups.has(key)) groups.set(key, { key, label: row.location, sleepers: 0, rails: 0, invoices: 0, dates: [] });
+    const group = groups.get(key);
+    if (row.material === "dormente") group.sleepers += row.quantity;
+    else group.rails += row.quantity;
+    group.invoices += row.invoiceCount;
+    if (row.lastReceivedDate) group.dates.push(row.lastReceivedDate);
+  });
+  return [...groups.values()].map((group) => ({ ...group, lastReceivedDate: group.dates.sort().at(-1) || "" })).sort((a, b) => a.label.localeCompare(b.label, "pt-BR", { numeric: true }));
+}
+
+function renderOperatorDashboard() {
+  const allGroups = operatorLocationGroups();
+  const selected = state.dashboardLocation;
+  const visibleGroups = selected ? allGroups.filter((group) => group.key === selected) : allGroups;
+  const visibleKeys = new Set(visibleGroups.map((group) => group.key));
+  const visibleRows = selected ? state.operatorSummary.filter((row) => visibleKeys.has(locationKey(row.location))) : state.operatorSummary;
+  const totals = operatorSummaryMetrics(visibleRows);
+  const locationOptions = allGroups.map((group) => `<option value="${escapeHtml(group.key)}" ${group.key === selected ? "selected" : ""}>${escapeHtml(group.label)}</option>`).join("");
+  return `<section class="view operator-dashboard-view">
+    <article class="operator-dashboard-hero"><div><span class="eyebrow">Acompanhamento de campo</span><h1>Painel de recebimentos</h1><p>Consulte o volume entregue em cada ponto de descarga e faça novos lançamentos com segurança.</p></div><button class="button button-yellow" data-new-record>+ Novo lançamento</button></article>
+    <div class="operator-dashboard-status">${renderSyncBadge()}<span>Último recebimento: <strong>${formatDate(totals.lastReceivedDate)}</strong></span></div>
+    <div class="operator-metrics-grid"><article class="operator-metric-card sleeper"><span>Dormentes entregues</span><strong>${formatNumber(totals.sleepers)}</strong><small>unidades registradas</small></article><article class="operator-metric-card rail"><span>Trilhos entregues</span><strong>${formatNumber(totals.rails)}</strong><small>barras registradas</small></article><article class="operator-metric-card invoices"><span>Notas fiscais</span><strong>${formatNumber(totals.invoices)}</strong><small>no período acumulado</small></article></div>
+    <article class="panel operator-location-filter"><label><span>Filtrar por local</span><select name="dashboardLocation"><option value="">Todos os locais</option>${locationOptions}</select></label><p>As quantidades são somente para consulta. Alterações e exclusões continuam restritas ao administrador.</p></article>
+    <section class="operator-locations"><div class="section-heading"><div><span class="eyebrow">Pontos de descarga</span><h2>Quantidade entregue por local</h2></div><span class="updated-label">${visibleGroups.length} local(is)</span></div>${visibleGroups.length ? `<div class="operator-location-grid">${visibleGroups.map((group) => `<article class="panel operator-location-card"><header><div><span>Local de entrega</span><h3>${escapeHtml(group.label)}</h3></div><span class="operator-location-date">${formatDate(group.lastReceivedDate)}</span></header><div class="operator-location-values"><div class="sleeper"><span>Dormentes</span><strong>${formatNumber(group.sleepers)}</strong><small>unidades</small></div><div class="rail"><span>Trilhos</span><strong>${formatNumber(group.rails)}</strong><small>barras</small></div></div><footer><span>Notas fiscais</span><strong>${formatNumber(group.invoices)}</strong></footer></article>`).join("")}</div>` : '<article class="panel operator-empty-state"><strong>Nenhum recebimento encontrado</strong><p>Quando os primeiros lançamentos forem sincronizados, os totais aparecerão aqui.</p><button class="button button-yellow" data-new-record>Fazer primeiro lançamento</button></article>'}</section>
+  </section>`;
+}
+
+function renderOperatorConfirmation() {
+  const receipt = state.operatorReceiptConfirmation;
+  if (!receipt) return renderOperatorDashboard();
+  const invoiceLabel = receipt.invoiceNumbers || "—";
+  return `<section class="view operator-confirmation-view"><article class="panel operator-confirmation-card"><span class="confirmation-mark" aria-hidden="true">✓</span><span class="eyebrow">Lançamento registrado</span><h1>${receipt.savedLocally ? "Salvo neste aparelho" : "Recebimento enviado"}</h1><p>${receipt.savedLocally ? "A internet está indisponível. O envio será feito automaticamente quando a conexão voltar." : "Os dados já estão disponíveis para acompanhamento no painel."}</p><dl><div><dt>Material</dt><dd>${escapeHtml(MATERIALS[receipt.material]?.label || receipt.material)}</dd></div><div><dt>Quantidade</dt><dd>${formatNumber(receipt.quantity)} ${escapeHtml(MATERIALS[receipt.material]?.unit || "un")}</dd></div><div><dt>Local</dt><dd>${escapeHtml(receipt.location || "—")}</dd></div><div><dt>Nota(s) fiscal(is)</dt><dd>${escapeHtml(invoiceLabel)}</dd></div><div><dt>Fornecedor</dt><dd>${escapeHtml(supplierForMaterial(receipt.material))}</dd></div><div><dt>Data</dt><dd>${formatDate(receipt.receivedDate)}</dd></div></dl><div class="operator-confirmation-actions"><button class="button button-yellow" data-new-record data-new-material="${escapeHtml(receipt.material)}">+ Novo lançamento</button><button class="button button-outline" data-nav="dashboard">Ver painel</button></div></article></section>`;
 }
 
 function renderOperatorQualityCards(draft, items) {
@@ -1051,11 +1125,12 @@ function renderOperatorForm() {
   const isSleeper = draft.material === "dormente";
   const locations = knownLocations();
   if (draft.location && !locations.some((label) => locationKey(label) === locationKey(draft.location))) locations.push(draft.location);
-  return `<section class="view form-view operator-form-view"><div class="page-heading"><div><span class="eyebrow">Acesso de campo</span><h1>Novo lançamento</h1><p>Registre apenas a chegada do material. Depois de salvo, somente o administrador poderá consultar, corrigir ou excluir.</p></div><div class="heading-summary"><span>Total deste lançamento</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></div>
+  return `<section class="view form-view operator-form-view"><div class="page-heading"><div><span class="eyebrow">Acesso de campo</span><h1>Novo lançamento</h1><p>Registre a chegada do material. O fornecedor é definido automaticamente conforme o material.</p></div><div class="heading-summary"><span>Total deste lançamento</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></div>
+    <nav class="operator-stepbar" aria-label="Etapas do lançamento"><span><b>1</b> Material</span><span><b>2</b> Local</span><span><b>3</b> Nota fiscal</span><span><b>4</b> Qualidade</span><span><b>5</b> Salvar</span></nav>
     <div class="operator-sync-panel">${renderSyncBadge()}<p>${state.online ? "Ao salvar, os dados serão enviados imediatamente." : "Você está offline. O lançamento ficará protegido neste aparelho e será enviado automaticamente quando a internet voltar."}</p></div>
     <form id="receiving-form" class="receiving-form operator-receiving-form"><fieldset class="receiving-fields" ${state.saving ? "disabled" : ""}>
       <input type="hidden" name="receivedTime" value="" />
-      <input type="hidden" name="supplier" value="${draft.material === "trilho" ? "Arauco" : "Cavan / Arauco"}" />
+      <input type="hidden" name="supplier" value="${supplierForMaterial(draft.material)}" />
       <input type="hidden" name="vehiclePlate" value="" />
       <input type="hidden" name="inspectorName" value="${escapeHtml(draft.inspectorName)}" />
       <article class="panel form-panel"><div class="form-section-title"><span>01</span><div><h2>Material</h2><p>Escolha o tipo recebido.</p></div></div><div class="material-selector"><button type="button" class="material-option ${isSleeper ? "active" : ""}" data-material="dormente"><i class="sleeper-icon"></i><span><strong>Dormentes</strong><small>Unidades recebidas</small></span><b>${isSleeper ? "✓" : ""}</b></button><button type="button" class="material-option ${!isSleeper ? "active" : ""}" data-material="trilho"><i class="rail-icon"></i><span><strong>Trilhos</strong><small>Barras recebidas</small></span><b>${!isSleeper ? "✓" : ""}</b></button></div><input type="hidden" name="material" value="${draft.material}" /></article>
@@ -1063,7 +1138,7 @@ function renderOperatorForm() {
       <article class="panel form-panel invoice-panel"><div class="form-section-title"><span>03</span><div><h2>Nota fiscal e quantidade</h2><p>Você pode registrar mais de uma NF na mesma entrega.</p></div></div><div class="invoice-head"><span>Nota fiscal</span><span>Quantidade</span><span></span></div><div class="invoice-list">${items.map((item, index) => `<div class="invoice-row" data-invoice-row="${index}"><label><span>NF ${index + 1}</span><input name="invoiceNumber" value="${escapeHtml(item.number)}" inputmode="numeric" placeholder="Número da NF" required /></label><label><span>Quantidade</span><input type="number" min="1" name="invoiceQuantity" value="${item.quantity || ""}" placeholder="0" required /></label><button type="button" class="remove-row" data-remove-invoice="${index}" aria-label="Remover nota" ${items.length === 1 ? "disabled" : ""}>×</button></div>`).join("")}</div><button type="button" class="add-row-button" data-add-invoice>＋ Adicionar outra NF</button><div class="invoice-total"><span>Total automático</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></article>
       <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Não conformidades — opcional</h2><p>Deixe os campos em zero quando não houver NC.</p></div></div>${renderOperatorQualityCards(draft, items)}</article>
       <article class="panel form-panel final-form-panel"><div class="form-section-title"><span>05</span><div><h2>Detalhe da NC — opcional</h2><p>Use apenas para uma observação curta sobre a não conformidade.</p></div></div><label><span>Descrição</span><textarea name="observations" rows="3" maxlength="500" placeholder="Ex.: oxidação identificada durante a descarga">${escapeHtml(draft.observations || "")}</textarea></label><div data-draft-warnings>${renderDraftWarnings(draft)}</div><div class="form-actions"><button type="submit" class="button button-yellow operator-save-button" ${state.saving ? "disabled" : ""}>${state.saving ? "Salvando…" : state.online ? "Salvar lançamento" : "Salvar offline"}</button></div></article>
-    </fieldset></form></section>`;
+    </fieldset><div class="operator-save-dock"><span><strong data-form-total>${formatNumber(total)}</strong> ${MATERIALS[draft.material].unit}</span><button type="submit" class="button button-yellow" ${state.saving ? "disabled" : ""}>${state.saving ? "Salvando…" : state.online ? "Salvar lançamento" : "Salvar offline"}</button></div></form></section>`;
 }
 
 function filteredHistory() {
@@ -1451,7 +1526,7 @@ function bindEvents() {
   document.querySelectorAll("[data-delete-goal]").forEach((button) => button.addEventListener("click", () => deleteGoal(button.dataset.deleteGoal)));
   document.querySelector("[data-sign-out]")?.addEventListener("click", signOut);
   document.querySelectorAll("[data-nav]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.nav)));
-  document.querySelectorAll("[data-new-record]").forEach((button) => button.addEventListener("click", () => newRecord()));
+  document.querySelectorAll("[data-new-record]").forEach((button) => button.addEventListener("click", () => newRecord(button.dataset.newMaterial || "dormente")));
   document.querySelector("[data-new-sleeper]")?.addEventListener("click", () => newRecord("dormente"));
   document.querySelector("[data-new-rail]")?.addEventListener("click", () => newRecord("trilho"));
   document.querySelector("[data-theme-toggle]")?.addEventListener("click", toggleTheme);
@@ -1500,7 +1575,7 @@ function bindFormEvents() {
   form.querySelectorAll("[data-remove-invoice-photo]").forEach((button) => button.addEventListener("click", () => removeInvoicePhoto(number(button.dataset.photoInvoice), button.dataset.removeInvoicePhoto)));
   form.addEventListener("submit", (event) => { event.preventDefault(); saveCurrent("concluido"); });
   form.querySelectorAll('[name="invoiceQuantity"]').forEach((input) => input.addEventListener("input", updateFormTotal));
-  form.querySelectorAll("[data-material]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.material = button.dataset.material; if (!state.draft.supplier) state.draft.supplier = button.dataset.material === "dormente" ? "Cavan / Arauco" : "Arauco"; state.draft = normalizeMaterialSupplier(state.draft); render(); }));
+  form.querySelectorAll("[data-material]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.material = button.dataset.material; state.draft.supplier = supplierForMaterial(button.dataset.material); state.draft = normalizeMaterialSupplier(state.draft); render(); }));
   form.querySelector("[data-add-invoice]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.push(blankInvoiceItem(state.draft.material)); render(); });
   form.querySelectorAll("[data-remove-invoice]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.splice(number(button.dataset.removeInvoice), 1); render(); }));
   form.querySelector("[data-add-rejection]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); const firstInvoice = state.draft.invoiceItems.find((item) => item.number)?.number || ""; state.draft.rejections = rejectionRows(state.draft); state.draft.rejections.push({ id: crypto.randomUUID(), invoiceNumber: firstInvoice, mold: "", cavity: "", reasonId: "", reason: "" }); state.draft.quality.reprovados = state.draft.rejections.length; render(); });
@@ -1522,7 +1597,7 @@ function updateFormTotal() {
 
 function navigate(view) {
   if (state.saving || state.photoBusy) return toast("Aguarde a preparação das fotos e o salvamento.", "error");
-  if (isOperator() && view !== "form") return;
+  if (isOperator() && !["dashboard", "form"].includes(view)) return;
   if (view === "form" && !canLaunchReceipt()) return;
   if (state.view === "form" && view !== "form") state.draft = formRecordFromDom();
   state.view = view; state.modal = null;
@@ -1531,7 +1606,7 @@ function navigate(view) {
   render(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function newRecord(material = "dormente") { if (!canLaunchReceipt() || state.saving || state.photoBusy) return; if (pendingPhotoFiles.size && !confirm("Há fotos não salvas. Deseja descartá-las e iniciar outro recebimento?")) return; releasePendingPhotos(); state.newLocationMode = false; state.draft = defaultDraft(material); state.editingId = ""; state.editingInvoiceIndex = -1; navigate("form"); }
+function newRecord(material = "dormente") { if (!canLaunchReceipt() || state.saving || state.photoBusy) return; if (pendingPhotoFiles.size && !confirm("Há fotos não salvas. Deseja descartá-las e iniciar outro recebimento?")) return; releasePendingPhotos(); state.newLocationMode = false; state.operatorReceiptConfirmation = null; state.draft = defaultDraft(material); state.editingId = ""; state.editingInvoiceIndex = -1; navigate("form"); }
 
 function editRecord(id, invoiceIndex = -1) {
   if (state.saving || state.photoBusy) return;
@@ -1595,9 +1670,13 @@ async function saveCurrent(status) {
     try { queueForSync(record); replaceRecord(record); writeLocalRecords(); state.storageMode = "local"; savedLocally = true; }
     catch { state.saving = false; render(); return toast("Não foi possível salvar neste aparelho. Mantenha o formulário aberto e tente novamente com conexão.", "error"); }
   }
-  const savedMaterial = record.material;
-  state.saving = false; releasePendingPhotos(); state.draft = isOperator() ? defaultDraft(savedMaterial) : null; state.newLocationMode = false;
-  state.editingId = ""; state.editingInvoiceIndex = -1; state.view = isOperator() ? "form" : "dashboard"; render();
+  if (isOperator()) {
+    if (savedLocally) addRecordToOperatorSummary(record);
+    else await loadOperatorDashboardSummary();
+    state.operatorReceiptConfirmation = { material: record.material, quantity: record.quantity, location: record.location, invoiceNumbers: record.invoiceNumbers, receivedDate: record.receivedDate, savedLocally };
+  }
+  state.saving = false; releasePendingPhotos(); state.draft = null; state.newLocationMode = false;
+  state.editingId = ""; state.editingInvoiceIndex = -1; state.view = isOperator() ? "confirmation" : "dashboard"; render();
   toast(savedLocally ? "Salvo neste aparelho. Será enviado quando a internet voltar." : status === "rascunho" ? "Rascunho salvo." : isOperator() ? "Lançamento salvo e enviado ao administrador." : "Recebimento e fotos salvos.");
 }
 
@@ -1794,7 +1873,32 @@ async function persistRecord(record) {
   const { error } = await query;
   if (error && !(isOperator() && error.code === "23505")) throw error;
 }
-function clearProtectedLocalData() { [STORAGE_KEY, OUTBOX_KEY, AUTH_CACHE_KEY, CATEGORY_KEY, REJECTION_REASON_KEY, LOCATION_KEY, GOAL_KEY, GOAL_OUTBOX_KEY].forEach((key) => localStorage.removeItem(key)); }
+function readOperatorDashboardLocal() { try { const rows = JSON.parse(localStorage.getItem(OPERATOR_DASHBOARD_KEY) || "[]"); return Array.isArray(rows) ? rows.map(normalizeOperatorSummaryRow) : []; } catch { return []; } }
+function writeOperatorDashboardLocal() { if (state.authorized && isOperator()) localStorage.setItem(OPERATOR_DASHBOARD_KEY, JSON.stringify(state.operatorSummary)); }
+function addRecordToOperatorSummary(record) {
+  const key = `${locationKey(record.location)}:${record.material}`;
+  const rows = state.operatorSummary.map(normalizeOperatorSummaryRow);
+  const index = rows.findIndex((row) => `${locationKey(row.location)}:${row.material}` === key);
+  const addition = { location: record.location || "Local não informado", material: record.material, quantity: recordQuantity(record), invoiceCount: invoiceItems(record).length, lastReceivedDate: record.receivedDate || String(record.receivedAt || "").slice(0, 10) };
+  if (index >= 0) rows[index] = { ...rows[index], quantity: rows[index].quantity + addition.quantity, invoiceCount: rows[index].invoiceCount + addition.invoiceCount, lastReceivedDate: [rows[index].lastReceivedDate, addition.lastReceivedDate].filter(Boolean).sort().at(-1) || "" };
+  else rows.push(addition);
+  state.operatorSummary = rows;
+  writeOperatorDashboardLocal();
+}
+async function loadOperatorDashboardSummary() {
+  if (!isOperator() || !supabaseClient) { state.operatorSummary = readOperatorDashboardLocal(); return false; }
+  try {
+    const { data, error } = await supabaseClient.from("receiving_dashboard_summary").select("location,material,total_quantity,invoice_count,last_received_date").order("location");
+    if (error) throw error;
+    state.operatorSummary = (data || []).map(normalizeOperatorSummaryRow);
+    writeOperatorDashboardLocal();
+    return true;
+  } catch {
+    state.operatorSummary = readOperatorDashboardLocal();
+    return false;
+  }
+}
+function clearProtectedLocalData() { [STORAGE_KEY, OUTBOX_KEY, AUTH_CACHE_KEY, CATEGORY_KEY, REJECTION_REASON_KEY, LOCATION_KEY, GOAL_KEY, GOAL_OUTBOX_KEY, OPERATOR_DASHBOARD_KEY].forEach((key) => localStorage.removeItem(key)); }
 function readLocalRecords() { try { const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); return Array.isArray(stored) ? stored.map(sanitizeLegacyMoldEntry).sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))) : []; } catch { return []; } }
 function writeLocalRecords() { if (state.authorized) localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records)); }
 function readOutbox() { try { const records = JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]"); return Array.isArray(records) ? records : []; } catch { return []; } }
@@ -1855,7 +1959,7 @@ async function signInWithEmail(event) { event?.preventDefault(); const { email, 
 async function createFirstAccess() { const { email, password } = authFields(); if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 8) return toast("Informe um e-mail válido e uma senha de pelo menos 8 caracteres.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { data, error } = await supabaseClient.auth.signUp({ email, password, options: { emailRedirectTo: accessUrl().toString() } }); state.authLoading = false; if (error) { state.authMessage = error.message || "Não foi possível criar o primeiro acesso."; render(); return; } if (data.session) { await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); return; } state.authMessage = "Confira seu e-mail e use o link de confirmação para concluir o primeiro acesso."; render(); }
 async function requestPasswordReset() { const email = document.querySelector('[name="authEmail"]')?.value.trim().toLowerCase() || ""; if (!/^\S+@\S+\.\S+$/.test(email)) return toast("Informe seu e-mail para recuperar a senha.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: accessUrl().toString() }); state.authLoading = false; state.authMessage = error ? (error.message || "Não foi possível enviar a recuperação de senha.") : "Enviamos um link para redefinir sua senha. Confira também a caixa de spam."; render(); }
 async function updateRecoveredPassword(event) { event?.preventDefault(); const password = document.querySelector('[name="newPassword"]')?.value || ""; const confirmation = document.querySelector('[name="confirmPassword"]')?.value || ""; if (password.length < 8) return toast("A nova senha precisa ter pelo menos 8 caracteres.", "error"); if (password !== confirmation) return toast("As senhas informadas não são iguais.", "error"); state.authLoading = true; state.authMessage = ""; render(); const { error } = await supabaseClient.auth.updateUser({ password }); if (error) { state.authLoading = false; state.authMessage = error.message || "Não foi possível atualizar a senha."; render(); return; } state.recoveryMode = false; window.history.replaceState({}, document.title, accessUrl()); await loadSession(); if (state.authorized) await loadRecordsAndCategories(); state.loading = false; render(); toast("Senha atualizada. Acesso liberado com segurança.", "success"); }
-async function signOut() { if (state.saving || state.photoBusy) return; if (pendingPhotoFiles.size && !confirm("Há fotos ainda não salvas. Deseja sair e descartá-las?")) return; photoSessionEpoch++; await supabaseClient?.auth.signOut(); releasePendingPhotos(); photoUrls.clear(); state.draft = null; state.editingId = ""; state.editingInvoiceIndex = -1; state.newLocationMode = false; state.locations = []; state.goals = []; clearProtectedLocalData(); state.authenticated = false; state.authorized = false; state.user = null; state.records = []; state.team = []; state.teamLoaded = false; state.authMessage = "Sessão encerrada com segurança."; render(); }
+async function signOut() { if (state.saving || state.photoBusy) return; if (pendingPhotoFiles.size && !confirm("Há fotos ainda não salvas. Deseja sair e descartá-las?")) return; photoSessionEpoch++; await supabaseClient?.auth.signOut(); releasePendingPhotos(); photoUrls.clear(); state.draft = null; state.editingId = ""; state.editingInvoiceIndex = -1; state.newLocationMode = false; state.locations = []; state.operatorSummary = []; state.operatorReceiptConfirmation = null; state.goals = []; clearProtectedLocalData(); state.authenticated = false; state.authorized = false; state.user = null; state.records = []; state.team = []; state.teamLoaded = false; state.authMessage = "Sessão encerrada com segurança."; render(); }
 
 async function loadRecordsAndCategories() {
   if (isOperator()) {
@@ -1876,6 +1980,7 @@ async function loadRecordsAndCategories() {
       try { state.locations = JSON.parse(localStorage.getItem(LOCATION_KEY) || "[]"); } catch { state.locations = []; }
       state.storageMode = "local";
     }
+    await loadOperatorDashboardSummary();
     state.records = [];
     state.goals = [];
     readOutbox().forEach(replaceRecord);
@@ -1934,8 +2039,8 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=38" : "/service-worker.js?v=38").catch(() => {});
-  await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); } state.loading = false; render();
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=39" : "/service-worker.js?v=39").catch(() => {});
+  await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); if (isOperator()) await loadOperatorDashboardSummary(); } state.loading = false; render();
 }
 
 supabaseClient?.auth?.onAuthStateChange?.((event) => {
@@ -1947,7 +2052,7 @@ supabaseClient?.auth?.onAuthStateChange?.((event) => {
 
 window.addEventListener("beforeunload", (event) => { if (pendingPhotoFiles.size || state.saving || state.photoBusy) { event.preventDefault(); event.returnValue = ""; } });
 window.addEventListener("beforeinstallprompt", (event) => { event.preventDefault(); state.installPrompt = event; if (state.view === "form" && !state.saving && !state.photoBusy) state.draft = formRecordFromDom(); render(); });
-window.addEventListener("online", async () => { state.online = true; if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); if (!isOperator()) await syncGoalChanges(); } if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); render(); });
+window.addEventListener("online", async () => { state.online = true; if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); if (isOperator()) await loadOperatorDashboardSummary(); else await syncGoalChanges(); } if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); render(); });
 window.addEventListener("offline", () => { state.online = false; state.storageMode = "local"; if (state.saving || state.photoBusy) return; if (state.view === "form") state.draft = formRecordFromDom(); render(); });
 window.addEventListener("keydown", (event) => { if (event.key === "Escape" && state.modal) { state.modal = null; render(); } });
 
