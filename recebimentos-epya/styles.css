@@ -335,16 +335,24 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
 .quality-input-grid input[readonly] { color: var(--red); background: color-mix(in srgb, var(--red) 7%, var(--surface-2)); cursor: default; }
 .rejected-help { margin: 10px 0 0; color: var(--muted); font-size: .75rem; }
 .new-category-inline { margin-top: 14px; display: grid; grid-template-columns: 1fr auto; gap: 10px; }
-.rejection-control { margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
-.rejection-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.rejection-heading h3 { margin: 0 0 5px; font-size: 1.2rem; }
-.rejection-heading p { max-width: 760px; margin: 0; color: var(--muted); line-height: 1.5; }
+.invoice-rejection-editor { margin-top: 14px; overflow: hidden; background: color-mix(in srgb, var(--red) 3%, var(--surface)); border: 1px solid color-mix(in srgb, var(--red) 22%, var(--line)); border-radius: 11px; }
+.invoice-rejection-editor > summary { min-height: 58px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; list-style: none; }
+.invoice-rejection-editor > summary::-webkit-details-marker { display: none; }
+.invoice-rejection-editor > summary span { display: grid; gap: 3px; }
+.invoice-rejection-editor > summary strong { font-size: .82rem; }
+.invoice-rejection-editor > summary small { color: var(--muted); font-size: .68rem; }
+.invoice-rejection-editor > summary b { min-width: 36px; padding: 7px 9px; color: var(--red); text-align: center; background: color-mix(in srgb, var(--red) 10%, var(--surface)); border-radius: 999px; }
+.invoice-rejection-editor[open] > summary { border-bottom: 1px solid color-mix(in srgb, var(--red) 16%, var(--line)); }
+.invoice-rejection-body { padding: 14px; }
+.invoice-rejection-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.invoice-rejection-heading h4 { margin: 2px 0 5px; font-size: 1rem; }
+.invoice-rejection-heading p { max-width: 720px; margin: 0; color: var(--muted); font-size: .72rem; line-height: 1.5; }
 .rejection-list { margin-top: 16px; display: grid; gap: 11px; }
 .rejection-row { padding: 15px; background: color-mix(in srgb, var(--red) 4%, var(--surface-2)); border: 1px solid color-mix(in srgb, var(--red) 22%, var(--line)); border-radius: 12px; }
 .rejection-row > header { margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .rejection-row > header strong { font-size: .83rem; }
 .rejection-row > header button { width: 30px; height: 30px; color: var(--red); font-size: 1.1rem; background: transparent; border: 1px solid color-mix(in srgb, var(--red) 28%, var(--line)); border-radius: 7px; cursor: pointer; }
-.rejection-fields { display: grid; grid-template-columns: 1.05fr .7fr .7fr 1.55fr; gap: 10px; }
+.rejection-fields { display: grid; grid-template-columns: .62fr .8fr 1.2fr 1.55fr; gap: 10px; }
 .rejection-empty { margin-top: 15px; padding: 15px; color: var(--muted); text-align: center; background: var(--surface-2); border: 1px dashed var(--line-strong); border-radius: 10px; }
 .rejection-reason-manager { margin-top: 14px; padding: 14px; display: grid; grid-template-columns: minmax(260px, 1fr) minmax(220px, .8fr) auto; align-items: center; gap: 10px; background: var(--surface-2); border-radius: 11px; }
 .rejection-reason-manager > div { display: grid; }
@@ -715,7 +723,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--yellow); box-sha
   .nf-quality-search { grid-template-columns: minmax(220px, 1fr) auto auto; }
   .nf-quality-search p { grid-column: 1 / -1; }
   .nf-quality-row { grid-template-columns: 90px 1fr; }
-  .rejection-heading { align-items: stretch; flex-direction: column; }
+  .invoice-rejection-heading { align-items: stretch; flex-direction: column; }
   .report-material-panel { grid-template-columns: 1fr; }
   .report-text-editor-options { grid-template-columns: 1fr; }
   .report-image-control { grid-template-columns: 1fr; }

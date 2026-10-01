@@ -489,25 +489,60 @@ function railQualitySummary(quality = {}) {
 
 function rejectionRows(record) {
   const existing = Array.isArray(record?.rejections) ? record.rejections : [];
-  const target = Math.max(existing.length, number(record?.quality?.reprovados ?? record?.rejected));
-  return Array.from({ length: target }, (_, index) => ({
-    id: existing[index]?.id || crypto.randomUUID(),
-    invoiceNumber: String(existing[index]?.invoiceNumber || ""),
-    mold: String(existing[index]?.mold || ""),
-    cavity: String(existing[index]?.cavity || ""),
-    reasonId: String(existing[index]?.reasonId || ""),
-    reason: String(existing[index]?.reason || ""),
+  if (existing.length) return existing.map((rejection) => ({
+    id: rejection?.id || crypto.randomUUID(),
+    invoiceNumber: String(rejection?.invoiceNumber || ""),
+    quantity: rejectionQuantity(rejection),
+    mold: String(rejection?.mold || ""),
+    cavity: String(rejection?.cavity || ""),
+    reasonId: String(rejection?.reasonId || ""),
+    reason: String(rejection?.reason || ""),
   }));
+  const legacyTotal = number(record?.quality?.reprovados ?? record?.rejected);
+  return legacyTotal > 0 ? [{ id: crypto.randomUUID(), invoiceNumber: "", quantity: legacyTotal, mold: "", cavity: "", reasonId: "", reason: "" }] : [];
+}
+
+function rejectionQuantity(rejection = {}) {
+  return Math.max(1, Math.floor(number(rejection.quantity || 1)));
+}
+
+function rejectionTotal(rejections = []) {
+  return rejections.reduce((sum, rejection) => sum + rejectionQuantity(rejection), 0);
+}
+
+function cavityValues(value) {
+  return String(value || "").split(/[,;\/|]+|\s+e\s+/i).map((item) => item.trim()).filter(Boolean);
+}
+
+function groupedRejectionEntries(rejections = []) {
+  const groups = new Map();
+  rejections.forEach((rejection) => {
+    const mold = String(rejection.mold || "").trim();
+    const key = mold ? mold.toLocaleLowerCase("pt-BR") : `sem-molde:${rejection.id}`;
+    if (!groups.has(key)) groups.set(key, { ...rejection, quantity: 0, cavities: [], reasons: [], reasonIds: [], entries: [] });
+    const group = groups.get(key);
+    group.quantity += rejectionQuantity(rejection);
+    group.entries.push(rejection);
+    cavityValues(rejection.cavity).forEach((cavity) => { if (!group.cavities.includes(cavity)) group.cavities.push(cavity); });
+    const reason = rejectionReasonLabel(rejection);
+    if (reason && !group.reasons.includes(reason)) group.reasons.push(reason);
+    if (rejection.reasonId && !group.reasonIds.includes(rejection.reasonId)) group.reasonIds.push(rejection.reasonId);
+  });
+  return [...groups.values()].map((group) => ({ ...group, cavity: group.cavities.join(", "), reason: group.reasons.join(" • ") }));
 }
 
 function rejectionsForInvoice(record, invoiceNumber) {
   return rejectionRows(record).filter((rejection) => rejection.invoiceNumber === String(invoiceNumber));
 }
 
+function rejectionTotalForInvoice(record, invoiceNumber) {
+  return rejectionTotal(rejectionsForInvoice(record, invoiceNumber));
+}
+
 function rejectionDetails(record, invoiceNumber) {
-  return rejectionsForInvoice(record, invoiceNumber).map((rejection) => {
-    const reason = rejection.reason || state.rejectionReasons.find((item) => item.id === rejection.reasonId)?.label || "motivo pendente";
-    return `Molde ${rejection.mold || "—"} / Cavidade ${rejection.cavity || "—"} — ${reason}`;
+  return groupedRejectionEntries(rejectionsForInvoice(record, invoiceNumber)).map((rejection) => {
+    const reason = rejection.reason || "motivo pendente";
+    return `${formatNumber(rejection.quantity)} un. • Molde ${rejection.mold || "—"} / Cavidades ${rejection.cavity || "—"} — ${reason}`;
   }).join(" | ");
 }
 
@@ -523,8 +558,8 @@ function reconcileInvoiceQuality(record) {
   if (record.material === "dormente") {
     const rejections = Array.isArray(record.rejections) ? record.rejections : [];
     if (rejections.length) {
-      record.invoiceItems.forEach((item) => { item.quality.reprovados = rejections.filter((rejection) => rejection.invoiceNumber === String(item.number)).length; });
-      const unassigned = rejections.filter((rejection) => !rejection.invoiceNumber).length;
+      record.invoiceItems.forEach((item) => { item.quality.reprovados = rejectionTotal(rejections.filter((rejection) => rejection.invoiceNumber === String(item.number))); });
+      const unassigned = rejectionTotal(rejections.filter((rejection) => !rejection.invoiceNumber));
       if (unassigned) record.invoiceItems[0].quality.reprovados += unassigned;
     }
   }
@@ -800,7 +835,7 @@ function sleeperInvoiceQualityRows(records = state.records, filter = "") {
   const query = String(filter || "").trim().toLowerCase().replace(/^nf\s*/i, "");
   const rows = records.filter((record) => record.material === "dormente").flatMap((record) => invoiceItems(record).map((item, index) => {
     const quality = invoiceQuality(record, item, index);
-    const rejected = Math.max(number(quality.reprovados), rejectionsForInvoice(record, item.number).length);
+    const rejected = Math.max(number(quality.reprovados), rejectionTotalForInvoice(record, item.number));
     const defects = qualityCategories("dormente").filter((category) => category.id !== "reprovados").reduce((sum, category) => sum + number(quality[category.id]), 0) + rejected;
     const received = number(item.quantity);
     return {
@@ -1201,8 +1236,24 @@ async function loadVisiblePhotos(force = false) {
   }
 }
 
-function renderRejectionSection(draft, items, rejections) {
-  return `<section class="rejection-control"><div class="rejection-heading"><div><span class="eyebrow">Dormentes reprovados</span><h3>Identificação individual da reprovação</h3><p>Adicione um registro para cada dormente reprovado e informe a NF, o molde, a cavidade e o motivo.</p></div><button type="button" class="button button-dark" data-add-rejection>＋ Adicionar reprovado</button></div>${rejections.length ? `<div class="rejection-list">${rejections.map((rejection, index) => { const invoiceOptions = items.filter((item) => item.number).map((item) => `<option value="${escapeHtml(item.number)}" ${String(item.number) === rejection.invoiceNumber ? "selected" : ""}>NF ${escapeHtml(item.number)}</option>`).join(""); const reasonOptions = state.rejectionReasons.map((reason) => `<option value="${escapeHtml(reason.id)}" ${reason.id === rejection.reasonId ? "selected" : ""}>${escapeHtml(reason.label)}</option>`).join(""); return `<article class="rejection-row" data-rejection-row data-rejection-id="${escapeHtml(rejection.id)}"><header><strong>Dormente reprovado ${index + 1}</strong><button type="button" data-remove-rejection="${index}" aria-label="Remover dormente reprovado ${index + 1}">×</button></header><div class="rejection-fields"><label><span>Nota fiscal *</span><select name="rejectionInvoice" required><option value="">Selecione a NF</option>${invoiceOptions}</select></label><label><span>Molde *</span><input name="rejectionMold" value="${escapeHtml(rejection.mold)}" placeholder="Número do molde" required /></label><label><span>Cavidade *</span><input name="rejectionCavity" value="${escapeHtml(rejection.cavity)}" placeholder="Número da cavidade" required /></label><label><span>Motivo da reprovação *</span><select name="rejectionReason" required><option value="">Selecione o motivo</option>${reasonOptions}</select></label></div></article>`; }).join("")}</div>` : '<div class="rejection-empty">Nenhum dormente reprovado neste lançamento.</div>'}<div class="rejection-reason-manager"><div><strong>Motivos de reprovação</strong><small>Cadastre os motivos conforme precisar. Eles ficarão disponíveis nos próximos lançamentos.</small></div><input name="newRejectionReason" placeholder="Ex.: trinca estrutural" /><button type="button" class="button button-outline" data-add-rejection-reason>Adicionar motivo</button></div></section>`;
+function invoiceIndexForRejection(items, rejection) {
+  const index = items.findIndex((item) => String(item.number) === String(rejection.invoiceNumber));
+  return index >= 0 ? index : 0;
+}
+
+function rejectionsForInvoiceIndex(items, rejections, invoiceIndex) {
+  return rejections.filter((rejection) => invoiceIndexForRejection(items, rejection) === invoiceIndex);
+}
+
+function renderInvoiceRejectionEditor(item, invoiceIndex, items, rejections) {
+  const invoiceRejections = rejectionsForInvoiceIndex(items, rejections, invoiceIndex);
+  const total = rejectionTotal(invoiceRejections);
+  const reasonOptions = (selected) => state.rejectionReasons.map((reason) => `<option value="${escapeHtml(reason.id)}" ${reason.id === selected ? "selected" : ""}>${escapeHtml(reason.label)}</option>`).join("");
+  return `<details class="invoice-rejection-editor" data-invoice-rejection-details="${invoiceIndex}" ${invoiceRejections.length || state.editingInvoiceIndex === invoiceIndex ? "open" : ""}><summary><span><strong>Reprovados desta NF</strong><small>Clique para informar quantidade, molde, cavidades e motivo.</small></span><b>${formatNumber(total)}</b></summary><div class="invoice-rejection-body"><div class="invoice-rejection-heading"><div><span class="eyebrow">NF ${escapeHtml(item.number || invoiceIndex + 1)}</span><h4>Grupos de dormentes reprovados</h4><p>Quando o molde e o motivo forem iguais, informe a quantidade total e separe as cavidades por vírgula.</p></div><button type="button" class="button button-dark" data-add-invoice-rejection="${invoiceIndex}">＋ Adicionar reprovados nesta NF</button></div>${invoiceRejections.length ? `<div class="rejection-list">${invoiceRejections.map((rejection, index) => `<article class="rejection-row" data-rejection-row data-rejection-id="${escapeHtml(rejection.id)}" data-rejection-invoice-index="${invoiceIndex}"><header><strong>Grupo ${index + 1} • ${formatNumber(rejectionQuantity(rejection))} reprovado(s)</strong><button type="button" data-remove-rejection-id="${escapeHtml(rejection.id)}" aria-label="Remover grupo de reprovados ${index + 1}">×</button></header><div class="rejection-fields"><label><span>Quantidade *</span><input type="number" min="1" name="rejectionQuantity" value="${rejectionQuantity(rejection)}" required /></label><label><span>Molde *</span><input name="rejectionMold" value="${escapeHtml(rejection.mold)}" placeholder="Ex.: 36" required /></label><label><span>Cavidade(s) *</span><input name="rejectionCavity" value="${escapeHtml(rejection.cavity)}" placeholder="Ex.: 3, 4, 5, 6" required /></label><label><span>Motivo da reprovação *</span><select name="rejectionReason" required><option value="">Selecione o motivo</option>${reasonOptions(rejection.reasonId)}</select></label></div></article>`).join("")}</div>` : '<div class="rejection-empty">Nenhum reprovado informado nesta NF.</div>'}</div></details>`;
+}
+
+function renderRejectionReasonManager() {
+  return `<div class="rejection-reason-manager"><div><strong>Motivos de reprovação</strong><small>Cadastre um novo motivo quando ele ainda não estiver na lista.</small></div><input name="newRejectionReason" placeholder="Ex.: trinca estrutural" /><button type="button" class="button button-outline" data-add-rejection-reason>Adicionar motivo</button></div>`;
 }
 
 function selectedDraftCollaborators(draft) {
@@ -1255,9 +1306,10 @@ function formRecordFromDom() {
   });
   const rejections = [...form.querySelectorAll("[data-rejection-row]")].map((row) => {
     const reasonId = row.querySelector('[name="rejectionReason"]')?.value || "";
-    return { id: row.dataset.rejectionId || crypto.randomUUID(), invoiceNumber: row.querySelector('[name="rejectionInvoice"]')?.value || "", mold: row.querySelector('[name="rejectionMold"]')?.value.trim() || "", cavity: row.querySelector('[name="rejectionCavity"]')?.value.trim() || "", reasonId, reason: state.rejectionReasons.find((item) => item.id === reasonId)?.label || "" };
+    const invoiceIndex = number(row.dataset.rejectionInvoiceIndex);
+    return { id: row.dataset.rejectionId || crypto.randomUUID(), invoiceNumber: items[invoiceIndex]?.number || "", quantity: Math.max(1, Math.floor(number(row.querySelector('[name="rejectionQuantity"]')?.value || 1))), mold: row.querySelector('[name="rejectionMold"]')?.value.trim() || "", cavity: row.querySelector('[name="rejectionCavity"]')?.value.trim() || "", reasonId, reason: state.rejectionReasons.find((item) => item.id === reasonId)?.label || "" };
   });
-  if (material === "dormente" && !isOperator()) items.forEach((item) => { item.quality.reprovados = rejections.filter((rejection) => rejection.invoiceNumber === item.number).length; });
+  if (material === "dormente" && !isOperator()) items.forEach((item) => { item.quality.reprovados = rejectionTotal(rejections.filter((rejection) => rejection.invoiceNumber === item.number)); });
   const quality = { ...((state.draft || {}).quality || {}) };
   categories.forEach((category) => { quality[category.id] = items.reduce((sum, item) => sum + number(item.quality?.[category.id]), 0); });
   const savedItems = items.length ? items : [blankInvoiceItem(material)];
@@ -1271,7 +1323,7 @@ function renderInvoiceQualityCards(draft, items, rejections) {
     const quality = { ...blankQuality(draft.material), ...invoiceQuality(draft, item, index) };
     const invoiceLabel = item.number ? `NF ${escapeHtml(item.number)}` : `NF ${index + 1}`;
     const invoiceDetail = item.quantity ? `${formatNumber(item.quantity)} ${MATERIALS[draft.material].unit}` : "Quantidade ainda não informada";
-    return `<article class="invoice-quality-card" data-invoice-quality-card="${index}"><header><div><span>Qualidade desta nota</span><strong>${invoiceLabel}</strong></div><small>${invoiceDetail}</small></header><div class="quality-input-grid">${qualityCategories(draft.material).map((category) => { const rejectedField = isSleeper && category.id === "reprovados"; const value = rejectedField ? rejections.filter((rejection) => rejection.invoiceNumber === String(item.number)).length : number(quality[category.id]); return `<label style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><input type="number" min="0" name="invoiceQuality_${category.id}" data-quality-category="${category.id}" value="${value}" ${rejectedField ? "readonly aria-describedby=\"rejected-help\"" : ""} /></label>`; }).join("")}</div></article>`;
+    return `<article class="invoice-quality-card" data-invoice-quality-card="${index}"><header><div><span>Qualidade desta nota</span><strong>${invoiceLabel}</strong></div><small>${invoiceDetail}</small></header><div class="quality-input-grid">${qualityCategories(draft.material).map((category) => { const rejectedField = isSleeper && category.id === "reprovados"; const value = rejectedField ? rejectionTotal(rejectionsForInvoiceIndex(items, rejections, index)) : number(quality[category.id]); return `<label style="--category:${category.color}"><i></i><span>${escapeHtml(category.label)}</span><input type="number" min="0" name="invoiceQuality_${category.id}" data-quality-category="${category.id}" value="${value}" ${rejectedField ? "readonly aria-describedby=\"rejected-help\"" : ""} /></label>`; }).join("")}</div>${isSleeper ? renderInvoiceRejectionEditor(item, index, items, rejections) : ""}</article>`;
   }).join("")}</div>`;
 }
 
@@ -1285,7 +1337,7 @@ function renderForm() {
     <article class="panel form-panel"><div class="form-section-title"><span>01</span><div><h2>Material recebido</h2><p>Escolha o tipo antes de preencher as notas.</p></div></div><div class="material-selector"><button type="button" class="material-option ${isSleeper ? "active" : ""}" data-material="dormente"><i class="sleeper-icon"></i><span><strong>Dormentes</strong><small>Meta: ${formatNumber(TARGET_SLEEPERS)} unidades</small></span><b>${isSleeper ? "✓" : ""}</b></button><button type="button" class="material-option ${!isSleeper ? "active" : ""}" data-material="trilho"><i class="rail-icon"></i><span><strong>Trilhos</strong><small>Meta aberta para definição</small></span><b>${!isSleeper ? "✓" : ""}</b></button></div><input type="hidden" name="material" value="${draft.material}" /></article>
     <article class="panel form-panel"><div class="form-section-title"><span>02</span><div><h2>Data, horário e local</h2><p>O horário pode ficar vazio quando ainda não foi confirmado.</p></div></div><div class="field-grid four"><label><span>Data do recebimento *</span><input type="date" name="receivedDate" value="${escapeHtml(draft.receivedDate)}" required /></label><label><span>Horário</span><input type="time" name="receivedTime" value="${escapeHtml(draft.receivedTime || "")}" /></label>${renderLocationField(draft)}<label class="span-two supplier-fixed-field"><span>Fornecedor / origem</span><input name="supplier" value="${escapeHtml(supplierForMaterial(draft.material))}" readonly aria-readonly="true" /><small>Definido automaticamente pelo material.</small></label><label><span>Responsável pelo lançamento</span><input name="inspectorName" value="${escapeHtml(draft.inspectorName || "")}" /></label></div>${renderCrewVehicleFields(draft)}</article>
     <article class="panel form-panel invoice-panel"><div class="form-section-title"><span>03</span><div><h2>Notas fiscais e quantidades</h2><p>Adicione quantas NFs chegaram juntas. A soma aparece no topo.</p></div></div><div class="invoice-head"><span>Nota fiscal</span><span>Quantidade</span><span></span></div><div class="invoice-list">${items.map((item, index) => `<div class="invoice-row ${state.editingInvoiceIndex === index ? "edit-target" : ""}" data-invoice-row="${index}"><label><span>NF ${index + 1}</span><input name="invoiceNumber" value="${escapeHtml(item.number)}" inputmode="numeric" placeholder="Número da NF" required /></label><label><span>Quantidade</span><input type="number" min="0" name="invoiceQuantity" value="${item.quantity || ""}" placeholder="0" required /></label><button type="button" class="remove-row" data-remove-invoice="${index}" aria-label="Remover nota" ${items.length === 1 ? "disabled" : ""}>×</button></div>`).join("")}</div><button type="button" class="add-row-button" data-add-invoice>＋ Adicionar outra NF</button><div class="invoice-total"><span>Total automático</span><strong data-form-total>${formatNumber(total)}</strong><small>${MATERIALS[draft.material].unit}</small></div></article>
-    <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Qualidade por nota fiscal</h2><p>Cada NF tem seus próprios defeitos. Ao adicionar outra nota, estes campos começam zerados.</p></div></div>${renderInvoiceQualityCards(draft, items, rejections)}${isSleeper ? `<p id="rejected-help" class="rejected-help">Os reprovados são calculados por NF a partir dos registros individuais abaixo.</p><div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div>${renderRejectionSection(draft, items, rejections)}` : '<p class="rail-quality-note">Registre em cada NF o empenamento, a corrosão e os danos no boleto, alma ou patim.</p>'}</article>
+    <article class="panel form-panel quality-form-panel"><div class="form-section-title"><span>04</span><div><h2>Qualidade por nota fiscal</h2><p>Cada NF tem seus próprios defeitos. Clique em “Reprovados desta NF” para detalhar somente a nota escolhida.</p></div></div>${renderInvoiceQualityCards(draft, items, rejections)}${isSleeper ? `<p id="rejected-help" class="rejected-help">O total de reprovados é somado automaticamente pelas quantidades informadas em cada NF.</p><div class="new-category-inline"><input name="newCategory" placeholder="Nova classificação, ex.: fissuras" /><button type="button" class="button button-outline" data-add-category>Adicionar classificação</button></div>${renderRejectionReasonManager()}` : '<p class="rail-quality-note">Registre em cada NF o empenamento, a corrosão e os danos no boleto, alma ou patim.</p>'}</article>
     ${renderInvoicePhotoFields(draft)}<article class="panel form-panel final-form-panel"><div class="form-section-title"><span>06</span><div><h2>Observações e confirmação</h2><p>Registre qualquer ressalva importante para o relatório.</p></div></div><label><span>Observações</span><textarea name="observations" rows="4" placeholder="Condições da descarga, divergências ou informações complementares">${escapeHtml(draft.observations || "")}</textarea></label><div data-draft-warnings>${renderDraftWarnings(draft)}</div><div class="form-actions"><button type="button" class="button button-outline" data-cancel-form>Cancelar</button><button type="button" class="button button-dark" data-save-status="rascunho">Salvar rascunho</button><button type="submit" class="button button-yellow" ${state.saving || state.photoBusy ? "disabled" : ""}>${state.saving ? "Salvando…" : state.editingId ? "Atualizar recebimento" : "Salvar recebimento"}</button></div></article></fieldset></form></section>`;
 }
 
@@ -1428,35 +1480,49 @@ function rejectedSleeperRows(records = state.records) {
   })).sort((a, b) => String(b.record.receivedAt || b.record.receivedDate).localeCompare(String(a.record.receivedAt || a.record.receivedDate)));
 }
 
+function groupedRejectedSleeperRows(records = state.records) {
+  const invoiceGroups = new Map();
+  rejectedSleeperRows(records).forEach((row) => {
+    const key = `${row.record.id}:${row.invoiceIndex}`;
+    if (!invoiceGroups.has(key)) invoiceGroups.set(key, []);
+    invoiceGroups.get(key).push(row);
+  });
+  return [...invoiceGroups.values()].flatMap((rows) => groupedRejectionEntries(rows.map((row) => row.rejection)).map((rejection) => {
+    const source = rows.find((row) => rejection.entries.some((entry) => entry.id === row.rejection.id)) || rows[0];
+    return { ...source, rejection, rejectedQuantity: rejection.quantity, reason: rejection.reason, reasonLabels: rejection.reasons };
+  })).sort((a, b) => String(b.record.receivedAt || b.record.receivedDate).localeCompare(String(a.record.receivedAt || a.record.receivedDate)));
+}
+
 function filteredRejectedSleepers() {
   const { search, location, reason, from, to } = state.rejectionFilters;
   const needle = search.trim().toLocaleLowerCase("pt-BR");
-  return rejectedSleeperRows().filter((row) => {
+  return groupedRejectedSleeperRows().filter((row) => {
     const date = row.record.receivedDate || String(row.record.receivedAt || "").slice(0, 10);
     const searchable = [row.item.number, row.record.location, row.record.supplier, row.record.vehiclePlate, row.record.inspectorName, row.rejection.mold, row.rejection.cavity, row.reason, row.record.observations].join(" ").toLocaleLowerCase("pt-BR");
-    return (!from || date >= from) && (!to || date <= to) && (!location || locationKey(row.record.location) === location) && (!reason || row.reason === reason) && (!needle || searchable.includes(needle));
+    return (!from || date >= from) && (!to || date <= to) && (!location || locationKey(row.record.location) === location) && (!reason || row.reasonLabels.includes(reason)) && (!needle || searchable.includes(needle));
   });
 }
 
 function renderRejectedSleeperTable(rows) {
   if (!rows.length) return '<div class="empty-state rejection-empty"><span>✓</span><h3>Nenhum dormente reprovado encontrado</h3><p>Não há reprovações com os filtros escolhidos.</p></div>';
-  return `<div class="rejection-table"><table><thead><tr><th>Data / horário</th><th>NF / quantidade</th><th>Local</th><th>Identificação</th><th>Motivo</th><th>Rastreabilidade</th><th>Observações</th><th>Fotos</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => `<tr><td><strong>${formatDate(row.record.receivedDate || row.record.receivedAt)}</strong><small>${escapeHtml(row.record.receivedTime || "Horário não informado")}</small></td><td><strong>NF ${escapeHtml(row.item.number || row.rejection.invoiceNumber || "—")}</strong><small>${formatNumber(row.item.quantity)} dormentes recebidos</small></td><td><strong>${escapeHtml(row.record.location || "Não informado")}</strong><small>${escapeHtml(row.record.supplier || "Fornecedor não informado")}</small></td><td><strong>Molde ${escapeHtml(row.rejection.mold || "—")}</strong><small>Cavidade ${escapeHtml(row.rejection.cavity || "—")}</small></td><td class="rejection-reason-cell">${escapeHtml(row.reason)}</td><td><strong>${escapeHtml(vehicleDisplay(row.item.vehiclePlate || row.record.vehiclePlate))}</strong><small>${escapeHtml(row.record.inspectorName || CONTROL_OWNER)}</small></td><td class="rejection-observation-cell">${escapeHtml(row.record.observations || "Sem observações")}</td><td><strong>${formatNumber(row.item.photos?.length || 0)}</strong><small>foto(s) da NF</small></td><td class="report-row-actions no-print"><button data-view-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Ver NF</button>${canEdit() ? `<button data-edit-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="rejection-table"><table><thead><tr><th>Data / horário</th><th>NF / quantidade</th><th>Local</th><th>Quantidade / identificação</th><th>Motivo</th><th>Rastreabilidade</th><th>Observações</th><th>Fotos</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => `<tr><td><strong>${formatDate(row.record.receivedDate || row.record.receivedAt)}</strong><small>${escapeHtml(row.record.receivedTime || "Horário não informado")}</small></td><td><strong>NF ${escapeHtml(row.item.number || row.rejection.invoiceNumber || "—")}</strong><small>${formatNumber(row.item.quantity)} dormentes recebidos</small></td><td><strong>${escapeHtml(row.record.location || "Não informado")}</strong><small>${escapeHtml(row.record.supplier || "Fornecedor não informado")}</small></td><td><strong>${formatNumber(row.rejectedQuantity)} reprovado(s) • Molde ${escapeHtml(row.rejection.mold || "—")}</strong><small>Cavidades ${escapeHtml(row.rejection.cavity || "—")}</small></td><td class="rejection-reason-cell">${escapeHtml(row.reason)}</td><td><strong>${escapeHtml(vehicleDisplay(row.item.vehiclePlate || row.record.vehiclePlate))}</strong><small>${escapeHtml(row.record.inspectorName || CONTROL_OWNER)}</small></td><td class="rejection-observation-cell">${escapeHtml(row.record.observations || "Sem observações")}</td><td><strong>${formatNumber(row.item.photos?.length || 0)}</strong><small>foto(s) da NF</small></td><td class="report-row-actions no-print"><button data-view-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Ver NF</button>${canEdit() ? `<button data-edit-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
 function renderRejectedSleeperCards(rows) {
-  return `<div class="rejection-cards">${rows.map((row) => `<article class="rejection-card"><header><span class="invoice-status-pill is-rejected">Reprovado</span><time>${formatDate(row.record.receivedDate || row.record.receivedAt)}</time></header><h3>Molde ${escapeHtml(row.rejection.mold || "—")} • Cavidade ${escapeHtml(row.rejection.cavity || "—")}</h3><p class="rejection-card-reason">${escapeHtml(row.reason)}</p><dl><div><dt>Nota fiscal</dt><dd>NF ${escapeHtml(row.item.number || row.rejection.invoiceNumber || "—")} • ${formatNumber(row.item.quantity)} recebidos</dd></div><div><dt>Local</dt><dd>${escapeHtml(row.record.location || "Não informado")}</dd></div><div><dt>Fornecedor / máquina</dt><dd>${escapeHtml(row.record.supplier || "—")} • ${escapeHtml(vehicleDisplay(row.item.vehiclePlate || row.record.vehiclePlate))}</dd></div><div><dt>Responsável</dt><dd>${escapeHtml(row.record.inspectorName || CONTROL_OWNER)}</dd></div><div><dt>Observações</dt><dd>${escapeHtml(row.record.observations || "Sem observações")}</dd></div><div><dt>Fotos da NF</dt><dd>${formatNumber(row.item.photos?.length || 0)}</dd></div></dl><div class="receiving-card-actions no-print"><button class="button button-dark" data-view-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Ver NF completa</button>${canEdit() ? `<button class="button button-outline" data-edit-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Editar</button>` : ""}</div></article>`).join("")}</div>`;
+  return `<div class="rejection-cards">${rows.map((row) => `<article class="rejection-card"><header><span class="invoice-status-pill is-rejected">${formatNumber(row.rejectedQuantity)} reprovado(s)</span><time>${formatDate(row.record.receivedDate || row.record.receivedAt)}</time></header><h3>Molde ${escapeHtml(row.rejection.mold || "—")} • Cavidades ${escapeHtml(row.rejection.cavity || "—")}</h3><p class="rejection-card-reason">${escapeHtml(row.reason)}</p><dl><div><dt>Nota fiscal</dt><dd>NF ${escapeHtml(row.item.number || row.rejection.invoiceNumber || "—")} • ${formatNumber(row.item.quantity)} recebidos</dd></div><div><dt>Local</dt><dd>${escapeHtml(row.record.location || "Não informado")}</dd></div><div><dt>Fornecedor / máquina</dt><dd>${escapeHtml(row.record.supplier || "—")} • ${escapeHtml(vehicleDisplay(row.item.vehiclePlate || row.record.vehiclePlate))}</dd></div><div><dt>Responsável</dt><dd>${escapeHtml(row.record.inspectorName || CONTROL_OWNER)}</dd></div><div><dt>Observações</dt><dd>${escapeHtml(row.record.observations || "Sem observações")}</dd></div><div><dt>Fotos da NF</dt><dd>${formatNumber(row.item.photos?.length || 0)}</dd></div></dl><div class="receiving-card-actions no-print"><button class="button button-dark" data-view-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Ver NF completa</button>${canEdit() ? `<button class="button button-outline" data-edit-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Editar</button>` : ""}</div></article>`).join("")}</div>`;
 }
 
 function renderRejections() {
   const rows = filteredRejectedSleepers();
-  const allRows = rejectedSleeperRows();
+  const allRows = groupedRejectedSleeperRows();
+  const rejectedTotal = rows.reduce((sum, row) => sum + row.rejectedQuantity, 0);
   const affectedInvoices = new Set(rows.map((row) => `${row.record.id}:${row.item.number}`)).size;
   const affectedLocations = new Set(rows.map((row) => locationKey(row.record.location))).size;
-  const pendingDetails = rows.filter((row) => !row.rejection.invoiceNumber || !row.rejection.mold || !row.rejection.cavity || row.reason === "Motivo não informado").length;
-  const reasons = [...new Set(allRows.map((row) => row.reason))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const pendingDetails = rows.filter((row) => !row.rejection.invoiceNumber || !row.rejection.mold || !row.rejection.cavity || row.reasonLabels.includes("Motivo não informado")).length;
+  const reasons = [...new Set(allRows.flatMap((row) => row.reasonLabels))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   const period = `${state.rejectionFilters.from ? formatDate(state.rejectionFilters.from) : "Início dos registros"} a ${state.rejectionFilters.to ? formatDate(state.rejectionFilters.to) : "último recebimento"}`;
   const locationLabel = locationGroups().find((group) => group.key === state.rejectionFilters.location)?.label || "Todos os locais";
-  return `<section class="view rejections-view"><div class="page-heading no-print"><div><span class="eyebrow">Rastreabilidade de não conformidades</span><h1>Dormentes reprovados</h1><p>Veja somente as peças reprovadas, com identificação, origem, responsável, observações e fotos da nota fiscal.</p></div>${canEdit() ? '<div class="heading-actions"><button class="button button-outline" data-export-rejections>Exportar Excel</button><button class="button button-yellow" data-print-rejections>Gerar PDF</button></div>' : ""}</div><article class="panel rejection-filters no-print"><label class="search-field"><span>Buscar NF, molde, cavidade, placa ou motivo</span><input name="rejectionSearch" value="${escapeHtml(state.rejectionFilters.search)}" placeholder="Digite para pesquisar" /></label><label><span>Local</span><select name="rejectionLocation">${renderLocationOptions(state.rejectionFilters.location)}</select></label><label><span>Motivo</span><select name="rejectionReason"><option value="">Todos os motivos</option>${reasons.map((reason) => `<option value="${escapeHtml(reason)}" ${reason === state.rejectionFilters.reason ? "selected" : ""}>${escapeHtml(reason)}</option>`).join("")}</select></label><label><span>De</span><input type="date" name="rejectionFrom" value="${state.rejectionFilters.from}" /></label><label><span>Até</span><input type="date" name="rejectionTo" value="${state.rejectionFilters.to}" /></label><button class="button button-dark" data-apply-rejections>Filtrar</button><button class="text-button" data-clear-rejections>Limpar</button></article><article class="print-report rejection-report"><header class="report-header"><img src="./epya-logo-oficial.png" alt="EPYA" /><div><span>RELATÓRIO DE NÃO CONFORMIDADES</span><h1>Dormentes reprovados</h1><p>Período: ${period}</p><p>Local: <strong>${escapeHtml(locationLabel)}</strong></p><p>Responsável pelo controle: <strong>${CONTROL_OWNER}</strong></p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header><div class="report-kpis rejection-kpis"><div><span>Dormentes reprovados</span><strong>${formatNumber(rows.length)}</strong><small>peças individualizadas</small></div><div><span>Notas fiscais afetadas</span><strong>${formatNumber(affectedInvoices)}</strong><small>no filtro selecionado</small></div><div><span>Locais afetados</span><strong>${formatNumber(affectedLocations)}</strong><small>pontos de descarga</small></div><div><span>Dados pendentes</span><strong>${formatNumber(pendingDetails)}</strong><small>identificações incompletas</small></div></div>${renderRejectedSleeperTable(rows)}${renderRejectedSleeperCards(rows)}<footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle de dormentes reprovados</span></footer></article></section>`;
+  return `<section class="view rejections-view"><div class="page-heading no-print"><div><span class="eyebrow">Rastreabilidade de não conformidades</span><h1>Dormentes reprovados</h1><p>Reprovações da mesma NF e do mesmo molde aparecem agrupadas, com a soma das quantidades e das cavidades.</p></div>${canEdit() ? '<div class="heading-actions"><button class="button button-outline" data-export-rejections>Exportar Excel</button><button class="button button-yellow" data-print-rejections>Gerar PDF</button></div>' : ""}</div><article class="panel rejection-filters no-print"><label class="search-field"><span>Buscar NF, molde, cavidade, placa ou motivo</span><input name="rejectionSearch" value="${escapeHtml(state.rejectionFilters.search)}" placeholder="Digite para pesquisar" /></label><label><span>Local</span><select name="rejectionLocation">${renderLocationOptions(state.rejectionFilters.location)}</select></label><label><span>Motivo</span><select name="rejectionReason"><option value="">Todos os motivos</option>${reasons.map((reason) => `<option value="${escapeHtml(reason)}" ${reason === state.rejectionFilters.reason ? "selected" : ""}>${escapeHtml(reason)}</option>`).join("")}</select></label><label><span>De</span><input type="date" name="rejectionFrom" value="${state.rejectionFilters.from}" /></label><label><span>Até</span><input type="date" name="rejectionTo" value="${state.rejectionFilters.to}" /></label><button class="button button-dark" data-apply-rejections>Filtrar</button><button class="text-button" data-clear-rejections>Limpar</button></article><article class="print-report rejection-report"><header class="report-header"><img src="./epya-logo-oficial.png" alt="EPYA" /><div><span>RELATÓRIO DE NÃO CONFORMIDADES</span><h1>Dormentes reprovados</h1><p>Período: ${period}</p><p>Local: <strong>${escapeHtml(locationLabel)}</strong></p><p>Responsável pelo controle: <strong>${CONTROL_OWNER}</strong></p></div><img src="./arauco-sucuriu-logo.svg" alt="ARAUCO Projeto Sucuriú" /></header><div class="report-kpis rejection-kpis"><div><span>Dormentes reprovados</span><strong>${formatNumber(rejectedTotal)}</strong><small>quantidade total agrupada</small></div><div><span>Notas fiscais afetadas</span><strong>${formatNumber(affectedInvoices)}</strong><small>no filtro selecionado</small></div><div><span>Locais afetados</span><strong>${formatNumber(affectedLocations)}</strong><small>pontos de descarga</small></div><div><span>Dados pendentes</span><strong>${formatNumber(pendingDetails)}</strong><small>grupos incompletos</small></div></div>${renderRejectedSleeperTable(rows)}${renderRejectedSleeperCards(rows)}<footer class="report-footer"><span>Emitido em ${formatDate(todayInput())}</span><span>EPYA • Controle de dormentes reprovados</span></footer></article></section>`;
 }
 
 function reportRecords() {
@@ -1493,7 +1559,7 @@ function reportInvoiceRows(records) {
 }
 
 function invoiceRejectedCount(row) {
-  if (row.record.material === "dormente") return Math.max(number(row.quality.reprovados), rejectionsForInvoice(row.record, row.item.number).length);
+  if (row.record.material === "dormente") return Math.max(number(row.quality.reprovados), rejectionTotalForInvoice(row.record, row.item.number));
   return number(row.quality["trilho-reprovados"] ?? row.quality.reprovados);
 }
 
@@ -1572,9 +1638,9 @@ function descriptiveReportText(records = reportRecords()) {
     group.rows.forEach((row) => lines.push(`• NF ${row.item.number || "não informada"} — ${formatNumber(row.item.quantity)} ${materialQuantityLabel(group.material, number(row.item.quantity))}`));
     lines.push(`Qualidade: ${qualityTextForRows(group.rows, group.material)}.`);
     group.rows.forEach((row) => {
-      rejectionsForInvoice(row.record, row.item.number).forEach((rejection) => {
-        const reason = rejection.reason || state.rejectionReasons.find((item) => item.id === rejection.reasonId)?.label || "motivo não informado";
-        lines.push(`• Reprovação na NF ${row.item.number}: ${reason}, molde ${rejection.mold || "não informado"} e cavidade ${rejection.cavity || "não informada"}.`);
+      groupedRejectionEntries(rejectionsForInvoice(row.record, row.item.number)).forEach((rejection) => {
+        const reason = rejection.reason || "motivo não informado";
+        lines.push(`• Reprovação na NF ${row.item.number}: ${formatNumber(rejection.quantity)} ${materialQuantityLabel("dormente", rejection.quantity)}, ${reason}, molde ${rejection.mold || "não informado"} e cavidades ${rejection.cavity || "não informadas"}.`);
       });
     });
   });
@@ -1601,13 +1667,13 @@ function renderTextReportEditor() {
 }
 
 function reportRejectionRows(records) {
-  return records.flatMap((record) => rejectionRows(record).map((rejection) => ({ record, rejection })));
+  return groupedRejectedSleeperRows(records);
 }
 
 function renderReportRejections(records) {
   const rows = reportRejectionRows(records);
   if (!rows.length) return "";
-  return `<section class="report-rejections"><h2>Dormentes reprovados</h2><table><thead><tr><th>Data</th><th>NF</th><th>Molde</th><th>Cavidade</th><th>Motivo da reprovação</th></tr></thead><tbody>${rows.map(({ record, rejection }) => `<tr><td>${formatDate(record.receivedDate)}</td><td>${escapeHtml(rejection.invoiceNumber || "—")}</td><td>${escapeHtml(rejection.mold || "—")}</td><td>${escapeHtml(rejection.cavity || "—")}</td><td>${escapeHtml(rejection.reason || state.rejectionReasons.find((reason) => reason.id === rejection.reasonId)?.label || "—")}</td></tr>`).join("")}</tbody></table></section>`;
+  return `<section class="report-rejections"><h2>Dormentes reprovados</h2><table><thead><tr><th>Data</th><th>NF</th><th>Quantidade</th><th>Molde</th><th>Cavidades</th><th>Motivo da reprovação</th></tr></thead><tbody>${rows.map(({ record, item, rejection, rejectedQuantity, reason }) => `<tr><td>${formatDate(record.receivedDate)}</td><td>${escapeHtml(item.number || rejection.invoiceNumber || "—")}</td><td>${formatNumber(rejectedQuantity)}</td><td>${escapeHtml(rejection.mold || "—")}</td><td>${escapeHtml(rejection.cavity || "—")}</td><td>${escapeHtml(reason || "—")}</td></tr>`).join("")}</tbody></table></section>`;
 }
 
 function renderReportKpis(records) {
@@ -1728,9 +1794,9 @@ function renderModal() {
     title = `NF ${item.number || "não informada"}`;
     subtitle = `${MATERIALS[record.material].label} • ${formatDate(record.receivedDate)} • ${record.location || "local não informado"}`;
     const qualityDetails = `<span class="invoice-trace-detail"><i></i>Máquina <strong>${escapeHtml(vehicleDisplay(item.vehiclePlate || record.vehiclePlate || defaultVehicleForMaterial(record.material)))}</strong></span><span class="invoice-trace-detail crew"><i></i>Equipe <strong>${escapeHtml(collaboratorNames(record, item) || "Não informada")}</strong></span>${qualityCategories(record.material).map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(row.quality[category.id])}</strong></span>`).join("")}`;
-    const invoiceRejections = rejectionsForInvoice(record, item.number);
+    const invoiceRejections = groupedRejectionEntries(rejectionsForInvoice(record, item.number));
     const completionDetail = completion.missing.length ? `Falta preencher: ${completion.missing.join(", ")}.` : "Todos os dados essenciais estão preenchidos.";
-    body = `<div class="invoice-modal-overview ${statusClass}"><span class="invoice-status-pill ${statusClass}">${statusLabel}</span><div><strong>${completion.percentage}% preenchido</strong><small>${escapeHtml(completionDetail)}</small><span class="invoice-completion-track" role="progressbar" aria-label="Preenchimento da NF" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${completion.percentage}"><i style="width:${completion.percentage}%"></i></span></div></div><div class="record-modal-summary"><div><span>Quantidade recebida</span><strong>${formatNumber(item.quantity)}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Defeitos encontrados</span><strong>${formatNumber(invoiceDefectCount(row))}</strong><small>ocorrências nesta NF</small></div><div><span>Local da entrega</span><strong>${escapeHtml(record.location || "—")}</strong><small>${escapeHtml(record.supplier || "Fornecedor não informado")}</small></div><div><span>Data</span><strong>${formatDate(record.receivedDate)}</strong><small>${record.receivedTime || "Horário não informado"}</small></div></div><div class="record-quality-list">${qualityDetails}</div>${invoiceRejections.length ? `<div class="record-rejections"><h3>Detalhes da reprovação</h3><div class="modal-table"><table><thead><tr><th>Molde</th><th>Cavidade</th><th>Motivo</th></tr></thead><tbody>${invoiceRejections.map((rejection) => `<tr><td>${escapeHtml(rejection.mold || "—")}</td><td>${escapeHtml(rejection.cavity || "—")}</td><td>${escapeHtml(rejection.reason || state.rejectionReasons.find((reason) => reason.id === rejection.reasonId)?.label || "—")}</td></tr>`).join("")}</tbody></table></div></div>` : ""}<p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>${state.modal.type === "invoice" ? `<section class="invoice-photos-detail"><h3>Fotos desta NF</h3>${renderPhotoGallery(invoiceItems(record)[number(state.modal.index)]?.photos || [])}</section>` : ""}`;
+    body = `<div class="invoice-modal-overview ${statusClass}"><span class="invoice-status-pill ${statusClass}">${statusLabel}</span><div><strong>${completion.percentage}% preenchido</strong><small>${escapeHtml(completionDetail)}</small><span class="invoice-completion-track" role="progressbar" aria-label="Preenchimento da NF" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${completion.percentage}"><i style="width:${completion.percentage}%"></i></span></div></div><div class="record-modal-summary"><div><span>Quantidade recebida</span><strong>${formatNumber(item.quantity)}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Defeitos encontrados</span><strong>${formatNumber(invoiceDefectCount(row))}</strong><small>ocorrências nesta NF</small></div><div><span>Local da entrega</span><strong>${escapeHtml(record.location || "—")}</strong><small>${escapeHtml(record.supplier || "Fornecedor não informado")}</small></div><div><span>Data</span><strong>${formatDate(record.receivedDate)}</strong><small>${record.receivedTime || "Horário não informado"}</small></div></div><div class="record-quality-list">${qualityDetails}</div>${invoiceRejections.length ? `<div class="record-rejections"><h3>Detalhes da reprovação</h3><div class="modal-table"><table><thead><tr><th>Quantidade</th><th>Molde</th><th>Cavidades</th><th>Motivo</th></tr></thead><tbody>${invoiceRejections.map((rejection) => `<tr><td>${formatNumber(rejection.quantity)}</td><td>${escapeHtml(rejection.mold || "—")}</td><td>${escapeHtml(rejection.cavity || "—")}</td><td>${escapeHtml(rejection.reason || "—")}</td></tr>`).join("")}</tbody></table></div></div>` : ""}<p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>${state.modal.type === "invoice" ? `<section class="invoice-photos-detail"><h3>Fotos desta NF</h3>${renderPhotoGallery(invoiceItems(record)[number(state.modal.index)]?.photos || [])}</section>` : ""}`;
     footer = `<button class="button button-outline" data-modal-close>Fechar</button>${canEdit() ? `<button class="button button-dark" data-edit-invoice="${record.id}" data-invoice-index="${index}">Editar esta NF</button>` : ""}`;
   } else if (state.modal.type === "record") {
     const record = state.records.find((item) => item.id === state.modal.id);
@@ -1739,8 +1805,8 @@ function renderModal() {
     subtitle = `${record.location || "Local não informado"} • ${record.receivedTime || "horário pendente"}`;
     const items = invoiceItems(record);
     const sleeperColumns = record.material === "dormente" ? "<th>PQ</th><th>R</th><th>B</th><th>Quebras</th>" : "";
-    const rejectedRows = rejectionRows(record);
-    body = `<div class="record-modal-summary"><div><span>Total recebido</span><strong>${formatNumber(recordQuantity(record))}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Fornecedor</span><strong>${escapeHtml(record.supplier || "—")}</strong><small>${escapeHtml(record.vehiclePlate || "Sem placa")}</small></div></div><div class="modal-table"><table><thead><tr><th>Nota fiscal</th><th>Quantidade</th>${sleeperColumns}</tr></thead><tbody>${items.map((item, index) => { const summary = sleeperQualitySummary(invoiceQuality(record, item, index)); return `<tr><td>NF ${escapeHtml(item.number)}</td><td>${formatNumber(item.quantity)} ${MATERIALS[record.material].unit}</td>${record.material === "dormente" ? `<td>${formatNumber(summary.smallBreaks)}</td><td>${formatNumber(summary.repaired)}</td><td>${formatNumber(summary.bubbles)}</td><td>${formatNumber(summary.breaks)}</td>` : ""}</tr>`; }).join("")}</tbody></table></div><div class="record-photo-links">${items.map((item, index) => `<button class="button button-outline" data-view-invoice="${escapeHtml(record.id)}" data-invoice-index="${index}">NF ${escapeHtml(item.number)} · ${(item.photos || []).length} fotos · Ver detalhes</button>`).join("")}</div><div class="record-quality-list">${qualityCategories(record.material).map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(record.quality?.[category.id])}</strong></span>`).join("")}</div>${rejectedRows.length ? `<div class="record-rejections"><h3>Dormentes reprovados</h3><div class="modal-table"><table><thead><tr><th>NF</th><th>Molde</th><th>Cavidade</th><th>Motivo</th></tr></thead><tbody>${rejectedRows.map((rejection) => `<tr><td>${escapeHtml(rejection.invoiceNumber || "—")}</td><td>${escapeHtml(rejection.mold || "—")}</td><td>${escapeHtml(rejection.cavity || "—")}</td><td>${escapeHtml(rejection.reason || state.rejectionReasons.find((reason) => reason.id === rejection.reasonId)?.label || "—")}</td></tr>`).join("")}</tbody></table></div></div>` : ""}<p class="record-observation"><strong>Responsável:</strong> ${escapeHtml(record.inspectorName || CONTROL_OWNER)}</p><p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>${state.modal.type === "invoice" ? `<section class="invoice-photos-detail"><h3>Fotos desta NF</h3>${renderPhotoGallery(invoiceItems(record)[number(state.modal.index)]?.photos || [])}</section>` : ""}`;
+    const rejectedRows = groupedRejectedSleeperRows([record]);
+    body = `<div class="record-modal-summary"><div><span>Total recebido</span><strong>${formatNumber(recordQuantity(record))}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Fornecedor</span><strong>${escapeHtml(record.supplier || "—")}</strong><small>${escapeHtml(record.vehiclePlate || "Sem placa")}</small></div></div><div class="modal-table"><table><thead><tr><th>Nota fiscal</th><th>Quantidade</th>${sleeperColumns}</tr></thead><tbody>${items.map((item, index) => { const summary = sleeperQualitySummary(invoiceQuality(record, item, index)); return `<tr><td>NF ${escapeHtml(item.number)}</td><td>${formatNumber(item.quantity)} ${MATERIALS[record.material].unit}</td>${record.material === "dormente" ? `<td>${formatNumber(summary.smallBreaks)}</td><td>${formatNumber(summary.repaired)}</td><td>${formatNumber(summary.bubbles)}</td><td>${formatNumber(summary.breaks)}</td>` : ""}</tr>`; }).join("")}</tbody></table></div><div class="record-photo-links">${items.map((item, index) => `<button class="button button-outline" data-view-invoice="${escapeHtml(record.id)}" data-invoice-index="${index}">NF ${escapeHtml(item.number)} · ${(item.photos || []).length} fotos · Ver detalhes</button>`).join("")}</div><div class="record-quality-list">${qualityCategories(record.material).map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(record.quality?.[category.id])}</strong></span>`).join("")}</div>${rejectedRows.length ? `<div class="record-rejections"><h3>Dormentes reprovados</h3><div class="modal-table"><table><thead><tr><th>NF</th><th>Quantidade</th><th>Molde</th><th>Cavidades</th><th>Motivo</th></tr></thead><tbody>${rejectedRows.map((row) => `<tr><td>${escapeHtml(row.item.number || row.rejection.invoiceNumber || "—")}</td><td>${formatNumber(row.rejectedQuantity)}</td><td>${escapeHtml(row.rejection.mold || "—")}</td><td>${escapeHtml(row.rejection.cavity || "—")}</td><td>${escapeHtml(row.reason || "—")}</td></tr>`).join("")}</tbody></table></div></div>` : ""}<p class="record-observation"><strong>Responsável:</strong> ${escapeHtml(record.inspectorName || CONTROL_OWNER)}</p><p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>${state.modal.type === "invoice" ? `<section class="invoice-photos-detail"><h3>Fotos desta NF</h3>${renderPhotoGallery(invoiceItems(record)[number(state.modal.index)]?.photos || [])}</section>` : ""}`;
     footer = `<button class="button button-outline" data-modal-close>Fechar</button>${canEdit() ? `<button class="button button-outline danger" data-delete-record="${escapeHtml(record.id)}">Excluir recebimento</button><button class="button button-dark" data-edit-record="${escapeHtml(record.id)}">Editar</button>` : ""}`;
   }
   return `<div class="modal-backdrop" data-modal-close><section class="chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" onclick="event.stopPropagation()"><header><div><span class="eyebrow">${escapeHtml(subtitle)}</span><h2>${escapeHtml(title)}</h2></div><button data-modal-close aria-label="Fechar">×</button></header>${body}<footer>${footer}</footer></section></div>`;
@@ -1836,9 +1902,17 @@ function bindFormEvents() {
     state.draft.invoiceItems.push(blankInvoiceItem(state.draft.material, { vehiclePlate: state.draft.vehiclePlate, collaborators: selectedDraftCollaborators(state.draft) }));
     render();
   });
-  form.querySelectorAll("[data-remove-invoice]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.splice(number(button.dataset.removeInvoice), 1); render(); }));
-  form.querySelector("[data-add-rejection]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); const firstInvoice = state.draft.invoiceItems.find((item) => item.number)?.number || ""; state.draft.rejections = rejectionRows(state.draft); state.draft.rejections.push({ id: crypto.randomUUID(), invoiceNumber: firstInvoice, mold: "", cavity: "", reasonId: "", reason: "" }); state.draft.quality.reprovados = state.draft.rejections.length; render(); });
-  form.querySelectorAll("[data-remove-rejection]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.rejections.splice(number(button.dataset.removeRejection), 1); state.draft.quality.reprovados = state.draft.rejections.length; render(); }));
+  form.querySelectorAll("[data-remove-invoice]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); const removed = state.draft.invoiceItems.splice(number(button.dataset.removeInvoice), 1)[0]; state.draft.rejections = rejectionRows(state.draft).filter((rejection) => rejection.invoiceNumber !== String(removed?.number || "")); reconcileInvoiceQuality(state.draft); render(); }));
+  form.querySelectorAll("[data-add-invoice-rejection]").forEach((button) => button.addEventListener("click", () => {
+    state.draft = formRecordFromDom();
+    const invoiceIndex = number(button.dataset.addInvoiceRejection);
+    const invoiceNumber = state.draft.invoiceItems[invoiceIndex]?.number || "";
+    const rejection = { id: crypto.randomUUID(), invoiceNumber, quantity: 1, mold: "", cavity: "", reasonId: "", reason: "" };
+    state.draft.rejections = [...rejectionRows(state.draft), rejection];
+    reconcileInvoiceQuality(state.draft); render();
+    requestAnimationFrame(() => document.querySelector(`[data-rejection-id="${rejection.id}"] [name="rejectionQuantity"]`)?.focus());
+  }));
+  form.querySelectorAll("[data-remove-rejection-id]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.rejections = rejectionRows(state.draft).filter((rejection) => rejection.id !== button.dataset.removeRejectionId); reconcileInvoiceQuality(state.draft); render(); }));
   form.querySelector("[data-add-rejection-reason]")?.addEventListener("click", () => addRejectionReason(form.querySelector('[name="newRejectionReason"]')?.value));
   form.querySelector("[data-add-collaborator]")?.addEventListener("click", () => addReceivingCollaborator(form.querySelector('[name="newCollaboratorName"]')?.value, form.querySelector('[name="newCollaboratorRole"]')?.value));
   form.querySelectorAll("[data-edit-collaborator-role]").forEach((button) => button.addEventListener("click", () => editReceivingCollaboratorRole(button.dataset.editCollaboratorRole)));
@@ -1891,7 +1965,11 @@ async function saveCurrent(status) {
   state.draft = record;
   const warnings = draftWarnings(record);
   if (status !== "rascunho" && warnings.missing.length) { render(); return toast("Preencha os dados pendentes ou salve como rascunho.", "error"); }
-  if (status !== "rascunho" && record.material === "dormente" && record.rejections.some((item) => !item.invoiceNumber || !item.mold || !item.cavity || !item.reasonId)) return toast("Complete NF, molde, cavidade e motivo de cada dormente reprovado.", "error");
+  if (status !== "rascunho" && record.material === "dormente" && record.rejections.some((item) => !item.invoiceNumber || rejectionQuantity(item) < 1 || !item.mold || !item.cavity || !item.reasonId)) return toast("Complete quantidade, molde, cavidade e motivo dos reprovados em cada NF.", "error");
+  if (status !== "rascunho" && record.material === "dormente") {
+    const excessive = record.invoiceItems.find((item) => rejectionTotalForInvoice(record, item.number) > number(item.quantity));
+    if (excessive) return toast(`A quantidade de reprovados da NF ${excessive.number || "não informada"} é maior que a quantidade recebida.`, "error");
+  }
   if (status !== "rascunho" && warnings.duplicates.length) {
     const signature = JSON.stringify({ material: record.material, invoices: record.invoiceItems.map((item) => [invoiceNumberKey(item.number), number(item.quantity)]), matches: warnings.duplicates.slice().sort() });
     if (record.duplicateReview?.signature !== signature) {
@@ -2088,7 +2166,7 @@ function removeReportImage(id) {
 function exportCsv(records) {
   if (!requireReportAction()) return;
   const rows = [["Data", "Horário", "Material", "Nota Fiscal", "Quantidade", "Local", "Fornecedor", "Veículo", "Colaboradores presentes", "Pequenas quebras", "Reparados", "Bolhas", "Quebras", "Dormentes reprovados", "Molde / cavidade / motivo", "Empenamento / torção", "Oxidação / corrosão", "Danos no boleto", "Danos na alma", "Danos no patim", "Trilhos reprovados", "Responsável pelo lançamento", "Observações"]];
-  records.forEach((record) => invoiceItems(record).forEach((item, index) => { const quality = invoiceQuality(record, item, index); const rejected = Math.max(number(quality.reprovados), rejectionsForInvoice(record, item.number).length); rows.push([formatDate(record.receivedDate), record.receivedTime || "não informado", MATERIALS[record.material].label, item.number, item.quantity, record.location, record.supplier, vehicleDisplay(item.vehiclePlate || record.vehiclePlate || defaultVehicleForMaterial(record.material)), collaboratorNames(record, item), quality["pequenas-quebras"] || 0, quality.reparados || 0, quality.bolhas || 0, quality.quebras || 0, rejected, rejectionDetails(record, item.number), quality["trilho-empenamento"] || 0, quality["trilho-oxidacao"] || 0, quality["trilho-boleto"] || 0, quality["trilho-alma"] || 0, quality["trilho-patim"] || 0, quality["trilho-reprovados"] || 0, record.inspectorName || CONTROL_OWNER, record.observations || ""]); }));
+  records.forEach((record) => invoiceItems(record).forEach((item, index) => { const quality = invoiceQuality(record, item, index); const rejected = Math.max(number(quality.reprovados), rejectionTotalForInvoice(record, item.number)); rows.push([formatDate(record.receivedDate), record.receivedTime || "não informado", MATERIALS[record.material].label, item.number, item.quantity, record.location, record.supplier, vehicleDisplay(item.vehiclePlate || record.vehiclePlate || defaultVehicleForMaterial(record.material)), collaboratorNames(record, item), quality["pequenas-quebras"] || 0, quality.reparados || 0, quality.bolhas || 0, quality.quebras || 0, rejected, rejectionDetails(record, item.number), quality["trilho-empenamento"] || 0, quality["trilho-oxidacao"] || 0, quality["trilho-boleto"] || 0, quality["trilho-alma"] || 0, quality["trilho-patim"] || 0, quality["trilho-reprovados"] || 0, record.inspectorName || CONTROL_OWNER, record.observations || ""]); }));
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
   const suffix = `${state.reportFilters.from || "inicio"}-a-${state.reportFilters.to || "fim"}`;
   const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); link.download = `relatorio-epya-${suffix}.csv`; link.click(); URL.revokeObjectURL(link.href); toast("Planilha para Excel gerada.", "success");
@@ -2097,8 +2175,8 @@ function exportCsv(records) {
 function exportRejectedCsv() {
   if (!requireReportAction()) return;
   syncRejectionFiltersFromDom();
-  const rows = [["Data", "Horário", "Nota Fiscal", "Quantidade da NF", "Local", "Fornecedor", "Placa", "Molde", "Cavidade", "Motivo da reprovação", "Responsável", "Observações", "Fotos da NF"]];
-  filteredRejectedSleepers().forEach((row) => rows.push([formatDate(row.record.receivedDate || row.record.receivedAt), row.record.receivedTime || "não informado", row.item.number || row.rejection.invoiceNumber || "", row.item.quantity, row.record.location || "", row.record.supplier || "", row.record.vehiclePlate || "", row.rejection.mold || "", row.rejection.cavity || "", row.reason, row.record.inspectorName || CONTROL_OWNER, row.record.observations || "", row.item.photos?.length || 0]));
+  const rows = [["Data", "Horário", "Nota Fiscal", "Quantidade da NF", "Quantidade reprovada", "Local", "Fornecedor", "Placa", "Molde", "Cavidades", "Motivo da reprovação", "Responsável", "Observações", "Fotos da NF"]];
+  filteredRejectedSleepers().forEach((row) => rows.push([formatDate(row.record.receivedDate || row.record.receivedAt), row.record.receivedTime || "não informado", row.item.number || row.rejection.invoiceNumber || "", row.item.quantity, row.rejectedQuantity, row.record.location || "", row.record.supplier || "", row.record.vehiclePlate || "", row.rejection.mold || "", row.rejection.cavity || "", row.reason, row.record.inspectorName || CONTROL_OWNER, row.record.observations || "", row.item.photos?.length || 0]));
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
   const suffix = `${state.rejectionFilters.from || "inicio"}-a-${state.rejectionFilters.to || "fim"}`;
   const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); link.download = `dormentes-reprovados-epya-${suffix}.csv`; link.click(); URL.revokeObjectURL(link.href); toast("Planilha de dormentes reprovados gerada.", "success");
@@ -2439,7 +2517,7 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=43" : "/service-worker.js?v=43").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=44" : "/service-worker.js?v=44").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); if (isOperator()) await loadOperatorDashboardSummary(); } state.loading = false; render();
 }
 
