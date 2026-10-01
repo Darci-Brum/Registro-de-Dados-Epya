@@ -27,6 +27,7 @@ const GOAL_OUTBOX_KEY = "epya-recebimentos-goals-outbox-v1";
 const OPERATOR_DASHBOARD_KEY = "epya-recebimentos-operator-dashboard-v1";
 const COLLABORATOR_KEY = "epya-recebimentos-collaborators-v1";
 const VEHICLE_KEY = "epya-recebimentos-vehicles-v1";
+const DAILY_CREW_KEY = "epya-recebimentos-daily-crew-v1";
 const PHOTO_BUCKET = "recebimento-nf-photos";
 const MAX_INVOICE_PHOTOS = 6;
 const pendingPhotoFiles = new Map();
@@ -36,23 +37,23 @@ const CONTROL_OWNER = "Darci de Brum";
 
 const DEFAULT_COLLABORATORS = [
   { id: "diego-nunes-delmiro-da-silva", fullName: "Diego Nunes Delmiro da Silva", roleLabel: "Apontador de Qualidade" },
-  { id: "wesley-nunes-da-silva", fullName: "Wesley Nunes da Silva", roleLabel: "" },
-  { id: "jean-nunes-da-silva", fullName: "Jean Nunes da Silva", roleLabel: "" },
+  { id: "wesley-nunes-da-silva", fullName: "Wesley Nunes da Silva", roleLabel: "Mantenedor" },
+  { id: "jean-nunes-da-silva", fullName: "Jean Nunes da Silva", roleLabel: "Mantenedor" },
   { id: "matheus-dos-santos", fullName: "Matheus dos Santos", roleLabel: "Operador de Máquinas Pesadas" },
-  { id: "thaynan-marques-silva", fullName: "Thaynan Marques Silva", roleLabel: "" },
-  { id: "adriano-jose-da-silva-santos", fullName: "Adriano José da Silva Santos", roleLabel: "" },
-  { id: "josenilton-bezerra-da-silva", fullName: "Josenilton Bezerra da Silva", roleLabel: "" },
+  { id: "thaynan-marques-silva", fullName: "Thaynan Marques Silva", roleLabel: "Mantenedor" },
+  { id: "adriano-jose-da-silva-santos", fullName: "Adriano José da Silva Santos", roleLabel: "Mantenedor" },
+  { id: "josenilton-bezerra-da-silva", fullName: "Josenilton Bezerra da Silva", roleLabel: "Mantenedor" },
   { id: "romario-do-nascimento-conceicao", fullName: "Romario do Nascimento Conceição", roleLabel: "Operador de Máquinas Pesadas" },
-  { id: "jose-ivan-barbosa-da-silva", fullName: "José Ivan Barbosa da Silva", roleLabel: "" },
-  { id: "antonio-rodrigues-dos-santos", fullName: "Antônio Rodrigues dos Santos", roleLabel: "" },
-  { id: "leonilton-de-almeida-correia", fullName: "Leonilton de Almeida Correia", roleLabel: "" },
+  { id: "jose-ivan-barbosa-da-silva", fullName: "José Ivan Barbosa da Silva", roleLabel: "Mantenedor" },
+  { id: "antonio-rodrigues-dos-santos", fullName: "Antônio Rodrigues dos Santos", roleLabel: "Encarregado de Ferrovias IV" },
+  { id: "leonilton-de-almeida-correia", fullName: "Leonilton de Almeida Correia", roleLabel: "Mantenedor" },
   { id: "leudevan-da-silva", fullName: "Leudevan da Silva", roleLabel: "Operador de Máquinas Pesadas" },
-  { id: "everaldo-costa-silva", fullName: "Everaldo Costa Silva", roleLabel: "" },
+  { id: "everaldo-costa-silva", fullName: "Everaldo Costa Silva", roleLabel: "Mantenedor" },
 ];
 
 const DEFAULT_VEHICLES = [
-  { id: "pc-06-014", plate: "PC 06.014", material: "dormente", label: "Veículo padrão de dormentes" },
-  { id: "pc-06-011", plate: "PC 06.011", material: "trilho", label: "Veículo padrão de trilhos" },
+  { id: "pc-06-014", plate: "PC 06.014", material: "dormente", label: "WA200 Komatsu" },
+  { id: "pc-06-011", plate: "PC 06.011", material: "trilho", label: "WA200 Komatsu" },
 ];
 
 const RAIL_QUALITY_CATEGORIES = [
@@ -195,7 +196,11 @@ function normalizeCollaborator(item = {}) {
 function readCollaborators() {
   try {
     const stored = JSON.parse(localStorage.getItem(COLLABORATOR_KEY) || "null");
-    return Array.isArray(stored) && stored.length ? stored.map(normalizeCollaborator) : DEFAULT_COLLABORATORS.map(normalizeCollaborator);
+    if (!Array.isArray(stored) || !stored.length) return DEFAULT_COLLABORATORS.map(normalizeCollaborator);
+    return stored.map(normalizeCollaborator).map((person) => {
+      const currentDefault = DEFAULT_COLLABORATORS.find((entry) => entry.id === person.id);
+      return currentDefault && !person.roleLabel ? { ...person, roleLabel: currentDefault.roleLabel } : person;
+    });
   } catch {
     return DEFAULT_COLLABORATORS.map(normalizeCollaborator);
   }
@@ -219,7 +224,11 @@ function normalizeVehicle(item = {}) {
 function readVehicles() {
   try {
     const stored = JSON.parse(localStorage.getItem(VEHICLE_KEY) || "null");
-    return Array.isArray(stored) && stored.length ? stored.map(normalizeVehicle) : DEFAULT_VEHICLES.map(normalizeVehicle);
+    if (!Array.isArray(stored) || !stored.length) return DEFAULT_VEHICLES.map(normalizeVehicle);
+    return stored.map(normalizeVehicle).map((vehicle) => {
+      const currentDefault = DEFAULT_VEHICLES.find((entry) => entry.plate === vehicle.plate);
+      return currentDefault ? { ...vehicle, label: currentDefault.label } : vehicle;
+    });
   } catch {
     return DEFAULT_VEHICLES.map(normalizeVehicle);
   }
@@ -282,28 +291,92 @@ function blankQuality(material) {
   return Object.fromEntries(qualityCategories(material).map((category) => [category.id, 0]));
 }
 
-function blankInvoiceItem(material) {
-  return { id: crypto.randomUUID(), number: "", quantity: "", quality: blankQuality(material), photos: [], vehiclePlate: defaultVehicleForMaterial(material), collaborators: [] };
+function readDailyCrewDefaults() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(DAILY_CREW_KEY) || "{}");
+    return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+  } catch {
+    return {};
+  }
+}
+
+function dailyCrewKey(date, material) {
+  return `${String(date || todayInput()).slice(0, 10)}:${material}`;
+}
+
+function refreshCollaboratorRoles(people = []) {
+  return people.map((person) => {
+    const saved = invoiceCollaborators({ collaborators: [person] })[0];
+    const catalogPerson = state.collaborators.find((entry) => entry.id === saved?.id || entry.fullName.toLocaleLowerCase("pt-BR") === saved?.name.toLocaleLowerCase("pt-BR"));
+    return catalogPerson ? collaboratorEntry(catalogPerson) : saved;
+  }).filter(Boolean);
+}
+
+function latestDailyCrew(date, material) {
+  const matchingRecord = state.records.find((record) => String(record.receivedDate || record.receivedAt || "").slice(0, 10) === String(date).slice(0, 10) && record.material === material && invoiceItems(record).some((item) => invoiceCollaborators(record, item).length));
+  if (matchingRecord) {
+    const item = invoiceItems(matchingRecord).find((entry) => invoiceCollaborators(matchingRecord, entry).length);
+    return { collaborators: refreshCollaboratorRoles(invoiceCollaborators(matchingRecord, item)), vehiclePlate: String(item?.vehiclePlate || matchingRecord.vehiclePlate || defaultVehicleForMaterial(material)).toUpperCase() };
+  }
+  const stored = readDailyCrewDefaults()[dailyCrewKey(date, material)];
+  return stored ? { collaborators: refreshCollaboratorRoles(stored.collaborators || []), vehiclePlate: String(stored.vehiclePlate || defaultVehicleForMaterial(material)).toUpperCase() } : null;
+}
+
+function rememberDailyCrew(record) {
+  if (!record?.material || !record?.receivedDate) return;
+  const item = invoiceItems(record).find((entry) => invoiceCollaborators(record, entry).length);
+  const collaborators = item ? invoiceCollaborators(record, item) : invoiceCollaborators(record);
+  if (!collaborators.length) return;
+  const stored = readDailyCrewDefaults();
+  stored[dailyCrewKey(record.receivedDate, record.material)] = {
+    collaborators: refreshCollaboratorRoles(collaborators),
+    vehiclePlate: String(item?.vehiclePlate || record.vehiclePlate || defaultVehicleForMaterial(record.material)).toUpperCase(),
+    updatedAt: new Date().toISOString(),
+  };
+  localStorage.setItem(DAILY_CREW_KEY, JSON.stringify(stored));
+}
+
+function blankInvoiceItem(material, defaults = {}) {
+  return { id: crypto.randomUUID(), number: "", quantity: "", quality: blankQuality(material), photos: [], vehiclePlate: defaults.vehiclePlate || defaultVehicleForMaterial(material), collaborators: structuredClone(defaults.collaborators || []) };
 }
 
 function defaultDraft(material = "dormente") {
+  const receivedDate = todayInput();
+  const daily = latestDailyCrew(receivedDate, material);
+  const vehiclePlate = daily?.vehiclePlate || defaultVehicleForMaterial(material);
+  const collaborators = daily?.collaborators || [];
   return {
     id: "",
     status: "concluido",
     material,
-    receivedDate: todayInput(),
+    receivedDate,
     receivedTime: nowTime(),
     timeKnown: true,
     location: "",
     supplier: supplierForMaterial(material),
-    vehiclePlate: defaultVehicleForMaterial(material),
-    collaborators: [],
+    vehiclePlate,
+    collaborators: structuredClone(collaborators),
     inspectorName: CONTROL_OWNER,
-    invoiceItems: [blankInvoiceItem(material)],
+    invoiceItems: [blankInvoiceItem(material, { vehiclePlate, collaborators })],
     quality: Object.fromEntries([...state.categories, ...RAIL_QUALITY_CATEGORIES].map((category) => [category.id, 0])),
     rejections: [],
     observations: "",
     _cleanupMolde57Cav1: true,
+  };
+}
+
+function applyDailyCrewToDraft(draft, date = draft.receivedDate, material = draft.material) {
+  const daily = latestDailyCrew(date, material);
+  const collaborators = daily?.collaborators || [];
+  const vehiclePlate = daily?.vehiclePlate || defaultVehicleForMaterial(material);
+  return {
+    ...draft,
+    material,
+    receivedDate: date,
+    supplier: supplierForMaterial(material),
+    vehiclePlate,
+    collaborators: structuredClone(collaborators),
+    invoiceItems: invoiceItems(draft).map((item) => ({ ...item, vehiclePlate, collaborators: structuredClone(collaborators) })),
   };
 }
 
@@ -326,7 +399,14 @@ function invoiceCollaborators(record, item) {
 }
 
 function collaboratorNames(record, item) {
-  return invoiceCollaborators(record, item).map((person) => person.name).join(", ");
+  return invoiceCollaborators(record, item).map((person) => person.role ? `${person.name} — ${person.role}` : person.name).join(", ");
+}
+
+function vehicleDisplay(plate) {
+  const normalizedPlate = String(plate || "").trim().toUpperCase();
+  if (!normalizedPlate) return "Veículo não informado";
+  const vehicle = state.vehicles.find((entry) => entry.plate === normalizedPlate) || DEFAULT_VEHICLES.find((entry) => entry.plate === normalizedPlate);
+  return vehicle?.label ? `${normalizedPlate} — ${vehicle.label}` : normalizedPlate;
 }
 
 function normalizeMaterialSupplier(record) {
@@ -1147,7 +1227,7 @@ function renderCrewVehicleFields(draft) {
   const currentPlate = String(targetItem?.vehiclePlate || draft.vehiclePlate || defaultVehicleForMaterial(draft.material)).toUpperCase();
   const vehicles = state.vehicles.filter((vehicle) => vehicle.active !== false && [draft.material, "todos"].includes(vehicle.material)).map(normalizeVehicle);
   if (currentPlate && !vehicles.some((vehicle) => vehicle.plate === currentPlate)) vehicles.push(normalizeVehicle({ id: `current-${currentPlate}`, plate: currentPlate, material: draft.material, label: "Veículo deste lançamento" }));
-  return `<section class="crew-vehicle-fields"><div class="crew-vehicle-heading"><div><span class="eyebrow">Equipe da descarga</span><h3>Colaboradores presentes e veículo</h3><p>Marque quem participou. A informação será salva dentro de cada NF deste lançamento.</p></div><span class="crew-count">${selected.length} selecionado(s)</span></div><div class="crew-vehicle-grid"><div class="crew-selector" role="group" aria-label="Colaboradores presentes">${catalog.map((person) => { const checked = selectedKeys.has(person.id) || selectedKeys.has(person.fullName.toLocaleLowerCase("pt-BR")); return `<label class="crew-option ${checked ? "selected" : ""}"><input type="checkbox" name="collaboratorIds" value="${escapeHtml(person.id)}" ${checked ? "checked" : ""} /><span><strong>${escapeHtml(person.fullName)}</strong>${person.roleLabel ? `<small>${escapeHtml(person.roleLabel)}</small>` : ""}</span><i aria-hidden="true">✓</i></label>`; }).join("")}</div><div class="crew-side-fields"><label><span>Veículo usado *</span><select name="vehiclePlate" required>${vehicles.map((vehicle) => `<option value="${escapeHtml(vehicle.plate)}" ${vehicle.plate === currentPlate ? "selected" : ""}>${escapeHtml(vehicle.plate)}${vehicle.label ? ` — ${escapeHtml(vehicle.label)}` : ""}</option>`).join("")}</select><small>Padrão: ${escapeHtml(defaultVehicleForMaterial(draft.material))}</small></label><div class="catalog-add-box"><strong>Adicionar outro colaborador</strong><div><input name="newCollaboratorName" placeholder="Nome completo" /><button type="button" class="button button-outline" data-add-collaborator>Adicionar</button></div></div><div class="catalog-add-box"><strong>Adicionar outro veículo</strong><div><input name="newVehiclePlate" placeholder="Placa ou identificação" /><button type="button" class="button button-outline" data-add-vehicle>Adicionar</button></div></div></div></div></section>`;
+  return `<section class="crew-vehicle-fields"><div class="crew-vehicle-heading"><div><span class="eyebrow">Equipe da descarga</span><h3>Colaboradores presentes e veículo</h3><p>Marque quem participou. A equipe escolhida será repetida nas demais NFs do mesmo dia e poderá ser ajustada manualmente.</p></div><span class="crew-count">${selected.length} selecionado(s)</span></div><div class="crew-vehicle-grid"><div class="crew-selector" role="group" aria-label="Colaboradores presentes">${catalog.map((person) => { const checked = selectedKeys.has(person.id) || selectedKeys.has(person.fullName.toLocaleLowerCase("pt-BR")); return `<div class="crew-option ${checked ? "selected" : ""}"><label class="crew-option-select"><input type="checkbox" name="collaboratorIds" value="${escapeHtml(person.id)}" ${checked ? "checked" : ""} /><span><strong>${escapeHtml(person.fullName)}</strong><small>${escapeHtml(person.roleLabel || "Função não informada")}</small></span><i aria-hidden="true">✓</i></label>${canEdit() ? `<button type="button" class="crew-role-edit" data-edit-collaborator-role="${escapeHtml(person.id)}" title="Alterar função de ${escapeHtml(person.fullName)}">Alterar função</button>` : ""}</div>`; }).join("")}</div><div class="crew-side-fields"><label><span>Máquina usada *</span><select name="vehiclePlate" required>${vehicles.map((vehicle) => `<option value="${escapeHtml(vehicle.plate)}" ${vehicle.plate === currentPlate ? "selected" : ""}>${escapeHtml(vehicle.plate)}${vehicle.label ? ` — ${escapeHtml(vehicle.label)}` : ""}</option>`).join("")}</select><small>Padrão: ${escapeHtml(vehicleDisplay(defaultVehicleForMaterial(draft.material)))}</small></label><div class="catalog-add-box"><strong>Adicionar outro colaborador</strong><div><input name="newCollaboratorName" placeholder="Nome completo" /><input name="newCollaboratorRole" value="Mantenedor" placeholder="Função" /><button type="button" class="button button-outline" data-add-collaborator>Adicionar</button></div></div><div class="catalog-add-box"><strong>Adicionar outra máquina</strong><div><input name="newVehiclePlate" placeholder="Número ou identificação" /><button type="button" class="button button-outline" data-add-vehicle>Adicionar</button></div></div></div></div></section>`;
 }
 
 function formRecordFromDom() {
@@ -1264,7 +1344,7 @@ function renderOperatorConfirmation() {
   const receipt = state.operatorReceiptConfirmation;
   if (!receipt) return renderOperatorDashboard();
   const invoiceLabel = receipt.invoiceNumbers || "—";
-  return `<section class="view operator-confirmation-view"><article class="panel operator-confirmation-card"><span class="confirmation-mark" aria-hidden="true">✓</span><span class="eyebrow">Lançamento registrado</span><h1>${receipt.savedLocally ? "Salvo neste aparelho" : "Recebimento enviado"}</h1><p>${receipt.savedLocally ? "A internet está indisponível. O envio será feito automaticamente quando a conexão voltar." : "Os dados já estão disponíveis para acompanhamento no painel."}</p><dl><div><dt>Material</dt><dd>${escapeHtml(MATERIALS[receipt.material]?.label || receipt.material)}</dd></div><div><dt>Quantidade</dt><dd>${formatNumber(receipt.quantity)} ${escapeHtml(MATERIALS[receipt.material]?.unit || "un")}</dd></div><div><dt>Local</dt><dd>${escapeHtml(receipt.location || "—")}</dd></div><div><dt>Nota(s) fiscal(is)</dt><dd>${escapeHtml(invoiceLabel)}</dd></div><div><dt>Fornecedor</dt><dd>${escapeHtml(supplierForMaterial(receipt.material))}</dd></div><div><dt>Data</dt><dd>${formatDate(receipt.receivedDate)}</dd></div><div><dt>Veículo</dt><dd>${escapeHtml(receipt.vehiclePlate || defaultVehicleForMaterial(receipt.material))}</dd></div><div><dt>Colaboradores presentes</dt><dd>${escapeHtml(receipt.collaborators || "Não informados")}</dd></div></dl><div class="operator-confirmation-actions"><button class="button button-yellow" data-new-record data-new-material="${escapeHtml(receipt.material)}">+ Novo lançamento</button><button class="button button-outline" data-nav="dashboard">Ver painel</button></div></article></section>`;
+  return `<section class="view operator-confirmation-view"><article class="panel operator-confirmation-card"><span class="confirmation-mark" aria-hidden="true">✓</span><span class="eyebrow">Lançamento registrado</span><h1>${receipt.savedLocally ? "Salvo neste aparelho" : "Recebimento enviado"}</h1><p>${receipt.savedLocally ? "A internet está indisponível. O envio será feito automaticamente quando a conexão voltar." : "Os dados já estão disponíveis para acompanhamento no painel."}</p><dl><div><dt>Material</dt><dd>${escapeHtml(MATERIALS[receipt.material]?.label || receipt.material)}</dd></div><div><dt>Quantidade</dt><dd>${formatNumber(receipt.quantity)} ${escapeHtml(MATERIALS[receipt.material]?.unit || "un")}</dd></div><div><dt>Local</dt><dd>${escapeHtml(receipt.location || "—")}</dd></div><div><dt>Nota(s) fiscal(is)</dt><dd>${escapeHtml(invoiceLabel)}</dd></div><div><dt>Fornecedor</dt><dd>${escapeHtml(supplierForMaterial(receipt.material))}</dd></div><div><dt>Data</dt><dd>${formatDate(receipt.receivedDate)}</dd></div><div><dt>Máquina</dt><dd>${escapeHtml(vehicleDisplay(receipt.vehiclePlate || defaultVehicleForMaterial(receipt.material)))}</dd></div><div><dt>Colaboradores presentes</dt><dd>${escapeHtml(receipt.collaborators || "Não informados")}</dd></div></dl><div class="operator-confirmation-actions"><button class="button button-yellow" data-new-record data-new-material="${escapeHtml(receipt.material)}">+ Novo lançamento</button><button class="button button-outline" data-nav="dashboard">Ver painel</button></div></article></section>`;
 }
 
 function renderOperatorQualityCards(draft, items) {
@@ -1359,11 +1439,11 @@ function filteredRejectedSleepers() {
 
 function renderRejectedSleeperTable(rows) {
   if (!rows.length) return '<div class="empty-state rejection-empty"><span>✓</span><h3>Nenhum dormente reprovado encontrado</h3><p>Não há reprovações com os filtros escolhidos.</p></div>';
-  return `<div class="rejection-table"><table><thead><tr><th>Data / horário</th><th>NF / quantidade</th><th>Local</th><th>Identificação</th><th>Motivo</th><th>Rastreabilidade</th><th>Observações</th><th>Fotos</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => `<tr><td><strong>${formatDate(row.record.receivedDate || row.record.receivedAt)}</strong><small>${escapeHtml(row.record.receivedTime || "Horário não informado")}</small></td><td><strong>NF ${escapeHtml(row.item.number || row.rejection.invoiceNumber || "—")}</strong><small>${formatNumber(row.item.quantity)} dormentes recebidos</small></td><td><strong>${escapeHtml(row.record.location || "Não informado")}</strong><small>${escapeHtml(row.record.supplier || "Fornecedor não informado")}</small></td><td><strong>Molde ${escapeHtml(row.rejection.mold || "—")}</strong><small>Cavidade ${escapeHtml(row.rejection.cavity || "—")}</small></td><td class="rejection-reason-cell">${escapeHtml(row.reason)}</td><td><strong>${escapeHtml(row.record.vehiclePlate || "Placa não informada")}</strong><small>${escapeHtml(row.record.inspectorName || CONTROL_OWNER)}</small></td><td class="rejection-observation-cell">${escapeHtml(row.record.observations || "Sem observações")}</td><td><strong>${formatNumber(row.item.photos?.length || 0)}</strong><small>foto(s) da NF</small></td><td class="report-row-actions no-print"><button data-view-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Ver NF</button>${canEdit() ? `<button data-edit-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="rejection-table"><table><thead><tr><th>Data / horário</th><th>NF / quantidade</th><th>Local</th><th>Identificação</th><th>Motivo</th><th>Rastreabilidade</th><th>Observações</th><th>Fotos</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => `<tr><td><strong>${formatDate(row.record.receivedDate || row.record.receivedAt)}</strong><small>${escapeHtml(row.record.receivedTime || "Horário não informado")}</small></td><td><strong>NF ${escapeHtml(row.item.number || row.rejection.invoiceNumber || "—")}</strong><small>${formatNumber(row.item.quantity)} dormentes recebidos</small></td><td><strong>${escapeHtml(row.record.location || "Não informado")}</strong><small>${escapeHtml(row.record.supplier || "Fornecedor não informado")}</small></td><td><strong>Molde ${escapeHtml(row.rejection.mold || "—")}</strong><small>Cavidade ${escapeHtml(row.rejection.cavity || "—")}</small></td><td class="rejection-reason-cell">${escapeHtml(row.reason)}</td><td><strong>${escapeHtml(vehicleDisplay(row.item.vehiclePlate || row.record.vehiclePlate))}</strong><small>${escapeHtml(row.record.inspectorName || CONTROL_OWNER)}</small></td><td class="rejection-observation-cell">${escapeHtml(row.record.observations || "Sem observações")}</td><td><strong>${formatNumber(row.item.photos?.length || 0)}</strong><small>foto(s) da NF</small></td><td class="report-row-actions no-print"><button data-view-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Ver NF</button>${canEdit() ? `<button data-edit-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Editar</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
 function renderRejectedSleeperCards(rows) {
-  return `<div class="rejection-cards">${rows.map((row) => `<article class="rejection-card"><header><span class="invoice-status-pill is-rejected">Reprovado</span><time>${formatDate(row.record.receivedDate || row.record.receivedAt)}</time></header><h3>Molde ${escapeHtml(row.rejection.mold || "—")} • Cavidade ${escapeHtml(row.rejection.cavity || "—")}</h3><p class="rejection-card-reason">${escapeHtml(row.reason)}</p><dl><div><dt>Nota fiscal</dt><dd>NF ${escapeHtml(row.item.number || row.rejection.invoiceNumber || "—")} • ${formatNumber(row.item.quantity)} recebidos</dd></div><div><dt>Local</dt><dd>${escapeHtml(row.record.location || "Não informado")}</dd></div><div><dt>Fornecedor / placa</dt><dd>${escapeHtml(row.record.supplier || "—")} • ${escapeHtml(row.record.vehiclePlate || "placa não informada")}</dd></div><div><dt>Responsável</dt><dd>${escapeHtml(row.record.inspectorName || CONTROL_OWNER)}</dd></div><div><dt>Observações</dt><dd>${escapeHtml(row.record.observations || "Sem observações")}</dd></div><div><dt>Fotos da NF</dt><dd>${formatNumber(row.item.photos?.length || 0)}</dd></div></dl><div class="receiving-card-actions no-print"><button class="button button-dark" data-view-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Ver NF completa</button>${canEdit() ? `<button class="button button-outline" data-edit-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Editar</button>` : ""}</div></article>`).join("")}</div>`;
+  return `<div class="rejection-cards">${rows.map((row) => `<article class="rejection-card"><header><span class="invoice-status-pill is-rejected">Reprovado</span><time>${formatDate(row.record.receivedDate || row.record.receivedAt)}</time></header><h3>Molde ${escapeHtml(row.rejection.mold || "—")} • Cavidade ${escapeHtml(row.rejection.cavity || "—")}</h3><p class="rejection-card-reason">${escapeHtml(row.reason)}</p><dl><div><dt>Nota fiscal</dt><dd>NF ${escapeHtml(row.item.number || row.rejection.invoiceNumber || "—")} • ${formatNumber(row.item.quantity)} recebidos</dd></div><div><dt>Local</dt><dd>${escapeHtml(row.record.location || "Não informado")}</dd></div><div><dt>Fornecedor / máquina</dt><dd>${escapeHtml(row.record.supplier || "—")} • ${escapeHtml(vehicleDisplay(row.item.vehiclePlate || row.record.vehiclePlate))}</dd></div><div><dt>Responsável</dt><dd>${escapeHtml(row.record.inspectorName || CONTROL_OWNER)}</dd></div><div><dt>Observações</dt><dd>${escapeHtml(row.record.observations || "Sem observações")}</dd></div><div><dt>Fotos da NF</dt><dd>${formatNumber(row.item.photos?.length || 0)}</dd></div></dl><div class="receiving-card-actions no-print"><button class="button button-dark" data-view-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Ver NF completa</button>${canEdit() ? `<button class="button button-outline" data-edit-invoice="${escapeHtml(row.record.id)}" data-invoice-index="${row.invoiceIndex}">Editar</button>` : ""}</div></article>`).join("")}</div>`;
 }
 
 function renderRejections() {
@@ -1549,10 +1629,10 @@ function renderReportTable(records) {
     const actionsCell = `<td class="report-row-actions no-print"><button type="button" data-view-invoice="${row.record.id}" data-invoice-index="${row.index}">Ver</button>${canEdit() ? `<button type="button" data-edit-invoice="${row.record.id}" data-invoice-index="${row.index}">Editar</button>` : ""}</td>`;
     return { rejected, completion, status, nfCell, completionCell, actionsCell };
   };
-  const baseCells = (row, rowMeta) => `<td>${formatDate(row.record.receivedDate)}</td>${rowMeta.nfCell}<td><strong>${escapeHtml(row.record.location || "—")}</strong><small>${escapeHtml(row.item.vehiclePlate || row.record.vehiclePlate || defaultVehicleForMaterial(row.record.material))} • ${escapeHtml(collaboratorNames(row.record, row.item) || "Equipe não informada")}</small></td><td>${formatNumber(row.item.quantity)}</td>`;
+  const baseCells = (row, rowMeta) => `<td>${formatDate(row.record.receivedDate)}</td>${rowMeta.nfCell}<td><strong>${escapeHtml(row.record.location || "—")}</strong><small>${escapeHtml(vehicleDisplay(row.item.vehiclePlate || row.record.vehiclePlate || defaultVehicleForMaterial(row.record.material)))} • ${escapeHtml(collaboratorNames(row.record, row.item) || "Equipe não informada")}</small></td><td>${formatNumber(row.item.quantity)}</td>`;
   if (state.reportFilters.material === "dormente") return `<h2 class="report-table-title">Detalhamento por nota fiscal — dormentes</h2><div class="report-table"><table><thead><tr><th>Data</th><th>NF / situação</th><th>Local</th><th>Qtd.</th><th>PQ</th><th>R</th><th>B</th><th>Quebras</th><th>Reprovados</th><th>Preenchimento</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => { const summary = sleeperQualitySummary(row.quality); const rowMeta = meta(row); return `<tr class="report-invoice-row ${rowMeta.status}">${baseCells(row, rowMeta)}<td>${formatNumber(summary.smallBreaks)}</td><td>${formatNumber(summary.repaired)}</td><td>${formatNumber(summary.bubbles)}</td><td>${formatNumber(summary.breaks)}</td><td>${formatNumber(rowMeta.rejected)}</td>${rowMeta.completionCell}${rowMeta.actionsCell}</tr>`; }).join("")}</tbody></table></div>`;
   if (state.reportFilters.material === "trilho") return `<h2 class="report-table-title">Detalhamento por nota fiscal — trilhos</h2><div class="report-table"><table><thead><tr><th>Data</th><th>NF / situação</th><th>Local</th><th>Qtd.</th><th>Empeno</th><th>Oxidação</th><th>Boleto</th><th>Alma</th><th>Patim</th><th>Reprovados</th><th>Preenchimento</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => { const summary = railQualitySummary(row.quality); const rowMeta = meta(row); return `<tr class="report-invoice-row ${rowMeta.status}">${baseCells(row, rowMeta)}<td>${formatNumber(summary.bending)}</td><td>${formatNumber(summary.oxidation)}</td><td>${formatNumber(summary.head)}</td><td>${formatNumber(summary.web)}</td><td>${formatNumber(summary.foot)}</td><td>${formatNumber(rowMeta.rejected)}</td>${rowMeta.completionCell}${rowMeta.actionsCell}</tr>`; }).join("")}</tbody></table></div>`;
-  return `<h2 class="report-table-title">Detalhamento por nota fiscal — visão conjunta</h2><div class="report-table"><table><thead><tr><th>Data</th><th>Material</th><th>NF / situação</th><th>Local / equipe</th><th>Qtd.</th><th>Ocorrências de qualidade</th><th>Preenchimento</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => { const details = qualityCategories(row.record.material).map((category) => ({ label: category.label, value: number(row.quality[category.id]) })).filter((entry) => entry.value > 0).map((entry) => `${entry.label}: ${formatNumber(entry.value)}`).join(" • ") || "Sem ocorrências"; const rowMeta = meta(row); return `<tr class="report-invoice-row ${rowMeta.status}"><td>${formatDate(row.record.receivedDate)}</td><td>${MATERIALS[row.record.material].label}</td>${rowMeta.nfCell}<td><strong>${escapeHtml(row.record.location || "—")}</strong><small>${escapeHtml(row.item.vehiclePlate || row.record.vehiclePlate || defaultVehicleForMaterial(row.record.material))} • ${escapeHtml(collaboratorNames(row.record, row.item) || "Equipe não informada")}</small></td><td>${formatNumber(row.item.quantity)}</td><td class="report-quality-cell">${escapeHtml(details)}</td>${rowMeta.completionCell}${rowMeta.actionsCell}</tr>`; }).join("")}</tbody></table></div>`;
+  return `<h2 class="report-table-title">Detalhamento por nota fiscal — visão conjunta</h2><div class="report-table"><table><thead><tr><th>Data</th><th>Material</th><th>NF / situação</th><th>Local / equipe</th><th>Qtd.</th><th>Ocorrências de qualidade</th><th>Preenchimento</th><th class="no-print">Ações</th></tr></thead><tbody>${rows.map((row) => { const details = qualityCategories(row.record.material).map((category) => ({ label: category.label, value: number(row.quality[category.id]) })).filter((entry) => entry.value > 0).map((entry) => `${entry.label}: ${formatNumber(entry.value)}`).join(" • ") || "Sem ocorrências"; const rowMeta = meta(row); return `<tr class="report-invoice-row ${rowMeta.status}"><td>${formatDate(row.record.receivedDate)}</td><td>${MATERIALS[row.record.material].label}</td>${rowMeta.nfCell}<td><strong>${escapeHtml(row.record.location || "—")}</strong><small>${escapeHtml(vehicleDisplay(row.item.vehiclePlate || row.record.vehiclePlate || defaultVehicleForMaterial(row.record.material)))} • ${escapeHtml(collaboratorNames(row.record, row.item) || "Equipe não informada")}</small></td><td>${formatNumber(row.item.quantity)}</td><td class="report-quality-cell">${escapeHtml(details)}</td>${rowMeta.completionCell}${rowMeta.actionsCell}</tr>`; }).join("")}</tbody></table></div>`;
 }
 
 function renderReports() {
@@ -1646,7 +1726,7 @@ function renderModal() {
     const statusLabel = rejected > 0 ? `${formatNumber(rejected)} reprovado${rejected === 1 ? "" : "s"}` : "NF sem reprovação";
     title = `NF ${item.number || "não informada"}`;
     subtitle = `${MATERIALS[record.material].label} • ${formatDate(record.receivedDate)} • ${record.location || "local não informado"}`;
-    const qualityDetails = `<span class="invoice-trace-detail"><i></i>Veículo <strong>${escapeHtml(item.vehiclePlate || record.vehiclePlate || defaultVehicleForMaterial(record.material))}</strong></span><span class="invoice-trace-detail crew"><i></i>Equipe <strong>${escapeHtml(collaboratorNames(record, item) || "Não informada")}</strong></span>${qualityCategories(record.material).map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(row.quality[category.id])}</strong></span>`).join("")}`;
+    const qualityDetails = `<span class="invoice-trace-detail"><i></i>Máquina <strong>${escapeHtml(vehicleDisplay(item.vehiclePlate || record.vehiclePlate || defaultVehicleForMaterial(record.material)))}</strong></span><span class="invoice-trace-detail crew"><i></i>Equipe <strong>${escapeHtml(collaboratorNames(record, item) || "Não informada")}</strong></span>${qualityCategories(record.material).map((category) => `<span><i style="background:${category.color}"></i>${escapeHtml(category.label)} <strong>${formatNumber(row.quality[category.id])}</strong></span>`).join("")}`;
     const invoiceRejections = rejectionsForInvoice(record, item.number);
     const completionDetail = completion.missing.length ? `Falta preencher: ${completion.missing.join(", ")}.` : "Todos os dados essenciais estão preenchidos.";
     body = `<div class="invoice-modal-overview ${statusClass}"><span class="invoice-status-pill ${statusClass}">${statusLabel}</span><div><strong>${completion.percentage}% preenchido</strong><small>${escapeHtml(completionDetail)}</small><span class="invoice-completion-track" role="progressbar" aria-label="Preenchimento da NF" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${completion.percentage}"><i style="width:${completion.percentage}%"></i></span></div></div><div class="record-modal-summary"><div><span>Quantidade recebida</span><strong>${formatNumber(item.quantity)}</strong><small>${MATERIALS[record.material].unit}</small></div><div><span>Defeitos encontrados</span><strong>${formatNumber(invoiceDefectCount(row))}</strong><small>ocorrências nesta NF</small></div><div><span>Local da entrega</span><strong>${escapeHtml(record.location || "—")}</strong><small>${escapeHtml(record.supplier || "Fornecedor não informado")}</small></div><div><span>Data</span><strong>${formatDate(record.receivedDate)}</strong><small>${record.receivedTime || "Horário não informado"}</small></div></div><div class="record-quality-list">${qualityDetails}</div>${invoiceRejections.length ? `<div class="record-rejections"><h3>Detalhes da reprovação</h3><div class="modal-table"><table><thead><tr><th>Molde</th><th>Cavidade</th><th>Motivo</th></tr></thead><tbody>${invoiceRejections.map((rejection) => `<tr><td>${escapeHtml(rejection.mold || "—")}</td><td>${escapeHtml(rejection.cavity || "—")}</td><td>${escapeHtml(rejection.reason || state.rejectionReasons.find((reason) => reason.id === rejection.reasonId)?.label || "—")}</td></tr>`).join("")}</tbody></table></div></div>` : ""}<p class="record-observation"><strong>Observações:</strong> ${escapeHtml(record.observations || "Nenhuma observação.")}</p>${state.modal.type === "invoice" ? `<section class="invoice-photos-detail"><h3>Fotos desta NF</h3>${renderPhotoGallery(invoiceItems(record)[number(state.modal.index)]?.photos || [])}</section>` : ""}`;
@@ -1732,13 +1812,35 @@ function bindFormEvents() {
   form.querySelectorAll("[data-remove-invoice-photo]").forEach((button) => button.addEventListener("click", () => removeInvoicePhoto(number(button.dataset.photoInvoice), button.dataset.removeInvoicePhoto)));
   form.addEventListener("submit", (event) => { event.preventDefault(); saveCurrent("concluido"); });
   form.querySelectorAll('[name="invoiceQuantity"]').forEach((input) => input.addEventListener("input", updateFormTotal));
-  form.querySelectorAll("[data-material]").forEach((button) => button.addEventListener("click", () => { const previousMaterial = state.draft?.material || form.elements.material.value; state.draft = formRecordFromDom(); state.draft.material = button.dataset.material; state.draft.supplier = supplierForMaterial(button.dataset.material); if (!state.draft.vehiclePlate || state.draft.vehiclePlate === defaultVehicleForMaterial(previousMaterial)) state.draft.vehiclePlate = defaultVehicleForMaterial(button.dataset.material); state.draft.invoiceItems = state.draft.invoiceItems.map((item) => ({ ...item, vehiclePlate: state.draft.vehiclePlate })); state.draft = normalizeMaterialSupplier(state.draft); render(); }));
-  form.querySelector("[data-add-invoice]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.push(blankInvoiceItem(state.draft.material)); render(); });
+  form.querySelectorAll("[data-material]").forEach((button) => button.addEventListener("click", () => {
+    const previousMaterial = state.draft?.material || form.elements.material.value;
+    state.draft = formRecordFromDom();
+    if (!state.editingId) state.draft = applyDailyCrewToDraft(state.draft, state.draft.receivedDate, button.dataset.material);
+    else {
+      state.draft.material = button.dataset.material;
+      state.draft.supplier = supplierForMaterial(button.dataset.material);
+      if (!state.draft.vehiclePlate || state.draft.vehiclePlate === defaultVehicleForMaterial(previousMaterial)) state.draft.vehiclePlate = defaultVehicleForMaterial(button.dataset.material);
+      state.draft.invoiceItems = state.draft.invoiceItems.map((item) => ({ ...item, vehiclePlate: state.draft.vehiclePlate }));
+    }
+    state.draft = normalizeMaterialSupplier(state.draft);
+    render();
+  }));
+  form.querySelector('[name="receivedDate"]')?.addEventListener("change", (event) => {
+    if (state.editingId) return;
+    state.draft = applyDailyCrewToDraft(formRecordFromDom(), event.target.value, form.elements.material.value);
+    render();
+  });
+  form.querySelector("[data-add-invoice]")?.addEventListener("click", () => {
+    state.draft = formRecordFromDom();
+    state.draft.invoiceItems.push(blankInvoiceItem(state.draft.material, { vehiclePlate: state.draft.vehiclePlate, collaborators: selectedDraftCollaborators(state.draft) }));
+    render();
+  });
   form.querySelectorAll("[data-remove-invoice]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.invoiceItems.splice(number(button.dataset.removeInvoice), 1); render(); }));
   form.querySelector("[data-add-rejection]")?.addEventListener("click", () => { state.draft = formRecordFromDom(); const firstInvoice = state.draft.invoiceItems.find((item) => item.number)?.number || ""; state.draft.rejections = rejectionRows(state.draft); state.draft.rejections.push({ id: crypto.randomUUID(), invoiceNumber: firstInvoice, mold: "", cavity: "", reasonId: "", reason: "" }); state.draft.quality.reprovados = state.draft.rejections.length; render(); });
   form.querySelectorAll("[data-remove-rejection]").forEach((button) => button.addEventListener("click", () => { state.draft = formRecordFromDom(); state.draft.rejections.splice(number(button.dataset.removeRejection), 1); state.draft.quality.reprovados = state.draft.rejections.length; render(); }));
   form.querySelector("[data-add-rejection-reason]")?.addEventListener("click", () => addRejectionReason(form.querySelector('[name="newRejectionReason"]')?.value));
-  form.querySelector("[data-add-collaborator]")?.addEventListener("click", () => addReceivingCollaborator(form.querySelector('[name="newCollaboratorName"]')?.value));
+  form.querySelector("[data-add-collaborator]")?.addEventListener("click", () => addReceivingCollaborator(form.querySelector('[name="newCollaboratorName"]')?.value, form.querySelector('[name="newCollaboratorRole"]')?.value));
+  form.querySelectorAll("[data-edit-collaborator-role]").forEach((button) => button.addEventListener("click", () => editReceivingCollaboratorRole(button.dataset.editCollaboratorRole)));
   form.querySelector("[data-add-vehicle]")?.addEventListener("click", () => addReceivingVehicle(form.querySelector('[name="newVehiclePlate"]')?.value));
   form.querySelector("[data-save-status]")?.addEventListener("click", () => saveCurrent("rascunho"));
   form.querySelector("[data-cancel-form]")?.addEventListener("click", cancelDraft);
@@ -1846,7 +1948,7 @@ function cancelDraft() {
   navigate("dashboard");
 }
 
-function replaceRecord(record) { record = normalizeMaterialSupplier(record); const index = state.records.findIndex((item) => item.id === record.id); if (index >= 0) state.records[index] = record; else state.records.push(record); state.records.sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))); }
+function replaceRecord(record) { record = normalizeMaterialSupplier(record); const index = state.records.findIndex((item) => item.id === record.id); if (index >= 0) state.records[index] = record; else state.records.push(record); state.records.sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))); rememberDailyCrew(record); }
 
 async function deleteRecord(id) {
   if (!canEdit() || state.saving || state.photoBusy) return;
@@ -1883,12 +1985,13 @@ function catalogId(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80) || crypto.randomUUID();
 }
 
-async function addReceivingCollaborator(rawName) {
+async function addReceivingCollaborator(rawName, rawRole = "Mantenedor") {
   const fullName = String(rawName || "").trim().replace(/\s+/g, " ");
+  const roleLabel = String(rawRole || "Mantenedor").trim().replace(/\s+/g, " ") || "Mantenedor";
   if (fullName.length < 3) return toast("Informe o nome completo do colaborador.", "error");
   state.draft = formRecordFromDom();
   const existing = state.collaborators.find((person) => person.fullName.toLocaleLowerCase("pt-BR") === fullName.toLocaleLowerCase("pt-BR"));
-  const person = existing || normalizeCollaborator({ id: catalogId(fullName), fullName, active: true, sortOrder: state.collaborators.length * 10 + 10 });
+  const person = existing || normalizeCollaborator({ id: catalogId(fullName), fullName, roleLabel, active: true, sortOrder: state.collaborators.length * 10 + 10 });
   if (!existing) state.collaborators.push(person);
   const selected = new Map(selectedDraftCollaborators(state.draft).map((entry) => [entry.id || entry.name, entry]));
   selected.set(person.id, collaboratorEntry(person));
@@ -1902,6 +2005,25 @@ async function addReceivingCollaborator(rawName) {
   }
   render();
   toast(existing ? "Colaborador selecionado." : "Colaborador adicionado e selecionado.", "success");
+}
+
+async function editReceivingCollaboratorRole(id) {
+  if (!canEdit()) return toast("Somente administradores podem alterar funções.", "error");
+  const person = state.collaborators.find((entry) => entry.id === id);
+  if (!person) return toast("Colaborador não encontrado.", "error");
+  if (!supabaseClient || !state.online) return toast("Conecte-se à internet para alterar a função no cadastro geral.", "error");
+  state.draft = formRecordFromDom();
+  const roleLabel = String(prompt(`Função de ${person.fullName}:`, person.roleLabel || "Mantenedor") ?? "").trim().replace(/\s+/g, " ");
+  if (!roleLabel || roleLabel === person.roleLabel) return;
+  const { error } = await supabaseClient.from("receiving_collaborators").update({ role_label: roleLabel, updated_at: new Date().toISOString() }).eq("id", person.id);
+  if (error) return toast(error.message || "Não foi possível alterar a função.", "error");
+  person.roleLabel = roleLabel;
+  const updatePeople = (people = []) => people.map((entry) => entry.id === person.id ? collaboratorEntry(person) : entry);
+  state.draft.invoiceItems = invoiceItems(state.draft).map((item) => ({ ...item, collaborators: updatePeople(invoiceCollaborators(state.draft, item)) }));
+  state.draft.collaborators = updatePeople(invoiceCollaborators(state.draft));
+  saveCollaboratorsLocal();
+  render();
+  toast(`Função de ${person.fullName} atualizada.`, "success");
 }
 
 async function addReceivingVehicle(rawPlate) {
@@ -1965,7 +2087,7 @@ function removeReportImage(id) {
 function exportCsv(records) {
   if (!requireReportAction()) return;
   const rows = [["Data", "Horário", "Material", "Nota Fiscal", "Quantidade", "Local", "Fornecedor", "Veículo", "Colaboradores presentes", "Pequenas quebras", "Reparados", "Bolhas", "Quebras", "Dormentes reprovados", "Molde / cavidade / motivo", "Empenamento / torção", "Oxidação / corrosão", "Danos no boleto", "Danos na alma", "Danos no patim", "Trilhos reprovados", "Responsável pelo lançamento", "Observações"]];
-  records.forEach((record) => invoiceItems(record).forEach((item, index) => { const quality = invoiceQuality(record, item, index); const rejected = Math.max(number(quality.reprovados), rejectionsForInvoice(record, item.number).length); rows.push([formatDate(record.receivedDate), record.receivedTime || "não informado", MATERIALS[record.material].label, item.number, item.quantity, record.location, record.supplier, item.vehiclePlate || record.vehiclePlate || defaultVehicleForMaterial(record.material), collaboratorNames(record, item), quality["pequenas-quebras"] || 0, quality.reparados || 0, quality.bolhas || 0, quality.quebras || 0, rejected, rejectionDetails(record, item.number), quality["trilho-empenamento"] || 0, quality["trilho-oxidacao"] || 0, quality["trilho-boleto"] || 0, quality["trilho-alma"] || 0, quality["trilho-patim"] || 0, quality["trilho-reprovados"] || 0, record.inspectorName || CONTROL_OWNER, record.observations || ""]); }));
+  records.forEach((record) => invoiceItems(record).forEach((item, index) => { const quality = invoiceQuality(record, item, index); const rejected = Math.max(number(quality.reprovados), rejectionsForInvoice(record, item.number).length); rows.push([formatDate(record.receivedDate), record.receivedTime || "não informado", MATERIALS[record.material].label, item.number, item.quantity, record.location, record.supplier, vehicleDisplay(item.vehiclePlate || record.vehiclePlate || defaultVehicleForMaterial(record.material)), collaboratorNames(record, item), quality["pequenas-quebras"] || 0, quality.reparados || 0, quality.bolhas || 0, quality.quebras || 0, rejected, rejectionDetails(record, item.number), quality["trilho-empenamento"] || 0, quality["trilho-oxidacao"] || 0, quality["trilho-boleto"] || 0, quality["trilho-alma"] || 0, quality["trilho-patim"] || 0, quality["trilho-reprovados"] || 0, record.inspectorName || CONTROL_OWNER, record.observations || ""]); }));
   const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
   const suffix = `${state.reportFilters.from || "inicio"}-a-${state.reportFilters.to || "fim"}`;
   const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); link.download = `relatorio-epya-${suffix}.csv`; link.click(); URL.revokeObjectURL(link.href); toast("Planilha para Excel gerada.", "success");
@@ -2101,7 +2223,7 @@ async function loadOperatorDashboardSummary() {
     return false;
   }
 }
-function clearProtectedLocalData() { [STORAGE_KEY, OUTBOX_KEY, AUTH_CACHE_KEY, CATEGORY_KEY, REJECTION_REASON_KEY, LOCATION_KEY, GOAL_KEY, GOAL_OUTBOX_KEY, OPERATOR_DASHBOARD_KEY, COLLABORATOR_KEY, VEHICLE_KEY].forEach((key) => localStorage.removeItem(key)); }
+function clearProtectedLocalData() { [STORAGE_KEY, OUTBOX_KEY, AUTH_CACHE_KEY, CATEGORY_KEY, REJECTION_REASON_KEY, LOCATION_KEY, GOAL_KEY, GOAL_OUTBOX_KEY, OPERATOR_DASHBOARD_KEY, COLLABORATOR_KEY, VEHICLE_KEY, DAILY_CREW_KEY].forEach((key) => localStorage.removeItem(key)); }
 function readLocalRecords() { try { const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); return Array.isArray(stored) ? stored.map(sanitizeLegacyMoldEntry).sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt))) : []; } catch { return []; } }
 function writeLocalRecords() { if (state.authorized) localStorage.setItem(STORAGE_KEY, JSON.stringify(state.records)); }
 function readOutbox() { try { const records = JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]"); return Array.isArray(records) ? records : []; } catch { return []; } }
@@ -2314,7 +2436,7 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=41" : "/service-worker.js?v=41").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=42" : "/service-worker.js?v=42").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); if (isOperator()) await loadOperatorDashboardSummary(); } state.loading = false; render();
 }
 
