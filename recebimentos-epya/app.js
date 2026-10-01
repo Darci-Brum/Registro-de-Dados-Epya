@@ -714,7 +714,8 @@ function renderSyncBadge() {
   if (state.syncing) return '<button class="sync-badge warning is-syncing" type="button" disabled><i></i> Sincronizando…</button>';
   if (state.pendingSync) {
     const explanation = state.syncError || "O lançamento está salvo neste aparelho e será enviado ao Supabase assim que houver conexão.";
-    return `<button class="sync-badge warning" type="button" data-retry-sync title="${escapeHtml(explanation)}"><i></i> ${state.pendingSync} aguardando sincronização • Tentar agora</button>`;
+    const status = state.syncError ? "com falha no envio" : "aguardando sincronização";
+    return `<button class="sync-badge warning" type="button" data-retry-sync title="${escapeHtml(explanation)}"><i></i> ${state.pendingSync} ${status} • Tentar agora</button>`;
   }
   return state.storageMode === "cloud" ? '<span class="sync-badge success"><i></i> Supabase sincronizado</span>' : '<span class="sync-badge warning"><i></i> Salvo neste aparelho</span>';
 }
@@ -2231,9 +2232,11 @@ function queueForSync(record) { const outbox = readOutbox(); const index = outbo
 function forgetQueuedRecord(id) { const outbox = readOutbox().filter((record) => record.id !== id); localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); state.pendingSync = outbox.length; if (!outbox.length) state.syncError = ""; }
 
 function syncFailureMessage(error) {
-  const raw = String(error?.message || "").toLocaleLowerCase("pt-BR");
+  const code = String(error?.code || "");
+  const raw = [error?.message, error?.details, error?.hint].filter(Boolean).join(" ").toLocaleLowerCase("pt-BR");
   if (!state.online || raw.includes("fetch") || raw.includes("network")) return "Sem conexão com o Supabase. O lançamento continua salvo neste aparelho.";
   if (raw.includes("permission") || raw.includes("policy") || raw.includes("row-level security")) return "Este acesso não conseguiu enviar o lançamento. Entre novamente ou procure o administrador.";
+  if (code === "21000" || raw.includes("requires a where clause")) return "O servidor recusou o lançamento. Seus dados continuam salvos; toque para tentar novamente após a correção.";
   return "O envio não foi concluído. Toque para tentar novamente; o lançamento permanece salvo neste aparelho.";
 }
 
@@ -2436,7 +2439,7 @@ async function removeTeamMember(id) {
 }
 
 async function bootstrap() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=42" : "/service-worker.js?v=42").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register(GITHUB_PAGES_MODE ? "./service-worker.js?v=43" : "/service-worker.js?v=43").catch(() => {});
   await loadSession(); if (state.authorized) { await loadRecordsAndCategories(); await syncOutbox(); if (isOperator()) await loadOperatorDashboardSummary(); } state.loading = false; render();
 }
 
